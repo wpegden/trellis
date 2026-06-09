@@ -1,0 +1,2 @@
+-- Tablet preamble for the local_closure_smoke fixture.
+-- Intentionally empty — our test nodes don't need Mathlib.

@@ -1,0 +1,4103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Proof Tablet Viewer</title>
+<!-- KaTeX (math rendering for the optional Rendered TeX toggle in the
+     Node detail pane). Loaded async-defer; toggle defaults OFF, so the
+     viewer still works if the CDN is unreachable. -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" integrity="sha384-nB0miv6/jRmo5UMMR1wu3Gz6NLsoTkbqJghGIsx//Rlm+ZU03BU6SQNC66uf4l5+" crossorigin="anonymous">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" integrity="sha384-7zkQWkzuo3B5mTepMUcHkMB5jZaolc2xDwL6VFqjFALcbeS9Ggm/Yr2r3Dy4lfFg" crossorigin="anonymous"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js" integrity="sha384-43gviWU0YVjaDtb/GhzOouOXtZMP/7XUzwPTstBeZFe/+rCMvRwr4yROQP43s0Xk" crossorigin="anonymous"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Menlo', 'Monaco', 'Courier New', monospace; font-size: 13px; background: #1a1a2e; color: #e0e0e0; display: flex; flex-direction: column; height: 100vh; }
+
+header { background: #16213e; padding: 8px 16px; display: flex; align-items: center; gap: 16px; border-bottom: 1px solid #333; }
+header h1 { font-size: 14px; color: #8be9fd; }
+header .header-meta { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+header .status { color: #6272a4; font-size: 12px; }
+header .activity { color: #f1fa8c; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.toggle-label-short { display: none; }
+
+.main { display: flex; flex: 1; overflow: hidden; }
+
+.mobile-pane-switcher { display: none; }
+
+.dag-pane { flex: 1; overflow: auto; padding: 16px; position: relative; min-width: 0; }
+.detail-resizer { width: 6px; cursor: col-resize; background: #1a1a2e; border-left: 1px solid #333; border-right: 1px solid #333; flex-shrink: 0; transition: background 0.1s; user-select: none; }
+.detail-resizer:hover, .detail-resizer.dragging { background: #44475a; }
+.detail-pane { width: var(--detail-pane-width, 420px); flex-shrink: 0; overflow-y: auto; padding: 16px; background: #0f0f23; }
+.detail-toolbar { display: flex; gap: 8px; margin-bottom: 12px; }
+.detail-toggle { padding: 6px 10px; border: 1px solid #334; background: #161b33; color: #8be9fd; border-radius: 6px; cursor: pointer; font-size: 11px; text-transform: uppercase; }
+.detail-toggle.active { background: #24345f; border-color: #8be9fd; color: #ffffff; }
+.detail-pane h2 { font-size: 14px; color: #8be9fd; margin-bottom: 8px; }
+.detail-pane .field { margin-bottom: 12px; }
+.detail-pane .field-label { color: #6272a4; font-size: 11px; text-transform: uppercase; margin-bottom: 4px; }
+.detail-pane .field-value { white-space: pre-wrap; word-wrap: break-word; font-size: 12px; line-height: 1.5; }
+.detail-pane .collapsible { max-height: 120px; overflow: hidden; position: relative; cursor: pointer; }
+.detail-pane .collapsible.expanded { max-height: none; }
+.detail-pane .collapsible::after { content: '▼ click to expand'; display: block; text-align: center; color: #6272a4; font-size: 10px; padding: 4px; background: linear-gradient(transparent, #0f0f23); position: absolute; bottom: 0; left: 0; right: 0; }
+.detail-pane .collapsible.expanded::after { content: '▲ click to collapse'; position: static; background: none; }
+
+.feedback-panel { background: #1e1e3a; border: 1px solid #f1fa8c; border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+.feedback-panel h3 { color: #f1fa8c; font-size: 13px; margin-bottom: 8px; }
+.feedback-panel textarea { width: 100%; height: 80px; background: #0f0f23; color: #e0e0e0; border: 1px solid #444; border-radius: 4px; padding: 8px; font-family: inherit; font-size: 12px; resize: vertical; }
+.feedback-panel .btn { padding: 6px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; margin-right: 8px; margin-top: 8px; }
+.feedback-panel .btn-approve { background: #50fa7b; color: #1a1a2e; }
+.feedback-panel .btn-feedback { background: #f1fa8c; color: #1a1a2e; }
+.feedback-panel .btn:hover { opacity: 0.8; }
+.feedback-panel .msg { color: #8be9fd; font-size: 11px; margin-top: 6px; }
+.chat-artifact { border: 1px solid #28314d; border-radius: 8px; margin-bottom: 12px; background: #14182d; overflow: hidden; }
+.chat-artifact summary { list-style: none; cursor: pointer; padding: 10px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.chat-artifact summary::-webkit-details-marker { display: none; }
+.chat-artifact summary::after { content: '▼'; color: #6272a4; font-size: 10px; flex-shrink: 0; }
+.chat-artifact[open] summary::after { content: '▲'; }
+.chat-artifact h3 { font-size: 12px; color: #f1fa8c; margin: 0; }
+.chat-artifact-meta { color: #6272a4; font-size: 11px; }
+.chat-artifact-body { padding: 0 10px 10px; }
+.chat-entry { margin-bottom: 10px; }
+.chat-entry-label { color: #6272a4; font-size: 11px; text-transform: uppercase; margin-bottom: 4px; }
+
+.timeline { background: #16213e; padding: 8px 16px; border-top: 1px solid #333; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.timeline label { color: #6272a4; font-size: 12px; white-space: nowrap; }
+.timeline input[type=range] { flex: 1; }
+.timeline .cycle-info { color: #f1fa8c; font-size: 12px; flex: 0 0 280px; width: 280px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.timeline .cycle-step { background: #1a1f3a; color: #8be9fd; border: 1px solid #334; border-radius: 4px; cursor: pointer; font: inherit; font-size: 14px; line-height: 1; padding: 2px 8px; flex-shrink: 0; }
+.timeline .cycle-step:hover:not(:disabled) { background: #24345f; border-color: #8be9fd; }
+.timeline .cycle-step:disabled { opacity: 0.35; cursor: default; }
+.timeline .slot-labels { width: 100%; display: flex; justify-content: space-between; gap: 8px; color: #6272a4; font-size: 10px; line-height: 1.2; }
+.timeline .slot-labels button { flex: 1; min-width: 0; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: transparent; border: none; color: inherit; font: inherit; cursor: pointer; padding: 2px 0; }
+.timeline .slot-labels button.selected { color: #f1fa8c; }
+
+/* Patch C local-closure summary banner: shown above the DAG SVG when one or
+   more nodes are local-closure-unverified. Amber border to match the node
+   stroke color so the operator can see at a glance which color in the DAG
+   corresponds to which summary. Hidden when unverified_count == 0. */
+#closure-summary-banner {
+  background: #2a230a; border: 1px solid #ffb86c; border-radius: 6px;
+  padding: 8px 12px; margin-bottom: 12px; color: #f8f8f2; font-size: 12px;
+  line-height: 1.5;
+}
+#closure-summary-banner h3 { font-size: 12px; color: #ffb86c; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+#closure-summary-banner .closure-counts { color: #d8d8d8; font-size: 11px; margin-bottom: 6px; }
+#closure-summary-banner .closure-counts span { margin-right: 12px; }
+#closure-summary-banner ul { margin: 4px 0 0 16px; padding: 0; }
+#closure-summary-banner li { color: #f8f8f2; font-size: 11px; word-break: break-word; }
+#closure-summary-banner li code { color: #ffb86c; background: transparent; }
+
+/* DAG nodes */
+svg { width: 100%; height: 100%; }
+.node rect, .node polygon, .node circle { stroke-width: 2; cursor: pointer; }
+.node text { font-size: 11px; fill: #e0e0e0; pointer-events: none; }
+.node .diff-easy { font-size: 9px; fill: #50fa7b !important; }
+.node .diff-hard { font-size: 9px; fill: #ffb86c !important; }
+.node.closed rect, .node.closed polygon, .node.closed circle { fill: #1e3a5f; stroke: #4a9eff; }
+.node.recursive-closed rect, .node.recursive-closed polygon, .node.recursive-closed circle { fill: #1a3d2e; stroke: #50fa7b; }
+/* Patch C local-closure-unverified node: kernel-closed (not in open_nodes)
+   but local-closure probe has not blessed it. Distinct amber so it reads
+   apart from green (verified-closed) and red/grey (open). The base color
+   stays for both shallow- and recursively-closed cases; we override the
+   stroke + fill via .unverified, applied in addition to .closed/.recursive-closed. */
+.node.unverified rect, .node.unverified polygon, .node.unverified circle { fill: #3d3000; stroke: #ffb86c; }
+.node.active rect, .node.active polygon, .node.active circle { fill: #3d3500; stroke: #f1fa8c; }
+.node.open rect, .node.open polygon, .node.open circle { fill: #2a2a3d; stroke: #6272a4; }
+.node.error rect, .node.error polygon, .node.error circle { fill: #3d1a1a; stroke: #ff5555; }
+.node.selected rect, .node.selected polygon, .node.selected circle { stroke-width: 3; }
+.node.correspondence-working rect, .node.correspondence-working polygon, .node.correspondence-working circle { stroke: #f1fa8c !important; stroke-width: 3; }
+.node.reviewer-working rect, .node.reviewer-working polygon, .node.reviewer-working circle { stroke: #8be9fd !important; stroke-width: 3; }
+.node.worker-working rect, .node.worker-working polygon, .node.worker-working circle { stroke: #f1fa8c !important; stroke-width: 3; }
+.edge { fill: none; stroke-width: 1.5; pointer-events: none; }
+.edge.edge-failed { stroke: #444; }
+.edge.edge-unknown { stroke: #a2a2a2; }
+.edge.edge-nl-pass { stroke: #bd93f9; }
+.edge.to-closed { stroke: #4a9eff; }
+.edge.active { stroke-width: 3.5; }
+.edge.soundness-working { stroke: #f1fa8c !important; stroke-width: 2.5; }
+.edge.soundness-working.active { stroke-width: 3.5; }
+
+/* Chat-tab TUI state: visually differentiate a live capture from a
+   frozen pane.txt snapshot so the user can tell at a glance when the
+   pane is still moving. */
+#chat-view-container.tui-live {
+  border: 2px solid #50fa7b;
+  box-shadow: 0 0 0 1px #50fa7b40 inset;
+  background: #0b140e;
+}
+#chat-view-container.tui-snapshot {
+  border: 2px dashed #ffb86c;
+  background: #1a150b;
+  position: relative;
+}
+#chat-view-container.tui-snapshot::after {
+  content: 'FROZEN';
+  position: sticky;
+  bottom: 8px;
+  left: 100%;
+  margin-left: -72px;
+  margin-right: 8px;
+  background: #ffb86c;
+  color: #1a1a2e;
+  font-size: 10px;
+  font-weight: bold;
+  padding: 2px 8px;
+  border-radius: 3px;
+  letter-spacing: 1px;
+  display: block;
+  float: right;
+  pointer-events: none;
+}
+#chat-view-container.tui-snapshot pre {
+  opacity: 0.82;
+}
+/* "Thoughts only" filter: hides tool-event cards (tool_call, tool_result,
+   command_execution, file_change, etc.) via a class on the container so
+   toggling is a pure DOM-class flip — no re-fetch, no re-render. */
+#chat-view-container.thoughts-only .chat-card-tool { display: none; }
+#chat-view-container .chat-thoughts-empty-state { display: none; }
+#chat-view-container.thoughts-only .chat-thoughts-empty-state.show { display: block; }
+.live-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: #50fa7b;
+  box-shadow: 0 0 4px #50fa7b;
+  vertical-align: middle;
+  margin-right: 4px;
+  animation: live-pulse 1.4s ease-in-out infinite;
+}
+
+/* Collapsible content sections in the node detail pane (Lean Imports /
+   NL statement / Lean statement / NL proof / Lean proof). Uses the
+   native <details> element so keyboard + a11y work for free; styled to
+   match the existing field-label aesthetic with an arrow on the same
+   line. The arrow flips between ▶ (closed) and ▼ (open) via CSS. */
+.detail-pane details.node-section { margin-bottom: 12px; }
+.detail-pane details.node-section > summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #6272a4;
+  font-size: 11px;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+  user-select: none;
+}
+.detail-pane details.node-section > summary::-webkit-details-marker { display: none; }
+.detail-pane details.node-section > summary::before {
+  content: '▶';
+  font-size: 9px;
+  color: #6272a4;
+  transition: transform 0.1s;
+  display: inline-block;
+  width: 10px;
+  text-align: center;
+}
+.detail-pane details.node-section[open] > summary::before { content: '▼'; }
+.detail-pane details.node-section > .field-value {
+  margin-top: 2px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* Rendered TeX (optional toggle inside Node detail pane). Restyled to
+   read more like a paper while staying inside the viewer's dark
+   palette — KaTeX defaults assume a light background. */
+.rendered-tex {
+  font-family: 'Latin Modern Roman', 'STIX Two Text', 'Cambria', Georgia, serif;
+  font-size: 13px; line-height: 1.55; color: #e0e0e0;
+  white-space: normal;
+}
+.rendered-tex p { margin: 0 0 0.6em 0; }
+.rendered-tex .katex { font-size: 1.02em; color: #f8f8f2; }
+.rendered-tex .katex-display { margin: 0.6em 0; overflow-x: auto; overflow-y: hidden; }
+.rendered-tex .tex-env { margin: 0.6em 0; padding: 6px 10px; border-left: 3px solid #44475a; background: #11142a; border-radius: 3px; }
+.rendered-tex .tex-env.tex-lemma,
+.rendered-tex .tex-env.tex-theorem,
+.rendered-tex .tex-env.tex-corollary,
+.rendered-tex .tex-env.tex-proposition,
+.rendered-tex .tex-env.tex-helper { border-left-color: #8be9fd; font-style: italic; }
+.rendered-tex .tex-env.tex-proof { border-left-color: #6272a4; font-style: normal; color: #d8d8d8; }
+.rendered-tex .tex-env-label { font-style: normal; font-weight: bold; color: #f1fa8c; margin-right: 0.4em; }
+.rendered-tex .tex-env.tex-proof .tex-env-label { color: #8be9fd; }
+.rendered-tex .tex-env.tex-proof .tex-proof-end { float: right; color: #8be9fd; font-style: normal; }
+.rendered-tex a.noderef,
+.rendered-tex a[href^="noderef:"] {
+  color: #bd93f9; text-decoration: none; cursor: pointer;
+  font-variant: small-caps; font-style: normal;
+  border-bottom: 1px dotted #6272a4;
+}
+.rendered-tex a.noderef:hover,
+.rendered-tex a[href^="noderef:"]:hover { color: #ff79c6; border-bottom-color: #ff79c6; }
+/* KaTeX wraps the macro-generated \href body in nested spans; ensure
+   the small-caps + color styling reaches the inner text too. */
+.rendered-tex a[href^="noderef:"] .mord { color: inherit; }
+.rendered-tex .tex-error { color: #ff5555; font-family: 'Menlo', monospace; font-size: 11px; }
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 4px #50fa7b; }
+  50%      { opacity: 0.4; box-shadow: 0 0 10px #50fa7b; }
+}
+
+/* Mobile: top-of-page tab switcher flips between DAG and Details full-screen */
+@media (max-width: 768px) {
+  body { font-size: 12px; }
+  header { padding: 6px 10px; gap: 8px; flex-wrap: wrap; }
+  header h1 { font-size: 13px; }
+  header .status { font-size: 11px; }
+  header .activity { font-size: 11px; white-space: normal; }
+  .toggle-label-full { display: none; }
+  .toggle-label-short { display: inline; }
+
+  .main { flex-direction: column; min-height: 0; }
+  .mobile-pane-switcher {
+    display: flex; gap: 6px; padding: 6px 10px; background: #0f0f23;
+    border-bottom: 1px solid #333; flex-shrink: 0;
+    /* Below header (no order) but above timeline (order -1). */
+    order: -2;
+  }
+  .mobile-pane-switcher button {
+    flex: 1; padding: 8px 12px; border: 1px solid #334; background: #161b33;
+    color: #8be9fd; border-radius: 6px; cursor: pointer; font-size: 12px;
+    text-transform: uppercase; font-family: inherit;
+  }
+  .mobile-pane-switcher button.active {
+    background: #24345f; border-color: #8be9fd; color: #ffffff;
+  }
+  .dag-pane { flex: 1; padding: 8px; overflow: hidden; touch-action: none; min-height: 0; }
+  .detail-resizer { display: none; }
+  .detail-pane {
+    width: 100% !important; border-left: none; border-top: none;
+    padding: 12px;
+    display: none; flex: 1; min-height: 0;
+  }
+  /* Default mobile state: show DAG. When body has .mobile-view-detail,
+     swap: hide DAG, show Details. */
+  body.mobile-view-detail .dag-pane { display: none; }
+  body.mobile-view-detail .detail-pane { display: block; overflow-y: auto; }
+  .detail-pane .collapsible { max-height: 80px; }
+
+  .timeline { padding: 6px 10px; gap: 8px; flex-wrap: wrap; order: -1; border-top: none; border-bottom: 1px solid #333; flex-shrink: 0; }
+  .timeline .cycle-info { flex: 0 1 auto; width: auto; min-width: 0; font-size: 11px; }
+  .timeline .cycle-step { padding: 4px 10px; }
+
+  .feedback-panel textarea { height: 60px; font-size: 11px; }
+  .feedback-panel .btn { padding: 8px 16px; font-size: 13px; }
+
+  /* Larger tap targets for nodes */
+  .node rect, .node polygon { stroke-width: 2.5; }
+
+  /* Close button hidden on mobile — pane switcher handles swap */
+  .detail-close { display: none; }
+}
+@media (min-width: 769px) {
+  .detail-close { display: none; }
+  .mobile-pane-switcher { display: none; }
+}
+</style>
+</head>
+<body>
+
+<!-- Fail-loudly halt banner. Visible only when the kernel persisted
+     `<runtime>/checker_disagreement_halt.json`. The banner pins to
+     viewport top, sits above all other UI, and stays visible until the
+     operator deletes the marker. Polled every 30s alongside other
+     viewer state. -->
+<div id="halt-banner" style="display:none;position:sticky;top:0;z-index:9999;background:#ff5555;color:#1a1a2e;padding:10px 16px;font-weight:bold;border-bottom:3px solid #ff0000;font-size:13px;line-height:1.5">
+</div>
+
+<header>
+  <h1>Proof Tablet Viewer</h1>
+  <div class="header-meta">
+    <div class="status" id="header-status">Loading...</div>
+    <div class="activity" id="header-activity">Current activity: loading...</div>
+  </div>
+  <label id="auto-refresh-toggle"
+         style="margin-left:auto;display:flex;align-items:center;gap:6px;cursor:pointer;color:#e0e0e0;font-size:12px;white-space:nowrap"
+         title="When off, the viewer stops polling for new run state every 30s. Click anywhere on the page to manually re-fetch via the Refresh button next to the toggle.">
+    <input type="checkbox" id="auto-refresh-checkbox" checked
+           onchange="setAutoRefresh(this.checked)" style="cursor:pointer">
+    <span>Auto-refresh</span>
+    <button type="button" id="manual-refresh-btn" onclick="fetchData()"
+            style="margin-left:4px;background:#1a1a2e;color:#8be9fd;border:1px solid #444;border-radius:3px;padding:2px 8px;font-size:11px;cursor:pointer"
+            title="Manually fetch the latest state once">Refresh</button>
+  </label>
+  <label id="include-defs-toggle"
+         style="display:flex;align-items:center;gap:6px;cursor:pointer;color:#e0e0e0;font-size:12px;white-space:nowrap"
+         title="When off, definition nodes are hidden from every DAG view; import edges are rewired through the closure of definition→definition chains, falling back to the Preamble when the closure is empty.">
+    <input type="checkbox" id="include-defs-checkbox" checked
+           onchange="setIncludeDefs(this.checked)" style="cursor:pointer">
+    <span class="toggle-label-full">Include definitions</span>
+    <span class="toggle-label-short">Defs</span>
+  </label>
+  <label id="coarse-open-toggle"
+         style="display:flex;align-items:center;gap:6px;cursor:pointer;color:#e0e0e0;font-size:12px;white-space:nowrap"
+         title="When on, the DAG shows only coarse-DAG nodes plus non-coarse helpers that are not yet shallowly Lean-closed. Hidden helpers are shallowly closed (themselves closed and all non-coarse descendants closed); imports through them are rewired to surface the underlying coarse dependencies.">
+    <input type="checkbox" id="coarse-open-checkbox"
+           onchange="setCoarseOpenOnly(this.checked)" style="cursor:pointer">
+    <span class="toggle-label-full">Coarse + open only</span>
+    <span class="toggle-label-short">Coarse only</span>
+  </label>
+</header>
+
+<div class="mobile-pane-switcher" id="mobile-pane-switcher">
+  <button type="button" id="mobile-tab-dag" class="active" onclick="setMobilePane('dag')">DAG</button>
+  <button type="button" id="mobile-tab-detail" onclick="setMobilePane('detail')">Details</button>
+</div>
+
+<div class="main">
+  <div class="dag-pane" id="dag-pane">
+    <div id="closure-summary-banner" style="display:none"></div>
+    <svg id="dag-svg"></svg>
+  </div>
+  <div class="detail-resizer" id="detail-resizer" title="Drag to resize; double-click to reset"></div>
+  <div class="detail-pane" id="detail-pane">
+    <div class="detail-close" onclick="setMobilePane('dag')">✕</div>
+    <div class="detail-toolbar">
+      <button class="detail-toggle active" id="mode-node" onclick="setDetailMode('node')">Node</button>
+      <button class="detail-toggle" id="mode-chat" onclick="setDetailMode('chat')">Chats</button>
+      <button class="detail-toggle" id="mode-progress" onclick="setDetailMode('progress')">Progress</button>
+      <button class="detail-toggle" id="mode-usage" onclick="setDetailMode('usage')">Usage</button>
+      <button class="detail-toggle" id="mode-kernel" onclick="setDetailMode('kernel')">Kernel</button>
+    </div>
+    <div id="feedback-container"></div>
+    <div id="detail-content">
+      <h2>Select a node</h2>
+      <p style="color:#6272a4">Tap a node in the DAG to see details.</p>
+    </div>
+  </div>
+</div>
+
+<div class="timeline">
+  <label>Cycle:</label>
+  <button type="button" id="cycle-prev" class="cycle-step" title="Previous cycle" aria-label="Previous cycle">&#8249;</button>
+  <input type="range" id="cycle-slider" min="0" max="0" value="0">
+  <button type="button" id="cycle-next" class="cycle-step" title="Next cycle" aria-label="Next cycle">&#8250;</button>
+  <div class="cycle-info" id="cycle-info">Current</div>
+  <div class="slot-labels" id="timeline-slot-labels"></div>
+</div>
+
+<script>
+// Dagre-lite: simple topological layered layout
+function layoutDAG(nodes, edges) {
+  // Topological sort (Kahn's)
+  const inDeg = {};
+  const adj = {};
+  for (const n of Object.keys(nodes)) { inDeg[n] = 0; adj[n] = []; }
+  for (const [from, to] of edges) {
+    if (adj[to]) adj[to].push(from);
+    if (inDeg[from] !== undefined) inDeg[from]++;
+  }
+
+  // Assign layers (longest path from leaves)
+  const layer = {};
+  const queue = Object.keys(nodes).filter(n => inDeg[n] === 0);
+  for (const n of queue) layer[n] = 0;
+
+  const visited = new Set();
+  const order = [];
+  const q = [...queue];
+  while (q.length) {
+    const n = q.shift();
+    if (visited.has(n)) continue;
+    visited.add(n);
+    order.push(n);
+    for (const child of (adj[n] || [])) {
+      layer[child] = Math.max(layer[child] || 0, (layer[n] || 0) + 1);
+      inDeg[child]--;
+      if (inDeg[child] <= 0) q.push(child);
+    }
+  }
+
+  // Handle unvisited nodes
+  for (const n of Object.keys(nodes)) {
+    if (!visited.has(n)) { layer[n] = 0; order.push(n); }
+  }
+
+  // Group by layer
+  const layers = {};
+  for (const [n, l] of Object.entries(layer)) {
+    if (!layers[l]) layers[l] = [];
+    layers[l].push(n);
+  }
+
+  // Position. Helper nodes are rendered as compact circles, so they also use
+  // a compact layout footprint instead of reserving a full theorem box slot.
+  const nodeW = 180, helperW = 20, nodeH = 40, padX = 40, helperPadX = 18, padY = 60;
+  const footprintW = (name) => isHelperNode(nodes[name]) ? helperW : nodeW;
+  const gapAfter = (name) => isHelperNode(nodes[name]) ? helperPadX : padX;
+  const positions = {};
+  const maxLayer = Math.max(...Object.keys(layers).map(Number));
+
+  for (let l = 0; l <= maxLayer; l++) {
+    const nodesInLayer = layers[l] || [];
+    const totalW = nodesInLayer.reduce((sum, n, i) =>
+      sum + footprintW(n) + (i + 1 < nodesInLayer.length ? gapAfter(n) : 0), 0);
+    let x = -totalW / 2;
+    for (const n of nodesInLayer) {
+      const w = footprintW(n);
+      positions[n] = { x: x + w / 2, y: l * (nodeH + padY) };
+      x += w + gapAfter(n);
+    }
+  }
+
+  return positions;
+}
+
+let allNodes = {}, allCycles = [], timelineSlots = [], selectedNode = null, hoveredNode = null, currentState = {}, liveState = {}, detailMode = 'node', timelineUpdateSeq = 0;
+
+// Heavy per-node content (leanContent / texContent / declaration) is no
+// longer shipped inline in viewer-state.json / state-at — see
+// thinViewerStatePayload in server.js. We lazy-fetch it for the one node
+// the user is viewing. Cache key is `${cycle}::${name}`; hits populate
+// `allNodes[name]` so existing render code reads it transparently.
+const nodeContentCache = new Map();
+const nodeContentInflight = new Map();
+function currentCycleForContent() {
+  const c = currentState && currentState.state && currentState.state.cycle;
+  return (typeof c === 'number' && c > 0) ? c : 'live';
+}
+function applyNodeContent(name, content) {
+  const node = allNodes[name];
+  if (!node || !content) return;
+  node.leanContent = content.leanContent || '';
+  node.texContent = content.texContent || '';
+  node.declaration = content.declaration || '';
+}
+function fetchNodeContent(name) {
+  const cycle = currentCycleForContent();
+  const key = `${cycle}::${name}`;
+  if (nodeContentCache.has(key)) {
+    applyNodeContent(name, nodeContentCache.get(key));
+    return Promise.resolve(nodeContentCache.get(key));
+  }
+  if (nodeContentInflight.has(key)) return nodeContentInflight.get(key);
+  const p = (async () => {
+    const r = await fetch(apiPath(`node-content/${encodeURIComponent(String(cycle))}/${encodeURIComponent(name)}.json`));
+    if (!r.ok) throw new Error(`node-content/${cycle}/${name} -> ${r.status}`);
+    const data = await r.json();
+    const content = {
+      leanContent: data.leanContent || '',
+      texContent: data.texContent || '',
+      declaration: data.declaration || '',
+    };
+    nodeContentCache.set(key, content);
+    applyNodeContent(name, content);
+    return content;
+  })().finally(() => nodeContentInflight.delete(key));
+  nodeContentInflight.set(key, p);
+  return p;
+}
+
+// ---------------------------------------------------------------------------
+// DAG-filter toggles (persist in localStorage).
+//
+// "Include definitions" (default ON). When OFF: nodes whose kind=="definition"
+// are hidden from every DAG view.
+//
+// "Coarse + open only" (default OFF). When ON: only coarse-DAG nodes plus
+// non-coarse helpers that are not yet *shallowly* Lean-closed are shown. A
+// non-coarse node x is shallowly closed iff x itself is committed-closed AND
+// every non-coarse-DAG transitive dep of x (descending through `imports`,
+// stopping AT coarse-DAG nodes) is committed-closed. Mirrors the predicate
+// in viewer/server.js `isCoarseShallowlyClosed`.
+//
+// Both toggles compose: a node is hidden if either filter would hide it.
+// Hidden imports are rewired through the closure of hidden→hidden chains so
+// each visible node's import list bottoms out at visible nodes (definitions
+// rewire to their first non-definition ancestors; closed helpers rewire to
+// the coarse-DAG nodes that ultimately back them). If a visible node's
+// closure is empty, it falls back to importing the Preamble so the rewired
+// DAG stays connected and rooted.
+// ---------------------------------------------------------------------------
+const INCLUDE_DEFS_STORAGE_KEY = 'trellis.viewer.includeDefs';
+const COARSE_OPEN_STORAGE_KEY = 'trellis.viewer.coarseOpenOnly';
+const PREAMBLE_NAME = 'Preamble';
+
+function readIncludeDefs() {
+  try {
+    const raw = localStorage.getItem(INCLUDE_DEFS_STORAGE_KEY);
+    if (raw === '0' || raw === 'false') return false;
+  } catch {}
+  return true;  // default ON
+}
+
+function readCoarseOpenOnly() {
+  try {
+    const raw = localStorage.getItem(COARSE_OPEN_STORAGE_KEY);
+    if (raw === '1' || raw === 'true') return true;
+  } catch {}
+  return false;  // default OFF
+}
+
+let includeDefs = readIncludeDefs();
+let coarseOpenOnly = readCoarseOpenOnly();
+// Memo for the "first visible ancestors" closure. Keyed by hidden-node name;
+// value is a Set of visible-node names. Invalidated on every fresh allNodes
+// assignment (and on toggle changes) via invalidateDefClosure().
+let defClosureMemo = new Map();
+// Memo for the per-node shallow-closure-from-coarse predicate. Keyed by node
+// name; boolean value. Invalidated whenever `coarseOpenOnly` flips, allNodes
+// is reassigned, or committed.{present,open}_nodes changes (i.e. a fresh
+// currentState landing).
+let shallowClosedMemo = new Map();
+
+function invalidateDefClosure() {
+  defClosureMemo = new Map();
+  shallowClosedMemo = new Map();
+}
+
+function isDefinitionNode(node) {
+  return !!node && String(node.kind || '').toLowerCase() === 'definition';
+}
+
+function isHelperNode(node) {
+  return !!node && String(node.texEnv || '').toLowerCase() === 'helper';
+}
+
+function coarseDagSet() {
+  const raw = currentState?.state?.coarse_dag_nodes;
+  return new Set(Array.isArray(raw) ? raw : []);
+}
+
+// Shallow-closure-from-coarse predicate. Returns true iff `name` is committed-
+// closed AND every non-coarse-DAG transitive dep (through `imports`, stopping
+// AT coarse-DAG nodes) is committed-closed. Mirrors viewer/server.js
+// `isCoarseShallowlyClosed`. Cycle-safe (a cycle in the deps would be a
+// kernel bug, but the stack guard keeps us from looping).
+function isShallowlyClosedFromCoarse(name, coarseSet, stack) {
+  if (shallowClosedMemo.has(name)) return shallowClosedMemo.get(name);
+  if (stack.has(name)) return true;  // cycle guard
+  const node = allNodes[name];
+  if (!node) { shallowClosedMemo.set(name, false); return false; }
+  if (!isCommittedClosed(name, allNodes)) {
+    shallowClosedMemo.set(name, false);
+    return false;
+  }
+  stack.add(name);
+  for (const imp of (node.imports || [])) {
+    if (!allNodes[imp]) continue;
+    if (coarseSet.has(imp)) continue;  // STOP at coarse-DAG boundary
+    if (!isShallowlyClosedFromCoarse(imp, coarseSet, stack)) {
+      stack.delete(name);
+      shallowClosedMemo.set(name, false);
+      return false;
+    }
+  }
+  stack.delete(name);
+  shallowClosedMemo.set(name, true);
+  return true;
+}
+
+// Combined hidden-node predicate. A node is hidden iff:
+//   - includeDefs is OFF and the node is a definition, OR
+//   - coarseOpenOnly is ON and the node is non-coarse AND shallowly closed.
+function isHiddenNode(name, node, coarseSet) {
+  if (!node) return false;
+  if (!includeDefs && isDefinitionNode(node)) return true;
+  if (coarseOpenOnly) {
+    const cs = coarseSet || coarseDagSet();
+    if (!cs.has(name) && isShallowlyClosedFromCoarse(name, cs, new Set())) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// Visible-node map (after applying both DAG filters).
+function getVisibleNodes() {
+  if (includeDefs && !coarseOpenOnly) return allNodes;
+  const coarseSet = coarseOpenOnly ? coarseDagSet() : null;
+  const out = {};
+  for (const [name, node] of Object.entries(allNodes)) {
+    if (!isHiddenNode(name, node, coarseSet)) out[name] = node;
+  }
+  return out;
+}
+
+// Resolve a hidden node's "first visible ancestors" — the set of visible-node
+// names reachable by transitively dipping through hidden imports. Memoized;
+// cycle-safe.
+function definitionClosureFor(hiddenName, stack) {
+  if (defClosureMemo.has(hiddenName)) return defClosureMemo.get(hiddenName);
+  if (stack.has(hiddenName)) return new Set();  // cycle guard
+  stack.add(hiddenName);
+  const node = allNodes[hiddenName];
+  const coarseSet = coarseOpenOnly ? coarseDagSet() : null;
+  const out = new Set();
+  for (const imp of (node?.imports || [])) {
+    const sub = allNodes[imp];
+    if (!sub) continue;
+    if (isHiddenNode(imp, sub, coarseSet)) {
+      for (const v of definitionClosureFor(imp, stack)) out.add(v);
+    } else {
+      out.add(imp);
+    }
+  }
+  stack.delete(hiddenName);
+  defClosureMemo.set(hiddenName, out);
+  return out;
+}
+
+// Rewired imports for a visible node. With both toggles default (defs in,
+// coarse-open off), returns `node.imports` filtered to known nodes. Otherwise
+// rewires through hidden→hidden chains; falls back to [PREAMBLE_NAME] for
+// non-Preamble nodes whose closure came up empty so the DAG stays rooted.
+function getVisibleImports(name) {
+  const node = allNodes[name];
+  if (!node) return [];
+  const raw = node.imports || [];
+  if (includeDefs && !coarseOpenOnly) {
+    const out = [];
+    for (const imp of raw) if (allNodes[imp]) out.push(imp);
+    return out;
+  }
+  const coarseSet = coarseOpenOnly ? coarseDagSet() : null;
+  const seen = new Set();
+  const out = [];
+  for (const imp of raw) {
+    const sub = allNodes[imp];
+    if (!sub) continue;
+    if (isHiddenNode(imp, sub, coarseSet)) {
+      for (const v of definitionClosureFor(imp, new Set())) {
+        if (!seen.has(v)) { seen.add(v); out.push(v); }
+      }
+    } else {
+      if (!seen.has(imp)) { seen.add(imp); out.push(imp); }
+    }
+  }
+  if (out.length === 0 && name !== PREAMBLE_NAME && allNodes[PREAMBLE_NAME]) {
+    out.push(PREAMBLE_NAME);
+  }
+  return out;
+}
+
+function applyDagFilterChange() {
+  invalidateDefClosure();
+  // If the currently-selected node became invisible under the new filter
+  // combination, drop the selection so the Node detail tab doesn't keep
+  // displaying a node that no longer appears anywhere in the DAG.
+  if (selectedNode && allNodes[selectedNode]
+      && isHiddenNode(selectedNode, allNodes[selectedNode], coarseOpenOnly ? coarseDagSet() : null)) {
+    selectedNode = null;
+  }
+  // Re-render everything that depends on the visible-node set / rewired edges.
+  lastNodeRenderKey = null;
+  // Progress tab caches its rendered chart by a key that includes includeDefs;
+  // invalidate so it repaints on toggle.
+  lastProgressDataKey = null;
+  // Preserve current viewBox before the DAG re-renders.
+  const svg = document.getElementById('dag-svg');
+  const savedVB = svg ? svg.getAttribute('viewBox') : null;
+  renderHeader();
+  renderDAG();
+  if (savedVB && svg) svg.setAttribute('viewBox', savedVB);
+  renderCurrentDetail();
+}
+
+function setIncludeDefs(value) {
+  const next = !!value;
+  if (next === includeDefs) return;
+  includeDefs = next;
+  try { localStorage.setItem(INCLUDE_DEFS_STORAGE_KEY, next ? '1' : '0'); } catch {}
+  const cb = document.getElementById('include-defs-checkbox');
+  if (cb) cb.checked = next;
+  applyDagFilterChange();
+}
+
+function setCoarseOpenOnly(value) {
+  const next = !!value;
+  if (next === coarseOpenOnly) return;
+  coarseOpenOnly = next;
+  try { localStorage.setItem(COARSE_OPEN_STORAGE_KEY, next ? '1' : '0'); } catch {}
+  const cb = document.getElementById('coarse-open-checkbox');
+  if (cb) cb.checked = next;
+  applyDagFilterChange();
+}
+
+function activeNodeNames(kind) {
+  const visible = getVisibleNodes();
+  return Object.entries(visible)
+    .filter(([, node]) => !!(node.activity && node.activity[kind]))
+    .map(([name]) => name);
+}
+
+function summarizeNames(names, limit = 3) {
+  if (!names.length) return '';
+  if (names.length <= limit) return names.join(', ');
+  return `${names.slice(0, limit).join(', ')} +${names.length - limit} more`;
+}
+
+function currentActivityText() {
+  const meta = currentState?.meta || {};
+  const state = currentState?.state || {};
+  const corr = activeNodeNames('correspondence');
+  const sound = activeNodeNames('soundness');
+  const review = activeNodeNames('reviewer');
+  const worker = activeNodeNames('worker');
+  const openRejections = Array.isArray(state.open_rejections) ? state.open_rejections : [];
+
+  if (openRejections.some(text => String(text || '').startsWith('authoritative checker mismatch:'))) {
+    return 'Current activity: authoritative checker mismatch flagged';
+  }
+
+  if (corr.length) return `Current activity: correspondence verification on ${summarizeNames(corr)}`;
+  if (sound.length) return `Current activity: NL proof soundness on ${summarizeNames(sound)}`;
+  if (review.length) return `Current activity: reviewer decision on ${summarizeNames(review)}`;
+  if (worker.length) return `Current activity: worker edits on ${summarizeNames(worker)}`;
+
+  if (meta.source === 'worker') return 'Current activity: worker burst';
+  if (meta.source === 'verification') return 'Current activity: verification';
+  if (meta.source === 'reviewer') return 'Current activity: reviewer decision';
+  if (meta.source === 'invalid') return 'Current activity: invalid attempt review';
+  if (meta.source === 'cycle' || meta.source === 'git') return 'Current activity: committed cycle snapshot';
+  if (state.awaiting_human_input) return 'Current activity: awaiting human input';
+  return 'Current activity: idle';
+}
+
+function renderHeader() {
+  const liveCycle = currentState.meta?.in_flight_cycle ?? currentState.state?.cycle ?? '?';
+  const openRejections = Array.isArray(currentState?.state?.open_rejections) ? currentState.state.open_rejections : [];
+  const rejectionSuffix = openRejections.length ? ` | Rejections: ${openRejections.length}` : '';
+  const visible = getVisibleNodes();
+  const visibleNames = Object.keys(visible);
+  const closedCount = visibleNames.filter(name => isCommittedClosed(name, visible)).length;
+  // Patch C unverified count over the visible set: one of "closed-but-unverified"
+  // is still a Lean obligation per §12.1, surfaced inline in the status line.
+  const unverifiedCount = visibleNames.filter(name => getClosureStatus(name) === 'unverified').length;
+  const unverifiedSuffix = unverifiedCount ? ` | unverified: ${unverifiedCount}` : '';
+  const defsHiddenSuffix = includeDefs ? '' : ' | defs hidden';
+  document.getElementById('header-status').textContent =
+    `Cycle ${liveCycle} | Phase: ${currentState.state.phase} | ${closedCount}/${visibleNames.length} closed${unverifiedSuffix}${rejectionSuffix}${defsHiddenSuffix}`;
+  document.getElementById('header-activity').textContent = currentActivityText();
+  renderClosureSummaryBanner();
+}
+
+// Patch C local-closure summary banner. Reads
+// `currentState.local_closure_summary` (injected by viewer/server.js's
+// `augmentViewerStateClosure`). Hidden when the count is zero or the field is
+// absent; otherwise shows total unverified, transport vs script error split,
+// and the latest 3 failure messages so the operator can triage from the DAG
+// view without opening per-node detail panes.
+function renderClosureSummaryBanner() {
+  const banner = document.getElementById('closure-summary-banner');
+  if (!banner) return;
+  const summary = currentState?.local_closure_summary;
+  if (!summary || !summary.unverified_count) {
+    banner.style.display = 'none';
+    banner.innerHTML = '';
+    return;
+  }
+  const counts = [
+    `total <code>${summary.unverified_count}</code>`,
+    `transport <code>${summary.transport_error_count || 0}</code>`,
+    `script <code>${summary.script_error_count || 0}</code>`,
+    `other <code>${summary.other_error_count || 0}</code>`,
+    `records <code>${summary.record_count || 0}</code>`,
+  ];
+  const latest = Array.isArray(summary.latest_failures) ? summary.latest_failures : [];
+  const items = latest.map(f => {
+    const node = escHtml(String(f.node || '?'));
+    const status = escHtml(String(f.status || ''));
+    const stderr = escHtml(String(f.stderr_excerpt || '').slice(0, 160));
+    const cycle = f.captured_at_cycle ? ` @ cycle ${f.captured_at_cycle}` : '';
+    const violations = (f.axiom_violations || []).slice(0, 2).map(escHtml).join(', ');
+    const strict = (f.strict_errors || []).slice(0, 2).map(escHtml).join(', ');
+    const detail = [
+      stderr ? `<span style="color:#d8d8d8">${stderr}</span>` : '',
+      violations ? `<span style="color:#ff79c6">axioms: ${violations}</span>` : '',
+      strict ? `<span style="color:#ff79c6">strict: ${strict}</span>` : '',
+    ].filter(Boolean).join(' &middot; ');
+    return `<li><code>${node}</code> &middot; <span style="color:#ffb86c">${status}</span>${cycle}${detail ? ' &middot; ' + detail : ''}</li>`;
+  }).join('');
+  banner.innerHTML = `
+    <h3>Local-closure unverified</h3>
+    <div class="closure-counts">${counts.map(c => `<span>${c}</span>`).join('')}</div>
+    ${items ? `<ul>${items}</ul>` : '<div style="color:#a0a0a0">No failure summaries published.</div>'}
+  `;
+  banner.style.display = '';
+}
+
+function liveCycleNumber() {
+  return liveState?.meta?.in_flight_cycle ?? liveState?.state?.cycle ?? currentState?.meta?.in_flight_cycle ?? currentState?.state?.cycle ?? '?';
+}
+
+function appBasePath() {
+  const path = (window.location.pathname || '/').replace(/\/index\.html$/, '');
+  if (!path || path === '/') return '';
+  return path.endsWith('/') ? path.slice(0, -1) : path;
+}
+
+function apiPath(rel) {
+  return `${appBasePath()}/api/${rel}`.replace(/^\/\//, '/');
+}
+
+async function fetchViewerState(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url} -> ${res.status}`);
+  return res.json();
+}
+
+// Paper-defined KaTeX macros, parsed from <project>/paper/header.tex.
+// Empty until loadPaperHeaderMacros() finishes; renderTexInto merges
+// these into KaTeX's `macros` option so paper-preamble shortcuts
+// (\p, \e, \PP, \floor, ...) render in the viewer.
+let paperMacros = {};
+async function loadPaperHeaderMacros() {
+  try {
+    const r = await fetch(apiPath('paper-header.tex'));
+    if (!r.ok) return;
+    const text = await r.text();
+    const re = /^\s*\\(?:re)?newcommand\s*\{\\([A-Za-z]+)\}(?:\[(\d+)\])?\s*\{(.+)\}\s*$/;
+    const out = {};
+    for (const line of text.split('\n')) {
+      if (/^\s*%/.test(line) || !line.trim()) continue;
+      const m = line.match(re);
+      if (!m) continue;
+      // Skip macros whose body uses commands KaTeX can't render
+      // (notably \todo from author-markup macros if anyone keeps them).
+      if (/\\todo\b/.test(m[3])) continue;
+      out['\\' + m[1]] = m[3];
+    }
+    paperMacros = out;
+  } catch {
+    // best-effort: no header.tex / network blip → fall back to defaults
+  }
+}
+
+async function fetchData() {
+  try {
+    const [viewerRes, cyclesRes] = await Promise.all([
+      fetchViewerState(apiPath('viewer-state.json')),
+      fetch(apiPath('cycles.json')).then(async r => {
+        if (!r.ok) throw new Error(`cycles.json -> ${r.status}`);
+        return r.json();
+      }),
+      loadPaperHeaderMacros(),
+    ]);
+    allNodes = viewerRes.nodes || {};
+    invalidateDefClosure();
+    liveState = viewerRes;
+    currentState = viewerRes;
+    allCycles = cyclesRes;
+    // Drop semantic-closure cache entries from stale cycles. Server-side
+    // cache is per-cycle too, so a cleared client cache just means the
+    // next click hits a fast cached server response, not a slow recompute.
+    maybeInvalidateSemanticClosureCache();
+    renderHeader();
+
+    // Setup slider
+    const slider = document.getElementById('cycle-slider');
+    const cycleNums = Array.from(new Set(allCycles.map(c => c.cycle))).sort((a, b) => a - b);
+    timelineSlots = [...cycleNums, 'current'];
+    slider.min = 0;
+    slider.max = Math.max(timelineSlots.length - 1, 0);
+    slider.value = slider.max;
+    renderTimelineSlotLabels();
+    updateCycleInfo();
+    prewarmHistoricalStates(cycleNums);
+
+    renderDAG();
+    renderFeedbackPanel();
+    renderCurrentDetail();
+  } catch (err) {
+    document.getElementById('header-status').textContent = `Viewer load failed: ${err.message}`;
+    document.getElementById('header-activity').textContent = 'Current activity: unavailable';
+    console.error(err);
+  }
+}
+
+function isRecursivelyClosed(name, nodes) {
+  const node = nodes[name];
+  if (!node || !isCommittedClosed(name, nodes)) return false;
+  // Walk the rewired (visible) imports so the recursive-closed predicate
+  // matches what the user sees in the DAG. With the toggle ON this is
+  // identical to walking node.imports filtered to known nodes; with the
+  // toggle OFF it skips definition nodes (correct: their closure feeds
+  // straight into the visible imports), and a node anchored only to the
+  // Preamble (closure was empty) inherits closed-ness from Preamble.
+  for (const imp of getVisibleImports(name)) {
+    if (!nodes[imp]) continue;
+    if (!isRecursivelyClosed(imp, nodes)) return false;
+  }
+  return true;
+}
+
+function isCommittedClosed(name, nodes) {
+  const node = nodes[name];
+  if (!node) return false;
+  const committed = currentState?.state?.committed || {};
+  const present = Array.isArray(committed.present_nodes) ? committed.present_nodes : null;
+  const open = Array.isArray(committed.open_nodes) ? committed.open_nodes : null;
+  if (!present || !open) return node.status === 'closed';
+  return present.includes(name) && !open.includes(name);
+}
+
+// Patch C local-closure status (per LOCAL_CLOSURE_IMPL_PLAN.md §9). Reads
+// `closure_status` injected by viewer/server.js's `augmentViewerStateClosure`.
+// Falls back to deriving from raw state fields if the augmentation is missing
+// (e.g., older server build), and to 'verified'/'open' (legacy two-state) when
+// the Patch C fields aren't published yet.
+//
+// Tier alignment (audit LOW fix): coloring is committed-DAG-based (uses
+// `committed.open_nodes`/`present_nodes`), so the fallback prefers the
+// committed closure mirrors (`committed_local_closure_*`) over the live-tier
+// fields. Live fields are only used when the committed mirror is absent
+// (pre-Patch-C-A snapshot or migrated state without mirror-ready).
+function getClosureStatus(name) {
+  const cs = currentState?.closure_status;
+  if (cs && Object.prototype.hasOwnProperty.call(cs, name)) {
+    return cs[name];
+  }
+  const state = currentState?.state || {};
+  const committed = state.committed || {};
+  const present = Array.isArray(committed.present_nodes) ? committed.present_nodes : null;
+  const open = Array.isArray(committed.open_nodes) ? committed.open_nodes : null;
+  const unverified = Array.isArray(state.committed_local_closure_unverified_nodes)
+    ? state.committed_local_closure_unverified_nodes
+    : (Array.isArray(state.local_closure_unverified_nodes)
+        ? state.local_closure_unverified_nodes // fallback
+        : []);
+  // `committed_local_closure_records` is no longer shipped on the wire — the
+  // server now ships only `local_closure_records` (same key set as the
+  // committed mirror in practice; only ~10/405 values differ, none of which
+  // this lookup cares about — only existence is checked).
+  const records = (state.local_closure_records && typeof state.local_closure_records === 'object')
+    ? state.local_closure_records
+    : {};
+  if (present && !present.includes(name)) return 'absent';
+  if (open && open.includes(name)) return 'open';
+  if (unverified.includes(name)) return 'unverified';
+  if (records[name]) return 'verified';
+  return 'verified';
+}
+
+function getNodeClass(name, nodes) {
+  const node = nodes[name];
+  if (!node) return 'open';
+  if (currentState.state.active_node === name) return 'active';
+  // Compose closure-status class with the legacy closed/open class. The
+  // unverified flag is orthogonal to recursive-closed (a recursively closed
+  // sub-DAG can still contain unverified nodes), so emit BOTH classes — CSS
+  // overrides via .node.unverified take care of the color swap.
+  let base;
+  if (isRecursivelyClosed(name, nodes)) base = 'recursive-closed';
+  else if (isCommittedClosed(name, nodes)) base = 'closed';
+  else base = 'open';
+  const closure = getClosureStatus(name);
+  return closure === 'unverified' ? `${base} unverified` : base;
+}
+
+// Build the SVG <title> tooltip text for a node. For Patch C unverified
+// nodes, surface the failure summary (status, returncode, stderr excerpt,
+// axiom_violations, strict_errors). For verified/open nodes, return a brief
+// status line — the existing detail pane handles full info on click.
+function nodeHoverTooltip(name) {
+  const closure = getClosureStatus(name);
+  const lines = [];
+  lines.push(`${name}`);
+  lines.push(`closure: ${closure}`);
+  if (closure === 'unverified') {
+    // Tier alignment: prefer committed mirror over live-tier field so the
+    // tooltip's failure summary stays consistent with the committed-DAG
+    // coloring (per audit LOW fix).
+    const failures = currentState?.state?.committed_local_closure_failures
+      || currentState?.state?.local_closure_failures // fallback
+      || {};
+    const f = failures[name];
+    if (f && typeof f === 'object') {
+      if (f.status) lines.push(`status: ${f.status}`);
+      if (f.returncode !== undefined && f.returncode !== null) lines.push(`rc: ${f.returncode}`);
+      if (f.retry_count) lines.push(`retries: ${f.retry_count}${f.retry_exhausted ? ' (exhausted)' : ''}`);
+      const violations = Array.isArray(f.axiom_violations) ? f.axiom_violations : [];
+      if (violations.length) {
+        lines.push(`axiom violations: ${violations.slice(0, 4).join(', ')}${violations.length > 4 ? ` +${violations.length - 4} more` : ''}`);
+      }
+      const strict = Array.isArray(f.strict_errors) ? f.strict_errors : [];
+      if (strict.length) {
+        lines.push(`strict errors: ${strict.slice(0, 4).join(', ')}${strict.length > 4 ? ` +${strict.length - 4} more` : ''}`);
+      }
+      const stderr = String(f.stderr_excerpt || '').trim();
+      if (stderr) {
+        const trimmed = stderr.length > 240 ? stderr.slice(0, 240) + '…' : stderr;
+        lines.push(`stderr: ${trimmed}`);
+      }
+    } else {
+      lines.push('(no failure summary published yet)');
+    }
+  }
+  return lines.join('\n');
+}
+
+function getWorkerFocusName() {
+  const state = currentState?.state || {};
+  const meta = currentState?.meta || {};
+  if (meta.source !== 'worker') return '';
+  if (state.phase === 'theorem_stating') return state.active_node || state.theorem_soundness_target || '';
+  if (state.phase === 'proof_formalization') return state.active_node || '';
+  return '';
+}
+
+function renderDAG() {
+  const svg = document.getElementById('dag-svg');
+  svg.innerHTML = '';
+
+  // When the toggle is OFF, definition nodes are dropped from the visible
+  // set and import edges are rewired through getVisibleImports() so the
+  // surviving DAG stays connected (with the Preamble as the root fallback).
+  const visibleNodes = getVisibleNodes();
+  const names = Object.keys(visibleNodes);
+  if (!names.length) return;
+
+  // Build edges: child -> parent (import direction). Rewired imports are
+  // used so definition→definition chains have already been collapsed.
+  const edges = [];
+  for (const name of names) {
+    for (const imp of getVisibleImports(name)) {
+      if (visibleNodes[imp]) edges.push([name, imp]); // name depends on imp
+    }
+  }
+
+  const positions = layoutDAG(visibleNodes, edges);
+
+  // Shift to positive coordinates
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of Object.values(positions)) {
+    minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
+  }
+  const offX = -minX + 120, offY = -minY + 40;
+  for (const p of Object.values(positions)) { p.x += offX; p.y += offY; }
+
+  svg.setAttribute('viewBox', `0 0 ${maxX - minX + 280} ${maxY - minY + 120}`);
+
+  const ns = 'http://www.w3.org/2000/svg';
+  const workerFocusName = getWorkerFocusName();
+
+  // Arrow marker
+  const defs = document.createElementNS(ns, 'defs');
+  const marker = document.createElementNS(ns, 'marker');
+  marker.setAttribute('id', 'arrow'); marker.setAttribute('viewBox', '0 0 10 10');
+  marker.setAttribute('refX', '10'); marker.setAttribute('refY', '5');
+  marker.setAttribute('markerWidth', '8'); marker.setAttribute('markerHeight', '8');
+  marker.setAttribute('orient', 'auto-start-reverse');
+  const arrowPath = document.createElementNS(ns, 'path');
+  arrowPath.setAttribute('d', 'M 0 0 L 10 5 L 0 10 z');
+  arrowPath.setAttribute('fill', 'context-stroke');
+  marker.appendChild(arrowPath); defs.appendChild(marker); svg.appendChild(defs);
+
+  const nodeHalfHeight = (name) => isHelperNode(visibleNodes[name]) ? 10 : 20;
+
+  // Draw edges — style encodes soundness status of the importing (from) node.
+  // Since dependencies sit above their importers in the layered layout, draw
+  // each edge from the top of the lower node to the bottom of the upper node
+  // so the arrowhead remains visible outside the target box.
+  for (const [from, to] of edges) {
+    const p1 = positions[from], p2 = positions[to];
+    if (!p1 || !p2) continue;
+    const fromNode = visibleNodes[from];
+    const soundnessWorking = !!fromNode?.activity?.soundness;
+    const proofStatus = fromNode?.verification?.nl_proof || '?';
+    const edgeStatusClass =
+      isCommittedClosed(from, visibleNodes) ? ' to-closed' :
+      (proofStatus === 'pass' ? ' edge-nl-pass' :
+       (proofStatus === 'fail' || proofStatus === 'structural' ? ' edge-failed' : ' edge-unknown'));
+    const line = document.createElementNS(ns, 'line');
+    line.setAttribute('x1', p1.x); line.setAttribute('y1', p1.y - nodeHalfHeight(from));
+    line.setAttribute('x2', p2.x); line.setAttribute('y2', p2.y + nodeHalfHeight(to));
+    line.setAttribute(
+      'class',
+      'edge'
+      + edgeStatusClass
+      + (soundnessWorking ? ' soundness-working' : '')
+    );
+    line.setAttribute('marker-end', 'url(#arrow)');
+    line.dataset.from = from;
+    line.dataset.to = to;
+    svg.appendChild(line);
+  }
+
+  // Draw nodes
+  for (const [name, pos] of Object.entries(positions)) {
+    const node = visibleNodes[name];
+    if (!node) continue;
+    const cls = getNodeClass(name, visibleNodes);
+
+    const g = document.createElementNS(ns, 'g');
+    const diffCls = (node.difficulty === 'easy') ? 'easy' : 'hard';
+    g.setAttribute(
+      'class',
+      `node ${cls} ${diffCls}`
+      + (selectedNode === name ? ' selected' : '')
+      + (workerFocusName === name ? ' worker-working' : '')
+      + (node.activity?.reviewer ? ' reviewer-working' : '')
+      + (node.activity?.correspondence ? ' correspondence-working' : '')
+    );
+    g.style.cursor = 'pointer';
+    g.onclick = () => selectNode(name);
+    g.onmouseenter = () => {
+      hoveredNode = name;
+      updateEdgeEmphasis();
+    };
+    g.onmouseleave = () => {
+      if (hoveredNode === name) hoveredNode = null;
+      updateEdgeEmphasis();
+    };
+
+    // Shape selection:
+    //   definition node → diamond (rotated square via polygon)
+    //   helper node → compact circle without an in-node label
+    //   proof-bearing node → rectangle; paper-target covering nodes get
+    //     square corners, all others get rounded corners.
+    const theoremLike = ['theorem', 'corollary', 'proposition'].includes(node.texEnv);
+    const helperLike = isHelperNode(node);
+    // `isDefinition` is precomputed server-side (see thinViewerStatePayload)
+    // so the DAG shape selector doesn't need the full Lean source.
+    const definitionLike = node.isDefinition === true
+      || node.texEnv === 'definition'
+      || (node.leanContent || '').match(/^(noncomputable\s+)?def\s/m);
+    const W = 180, H = 40, helperD = H / 2, helperR = helperD / 2;
+    g.setAttribute('transform', helperLike
+      ? `translate(${pos.x - helperR}, ${pos.y - helperR})`
+      : `translate(${pos.x - W / 2}, ${pos.y - H / 2})`);
+    let shape;
+    if (helperLike) {
+      shape = document.createElementNS(ns, 'circle');
+      shape.setAttribute('cx', helperR); shape.setAttribute('cy', helperR); shape.setAttribute('r', helperR);
+    } else if (definitionLike) {
+      shape = document.createElementNS(ns, 'polygon');
+      // Diamond inscribed in the same 180×40 box: top, right, bottom, left.
+      shape.setAttribute('points', `${W/2},0 ${W},${H/2} ${W/2},${H} 0,${H/2}`);
+    } else {
+      shape = document.createElementNS(ns, 'rect');
+      shape.setAttribute('width', W); shape.setAttribute('height', H);
+      const cornerR = node.coversTarget ? 0 : 12;
+      shape.setAttribute('rx', cornerR); shape.setAttribute('ry', cornerR);
+    }
+    const rect = shape;  // alias kept so downstream stroke/fill writes still work
+    g.appendChild(shape);
+
+    // Hover tooltip — uses native SVG <title> so the browser surfaces it via
+    // the standard hover delay. For Patch C unverified nodes, includes the
+    // failure status, returncode, stderr excerpt, axiom violations and strict
+    // errors so the operator can triage without leaving the DAG view.
+    {
+      const titleEl = document.createElementNS(ns, 'title');
+      titleEl.textContent = nodeHoverTooltip(name);
+      g.appendChild(titleEl);
+    }
+
+    // Difficulty label above the name (suppressed for definition nodes —
+    // easy/hard is a proof-effort signal that doesn't apply to defs).
+    const diff = node.difficulty || '';
+    const showDiff = diff && !definitionLike && !helperLike;
+    if (showDiff) {
+      const diffText = document.createElementNS(ns, 'text');
+      diffText.setAttribute('x', 90); diffText.setAttribute('y', 13);
+      diffText.setAttribute('text-anchor', 'middle');
+      diffText.setAttribute('class', diff === 'easy' ? 'diff-easy' : 'diff-hard');
+      diffText.textContent = diff === 'easy' ? 'easy' : 'hard';
+      g.appendChild(diffText);
+    }
+    const kindPrefix = node.kind === 'preamble' ? '' :
+      definitionLike ? 'D: ' :
+      helperLike ? 'H: ' :
+      theoremLike ? 'T: ' : 'L: ';
+    const label = (kindPrefix + (node.title || name)).substring(0, 26);
+    if (!helperLike) {
+      const text = document.createElementNS(ns, 'text');
+      text.setAttribute('x', 90); text.setAttribute('y', showDiff ? 28 : 24);
+      text.setAttribute('text-anchor', 'middle');
+      text.textContent = label;
+      g.appendChild(text);
+    }
+
+    // Node border style encodes correspondence status
+    const verif = node.verification || {};
+    const corrStatus = node.kind === 'preamble' ? 'pass' : (verif.correspondence || '?');
+    if (corrStatus === 'fail') rect.setAttribute('stroke-dasharray', '2 3');       // dotted
+    else if (corrStatus === '?') rect.setAttribute('stroke-dasharray', '8 4');     // dashed
+    // else solid (no dasharray)
+    svg.appendChild(g);
+  }
+
+  updateEdgeEmphasis();
+}
+
+function selectNode(name) {
+  selectedNode = name;
+  // Preserve current viewBox before re-render
+  const svg = document.getElementById('dag-svg');
+  const savedVB = svg.getAttribute('viewBox');
+  renderDAG();
+  if (savedVB) svg.setAttribute('viewBox', savedVB);
+  renderCurrentDetail();
+  // On mobile, swap to the Details pane so the tap feels like a drill-down.
+  setMobilePane('detail');
+}
+
+function updateEdgeEmphasis() {
+  const active = hoveredNode || selectedNode;
+  document.querySelectorAll('#dag-svg .edge').forEach(edge => {
+    const dependencyEdge = active && edge.dataset.from === active;
+    edge.classList.toggle('active', !!dependencyEdge);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Per-node semantic-closure cache + helpers (client side).
+//
+// The supervisor caches semantic-payload sidecars on disk; the server-side
+// `/api/semantic-closure/:node` endpoint pre-caches the closure-name list
+// per (cycle, node). We additionally cache the same value here in the
+// browser, keyed on cycle, so an auto-refresh re-render restores the
+// populated body synchronously without flashing back to "loading…".
+//
+// Cache shape: Map<string, {closure: string[]|null, cached: bool, cycle: number}>.
+// Key: `${cycle}:${node}`. Cleared on cycle advance via fetchData/maybeBumpCycle.
+// ---------------------------------------------------------------------------
+const semanticClosureClientCache = new Map();
+let semanticClosureClientCycle = null;
+
+function maybeInvalidateSemanticClosureCache() {
+  // Called from fetchData when the live state arrives. If the live cycle
+  // has advanced since our last cached entry, drop everything: the
+  // server side has already invalidated under the hood, and our keys
+  // include the cycle, so old entries just become unreachable. Cheap
+  // explicit clear keeps memory tidy.
+  const liveCycle = liveState?.state?.cycle;
+  if (typeof liveCycle === 'number' && liveCycle !== semanticClosureClientCycle) {
+    semanticClosureClientCache.clear();
+    semanticClosureClientCycle = liveCycle;
+  }
+}
+
+function renderSemanticClosureBody(name) {
+  const cycle = liveState?.state?.cycle;
+  if (typeof cycle !== 'number') return '';
+  const cached = semanticClosureClientCache.get(`${cycle}:${name}`);
+  if (!cached) return '';
+  return formatSemanticClosureHtml(cached);
+}
+
+function formatSemanticClosureHtml(data) {
+  const closure = data && Array.isArray(data.closure) ? data.closure : null;
+  if (closure === null) {
+    return `<span style="color:#6272a4">no cached semantic-payload yet — this node may be newly introduced or its cache entry was evicted. The supervisor will populate it on its next observation pass.</span>`;
+  }
+  if (closure.length === 0) {
+    return `<span style="color:#6272a4">(empty — no project-defined Tablet nodes in this seed's type-surface closure; all external/Mathlib)</span>`;
+  }
+  const sorted = [...closure].sort();
+  const links = sorted.map((dep) => {
+    const safe = String(dep).replace(/[^A-Za-z0-9_]/g, '');
+    if (!safe || !allNodes[safe]) return escHtml(String(dep));
+    return `<a href="#" onclick="event.preventDefault(); selectNode('${safe}');" style="color:#8be9fd;text-decoration:none">${escHtml(dep)}</a>`;
+  }).join(', ');
+  const meta = data.cached ? ` <span style="color:#6272a4;font-size:10px">(cycle ${data.cycle}, cached)</span>` : '';
+  return `${links}${meta}<div style="color:#6272a4;font-size:10px;margin-top:4px">${sorted.length} node${sorted.length === 1 ? '' : 's'} — theorem closures hash the seed's TYPE only; proof-only dependencies are excluded.</div>`;
+}
+
+let semanticClosureInFlight = new Set(); // names with an active fetch
+
+async function loadSemanticClosure(name, bodyElementId) {
+  const cycle = liveState?.state?.cycle;
+  if (typeof cycle !== 'number') return;
+  const key = `${cycle}:${name}`;
+  // If we already have a result, repopulate (in case the body got reset).
+  const cached = semanticClosureClientCache.get(key);
+  if (cached) {
+    const body = document.getElementById(bodyElementId);
+    if (body) body.innerHTML = formatSemanticClosureHtml(cached);
+    return;
+  }
+  if (semanticClosureInFlight.has(key)) return;
+  semanticClosureInFlight.add(key);
+  const body0 = document.getElementById(bodyElementId);
+  if (body0) body0.textContent = 'loading…';
+  try {
+    const r = await fetch(apiPath(`semantic-closure/${encodeURIComponent(name)}`));
+    if (!r.ok) {
+      const text = await r.text().catch(() => '');
+      const body = document.getElementById(bodyElementId);
+      if (body) body.textContent = `error: HTTP ${r.status} ${text.slice(0, 200)}`;
+      return;
+    }
+    const data = await r.json();
+    semanticClosureClientCache.set(key, data);
+    const body = document.getElementById(bodyElementId);
+    if (body) body.innerHTML = formatSemanticClosureHtml(data);
+  } catch (e) {
+    const body = document.getElementById(bodyElementId);
+    if (body) body.textContent = `error: ${e.message}`;
+  } finally {
+    semanticClosureInFlight.delete(key);
+  }
+}
+
+// Capture the set of currently-expanded collapsibles, the open/closed
+// state of each <details class=node-section>, and the pane scroll
+// position so we can restore them after a re-render. Stable IDs on
+// every collapsible / section (added below) make this work across
+// data updates.
+function captureNodeDetailUiState() {
+  const pane = document.getElementById('detail-content');
+  const expanded = new Set();
+  const sectionsClosed = new Set();
+  const sectionsOpen = new Set();
+  if (pane) {
+    pane.querySelectorAll('.collapsible.expanded').forEach((el) => {
+      if (el.id) expanded.add(el.id);
+    });
+    pane.querySelectorAll('details.node-section').forEach((el) => {
+      if (!el.id) return;
+      if (el.open) sectionsOpen.add(el.id);
+      else sectionsClosed.add(el.id);
+    });
+  }
+  return {
+    expanded,
+    sectionsOpen,
+    sectionsClosed,
+    scrollTop: pane ? pane.scrollTop : 0,
+  };
+}
+function restoreNodeDetailUiState(snap) {
+  if (!snap) return;
+  const pane = document.getElementById('detail-content');
+  if (!pane) return;
+  for (const id of snap.expanded) {
+    const el = document.getElementById(id);
+    if (el) el.classList.add('expanded');
+  }
+  // For each section the user explicitly toggled away from its default,
+  // re-apply that choice. Sections not in either set keep the default
+  // open state from the rendered HTML.
+  for (const id of snap.sectionsOpen || []) {
+    const el = document.getElementById(id);
+    if (el && el.tagName === 'DETAILS') el.open = true;
+  }
+  for (const id of snap.sectionsClosed || []) {
+    const el = document.getElementById(id);
+    if (el && el.tagName === 'DETAILS') el.open = false;
+  }
+  pane.scrollTop = snap.scrollTop || 0;
+}
+
+// Last-rendered signature so we skip re-render when nothing changed —
+// the periodic 30s refresh otherwise nukes the pane and resets scroll.
+// Also: any time renderNodeDetail rewrites pane.innerHTML, the
+// Progress/Usage/Kernel/Chat shells get destroyed; their renderers
+// re-detect the missing shell and rebuild. So no extra reset is needed
+// here — but we DO have to invalidate this key when other tabs nuke
+// the pane themselves (so coming back to Node forces a rebuild too).
+let lastNodeRenderKey = null;
+
+// ---------------------------------------------------------------
+// Rendered-TeX toggle (per-node, persists in localStorage).
+// Toggle defaults OFF: when off, the .tex field renders identically
+// to the prior `escHtml(node.texContent)` — backwards compatible.
+// When on, we pre-process noderefs + theorem/proof environments into
+// HTML, then call KaTeX `renderMathInElement` for math segments.
+// ---------------------------------------------------------------
+const RENDERED_TEX_STORAGE_KEY = 'trellis.viewer.renderedTex';
+
+function isRenderedTexEnabled() {
+  try {
+    // Default ON: only return false if the user has explicitly opted out.
+    // Previously defaulted OFF for backwards compat with the pre-KaTeX
+    // viewer; now that the rendered path is well-tested it's the better
+    // first impression.
+    const v = localStorage.getItem(RENDERED_TEX_STORAGE_KEY);
+    if (v === null) return true;
+    return v === '1';
+  } catch {
+    return true;
+  }
+}
+
+function setRenderedTexEnabled(on) {
+  try {
+    localStorage.setItem(RENDERED_TEX_STORAGE_KEY, on ? '1' : '0');
+  } catch {}
+  // Force a fresh render of the currently-selected node so the field
+  // swaps between raw and rendered immediately.
+  lastNodeRenderKey = null;
+  if (selectedNode) renderNodeDetail(selectedNode);
+}
+
+// Build the inner HTML of the .tex field-value div. For raw mode, this
+// is byte-identical to the prior code path (`escHtml(... || '(none)')`
+// inside a `.field-value`). For rendered mode, we still emit the same
+// outer div but leave the body to be filled in by `renderTexInto` once
+// KaTeX has loaded.
+//
+// No longer wraps in an inner `.collapsible` — the parent <details>
+// section in the node-detail layout already handles open/close, so a
+// nested collapse-inside-collapse confused the affordance.
+function renderTexFieldValueHtml(domId, raw) {
+  if (isRenderedTexEnabled()) {
+    return `<div id="${domId}" class="field-value rendered-tex"></div>`;
+  }
+  return `<div id="${domId}" class="field-value">${escHtml(raw || '(none)')}</div>`;
+}
+
+// =====================================================================
+// Section extractors for the node-detail collapsibles.
+// =====================================================================
+//
+// Lean Imports: parse `import Tablet.X` lines from the start of the
+// .lean source. Mirrors the kernel's behavior in
+// `paper_targets.rs::extract_tex_statement_items` (Tablet imports only).
+// We also expose a Mathlib-imports view via `getVisibleImports(name)`
+// (uses node.imports as the canonical source).
+//
+// NL statement: the first \begin{ENV}...\end{ENV} block with a
+// non-`proof` env name. Same heuristic as the kernel's
+// `tex_statement_environment` in filespec.rs.
+//
+// NL proof: the \begin{proof}...\end{proof} block (if any).
+//
+// Lean statement: the FILESPEC-v2 declaration-signature slice —
+// the lines between `-- [TABLET NODE: <Name>]` and `-- BODY`, with
+// imports skipped (they live above the tablet marker and are
+// already rendered in the "Lean Imports" pane). For pre-FILESPEC-v2
+// historical commits without `-- BODY`, falls back to a strip-imports
+// + lastIndexOf(`:=`) heuristic.
+//
+// Lean Proof: the proof body — everything below `-- BODY`. For
+// pre-FILESPEC-v2 historical commits, falls back to the slice after
+// the last `:=`.
+//
+// All of these are best-effort string parses — the kernel has
+// authoritative versions in Rust, but the viewer just needs a
+// reasonable display. Edge cases (multi-block .tex, theorem with no
+// `:=`, etc.) fall through to "(none)" or the full content.
+
+function extractTexStatement(tex) {
+  if (!tex) return '';
+  const m = tex.match(/\\begin\{(\w+)\}[\s\S]*?\\end\{\1\}/);
+  if (!m) return '';
+  const env = m[1];
+  if (env === 'proof') {
+    // First env was the proof block — find a non-proof one further on.
+    const m2 = tex.slice(m.index + m[0].length).match(/\\begin\{(\w+)\}[\s\S]*?\\end\{\1\}/);
+    if (m2 && m2[1] !== 'proof') return m2[0];
+    return '';
+  }
+  return m[0];
+}
+
+function extractTexProof(tex) {
+  if (!tex) return '';
+  const m = tex.match(/\\begin\{proof\}[\s\S]*?\\end\{proof\}/);
+  return m ? m[0] : '';
+}
+
+// FILESPEC v2 statement/proof boundary: every ordinary
+// `Tablet/<Node>.lean` carries exactly one line whose trimmed
+// content is `-- BODY`. Mirrors the kernel splitter in
+// `kernel/src/filespec_split.rs`. Returns `{start, end}` byte
+// offsets bracketing the marker line (`text.slice(0, start)` is
+// the statement side, `text.slice(end)` is the proof body), or
+// null if the marker is absent or ambiguous.
+function findBodyMarker(text) {
+  if (!text) return null;
+  let offset = 0;
+  let found = null;
+  for (const line of text.split('\n')) {
+    if (line.trim() === '-- BODY') {
+      if (found) return null;  // multiple markers → ambiguous
+      const eol = offset + line.length + 1;  // include the consumed '\n'
+      found = { start: offset, end: Math.min(eol, text.length) };
+    }
+    offset += line.length + 1;
+  }
+  return found;
+}
+
+// FILESPEC v2 declaration-signature boundary: the
+// `-- [TABLET NODE: <Name>]` line is the start of the protected
+// region (everything below it up to `-- BODY` is the declaration's
+// signature). Mirrors `filespec_split::find_tablet_node_marker_line`.
+// Returns the byte offset of the first byte of that line, or null
+// if absent / ambiguous.
+function findTabletNodeMarkerLine(text) {
+  if (!text) return null;
+  let offset = 0;
+  let found = null;
+  for (const line of text.split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('-- [TABLET NODE:') && trimmed.endsWith(']')) {
+      if (found !== null) return null;  // multiple — ambiguous
+      found = offset;
+    }
+    offset += line.length + 1;
+  }
+  return found;
+}
+
+// Pre-FILESPEC-v2 fallback used when no `-- BODY` marker is
+// present (historical commits viewed in the timeline pane). The
+// `:=` heuristic is fragile for filled-in proofs but stable for
+// the `sorry`-placeholder era it has to cover.
+function findLeanProofBoundaryFallback(text) {
+  return text.lastIndexOf(':=');
+}
+
+function extractLeanStatement(lean) {
+  if (!lean) return '';
+  const marker = findBodyMarker(lean);
+  if (marker) {
+    // Skip the preamble — imports live above the tablet-node
+    // marker by FILESPEC fiat (the "Lean Imports" pane already
+    // renders them separately, so they'd be duplicated noise
+    // here). Start at the line AFTER `-- [TABLET NODE: <Name>]`
+    // so the statement pane shows only the declaration itself,
+    // matching the kernel's hash region.
+    const tabletStart = findTabletNodeMarkerLine(lean);
+    if (tabletStart !== null) {
+      const nlAfterMarker = lean.indexOf('\n', tabletStart);
+      const start = nlAfterMarker < 0 ? tabletStart : nlAfterMarker + 1;
+      return lean.slice(start, marker.start).trim();
+    }
+    // Tablet marker absent — fall back to returning everything
+    // pre-BODY so we still show *something* useful on malformed
+    // historical files.
+    return lean.slice(0, marker.start).trimEnd();
+  }
+  const stripped = lean.replace(/^(?:\s*--[^\n]*\n|\s*import[^\n]*\n)+/g, '');
+  const idx = findLeanProofBoundaryFallback(stripped);
+  if (idx < 0) return stripped.trimEnd();
+  return stripped.slice(0, idx).trimEnd();
+}
+
+function extractLeanProof(lean) {
+  if (!lean) return '';
+  const marker = findBodyMarker(lean);
+  if (marker) return lean.slice(marker.end).trimStart();
+  const stripped = lean.replace(/^(?:\s*--[^\n]*\n|\s*import[^\n]*\n)+/g, '');
+  const idx = findLeanProofBoundaryFallback(stripped);
+  if (idx < 0) return '';
+  return stripped.slice(idx + 2).trimStart();
+}
+
+// Pre-process a TeX string into HTML before passing to KaTeX
+// auto-render. Returns escaped+marked-up HTML; KaTeX will then walk
+// the resulting DOM and replace math delimiters with rendered output.
+function preprocessTexToHtml(raw) {
+  if (!raw) return '<span style="color:#6272a4">(none)</span>';
+  // Sentinel tokens — we extract structural pieces (noderefs, env
+  // wrappers) so they survive HTML escaping as raw strings, then we
+  // splice them back as real HTML after the escape step.
+  const tokens = [];
+  const placeholder = (html) => {
+    const i = tokens.length;
+    tokens.push(html);
+    // Use a token format unlikely to appear in tex source AND
+    // immune to later regex passes.
+    return ` TEXTOK${i} `;
+  };
+
+  let s = String(raw);
+
+  // 0. \hbox → \text. KaTeX has no \hbox. Strip the dimensional form
+  //    (\hbox to <dim>{...}) first, then the bare form. The paper's
+  //    Tablet has ~17 \hbox usages, all in math mode for short text
+  //    interpolations like `\hbox{ and }` — \text is the right
+  //    KaTeX equivalent.
+  s = s.replace(/\\hbox\s+to\s+\S+\s*/g, '\\text');
+  s = s.replace(/\\hbox\b/g, '\\text');
+
+  // 1. \noderef{Foo} OUTSIDE math → HTML clickable citation.
+  //    Inside-math noderefs stay as `\noderef{...}` so KaTeX's macro
+  //    (configured below) can render them as clickable \href links.
+  //    To distinguish, we extract math segments into placeholders
+  //    first, rewrite noderefs in the surrounding text, then put
+  //    the math (with its in-math \noderef calls untouched) back.
+  const mathPatterns = [
+    /\$\$([\s\S]*?)\$\$/g,
+    /\\\[([\s\S]*?)\\\]/g,
+    /\\\(([\s\S]*?)\\\)/g,
+    /(?<!\$)\$(?!\$)([^$\n]*?)(?<!\$)\$(?!\$)/g,  // $...$ on a single line
+  ];
+  const mathTokens = [];
+  const mathPlaceholder = (content) => {
+    const i = mathTokens.length;
+    mathTokens.push(content);
+    return `MATHTOK${i}END`;
+  };
+  for (const pat of mathPatterns) {
+    s = s.replace(pat, (m) => mathPlaceholder(m));
+  }
+
+  // 1b. \noderef OUTSIDE math → HTML link. (Inside math, the
+  //     KaTeX `\noderef` macro will produce a styled clickable
+  //     `\href` element.)
+  s = s.replace(/\\noderef\{([^{}]+)\}/g, (_m, target) => {
+    const safe = String(target).replace(/[<>"&]/g, (c) => ({'<':'&lt;','>':'&gt;','"':'&quot;','&':'&amp;'}[c]));
+    return placeholder(`<a class="noderef" data-target="${safe}">${safe}</a>`);
+  });
+
+  // 1c. Restore math segments.
+  s = s.replace(/MATHTOK(\d+)END/g, (_m, idx) => mathTokens[Number(idx)] || '');
+
+  // 2. Theorem-like environments → styled blocks with a bold label.
+  //    Body still contains math delimiters; KaTeX walks them later.
+  const envLabels = {
+    lemma: 'Lemma.',
+    theorem: 'Theorem.',
+    corollary: 'Corollary.',
+    proposition: 'Proposition.',
+    definition: 'Definition.',
+    remark: 'Remark.',
+    helper: 'Helper.',
+  };
+  for (const [env, label] of Object.entries(envLabels)) {
+    const re = new RegExp(`\\\\begin\\{${env}\\}([\\s\\S]*?)\\\\end\\{${env}\\}`, 'g');
+    s = s.replace(re, (_m, body) => {
+      // Re-escape body? No — body still contains math delimiters etc;
+      // we'll process noderefs already done above and let the outer
+      // escape pass handle the body's text characters.
+      return placeholder(`<div class="tex-env tex-${env}"><span class="tex-env-label">${label}</span>`)
+        + body
+        + placeholder(`</div>`);
+    });
+  }
+
+  // 3. Proof environment → label + trailing □.
+  s = s.replace(/\\begin\{proof\}([\s\S]*?)\\end\{proof\}/g, (_m, body) => {
+    return placeholder(`<div class="tex-env tex-proof"><span class="tex-env-label">Proof.</span>`)
+      + body
+      + placeholder(`<span class="tex-proof-end">□</span></div>`);
+  });
+
+  // 4. Now HTML-escape everything else. Token placeholders are
+  //    plain ASCII letters + digits so they survive escaping
+  //    unchanged; step 6 then splices in the real HTML.
+  s = s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  // 5. Convert paragraph breaks (blank lines) to a small vertical
+  //    spacer; collapse single newlines to spaces. We deliberately
+  //    avoid wrapping content in <p> tags here because env divs
+  //    (extracted in step 2) span multiple paragraphs and would then
+  //    nest illegally inside <p>. Plain <br><br> reads fine in the
+  //    paper-style font we're using.
+  s = s.replace(/\n\s*\n+/g, '<br><br>');
+  s = s.replace(/\s*\n\s*/g, ' ');
+
+  // 6. Splice token placeholders back as real HTML.
+  s = s.replace(/ TEXTOK(\d+) /g, (_m, idx) => tokens[Number(idx)] || '');
+
+  return s;
+}
+
+function renderTexInto(elem, raw) {
+  if (!elem) return;
+  try {
+    elem.innerHTML = preprocessTexToHtml(raw);
+  } catch (err) {
+    elem.innerHTML = `<span class="tex-error">tex preprocess error: ${escHtml(err.message || String(err))}</span>` +
+      `<pre style="white-space:pre-wrap">${escHtml(raw || '')}</pre>`;
+    return;
+  }
+  // KaTeX is loaded async-defer. If the user flips the toggle before
+  // the script has hit the DOM, fall back to a one-shot poll.
+  const tryRender = (attemptsLeft) => {
+    if (typeof window.renderMathInElement === 'function') {
+      try {
+        window.renderMathInElement(elem, {
+          delimiters: [
+            { left: '$$', right: '$$', display: true },
+            { left: '\\[', right: '\\]', display: true },
+            { left: '\\(', right: '\\)', display: false },
+            { left: '$', right: '$', display: false },
+          ],
+          throwOnError: false,
+          errorColor: '#ff5555',
+          // Allow \href links — the only one our macros emit uses a
+          // `noderef:` URL scheme that the delegated click handler
+          // intercepts. We don't want KaTeX rejecting that URL.
+          trust: (ctx) => ctx.command === '\\href' && /^noderef:/.test(ctx.url || ''),
+          // Macros: hardcoded defaults first (so projects without a
+          // paper/header.tex still get sane ams* shortcuts), then
+          // paper-defined macros override (the paper preamble is the
+          // source of truth where it exists), then the trellis-
+          // specific \noderef last so it always wins regardless of
+          // what a paper might redefine.
+          macros: {
+            '\\R': '\\mathbb{R}',
+            '\\N': '\\mathbb{N}',
+            '\\Z': '\\mathbb{Z}',
+            '\\Q': '\\mathbb{Q}',
+            '\\C': '\\mathbb{C}',
+            '\\Pr': '\\mathbb{P}',
+            '\\E': '\\mathbb{E}',
+            ...paperMacros,
+            // In-math \noderef: render as a clickable styled
+            // citation. The delegated click handler watches for
+            // .rendered-tex a[href^="noderef:"] (and .noderef class
+            // for out-of-math links) and calls selectNode(target).
+            '\\noderef': '\\href{noderef:#1}{\\textsf{\\small{#1}}}',
+          },
+        });
+      } catch (err) {
+        // KaTeX itself failed — surface a small banner but leave the
+        // pre-processed body in place so the rest is still readable.
+        const banner = document.createElement('div');
+        banner.className = 'tex-error';
+        banner.textContent = `KaTeX render error: ${err.message || String(err)}`;
+        elem.insertBefore(banner, elem.firstChild);
+      }
+      return;
+    }
+    if (attemptsLeft > 0) {
+      setTimeout(() => tryRender(attemptsLeft - 1), 100);
+    } else {
+      const banner = document.createElement('div');
+      banner.className = 'tex-error';
+      banner.textContent = 'KaTeX failed to load (CDN unreachable?). Showing pre-processed source — turn off Rendered toggle for raw view.';
+      elem.insertBefore(banner, elem.firstChild);
+    }
+  };
+  tryRender(20);  // ~2 seconds total
+}
+
+// Delegated click handler for noderef citations. Two link shapes
+// reach here: out-of-math `<a class="noderef" data-target="...">`
+// (emitted by the preprocessor) and in-math `<a href="noderef:...">`
+// (emitted by KaTeX from the `\noderef` macro). Both route to
+// selectNode().
+document.addEventListener('click', (ev) => {
+  const root = ev.target && ev.target.closest && ev.target.closest('.rendered-tex');
+  if (!root) return;
+  const link = ev.target.closest('a.noderef, a[href^="noderef:"]');
+  if (!link) return;
+  ev.preventDefault();
+  ev.stopPropagation();  // don't toggle the collapsible while clicking
+  let target = link.getAttribute('data-target');
+  if (!target) {
+    const href = link.getAttribute('href') || '';
+    target = href.startsWith('noderef:') ? href.slice('noderef:'.length) : '';
+  }
+  if (target && allNodes && allNodes[target]) {
+    selectNode(target);
+  }
+});
+
+function renderNodeDetailSignature(name, node) {
+  if (!node) return `${name}::missing`;
+  const v = node.verification || {};
+  return [
+    name, node.kind, node.difficulty, node.hasSorry ? '1' : '0',
+    (node.imports || []).join(','),
+    // Include the include-defs flag and the rewired imports so the cached
+    // signature changes when the toggle flips (Imports field swaps from raw
+    // to rewired). Otherwise lastNodeRenderKey would suppress the rerender.
+    includeDefs ? 'D+' : 'D-',
+    getVisibleImports(name).join(','),
+    v.correspondence || '', v.nl_proof || '', v.substantiveness || '',
+    (v.correspondence_issue || '').length, (v.nl_proof_issue || '').length,
+    (node.declaration || '').length, (node.texContent || '').length, (node.leanContent || '').length,
+    // Toggle state participates in the signature so flipping the
+    // Rendered-TeX checkbox forces a re-render.
+    isRenderedTexEnabled() ? 'tex:rendered' : 'tex:raw',
+  ].join('|');
+}
+
+function renderNodeDetail(name) {
+  const pane = document.getElementById('detail-content');
+  const node = allNodes[name];
+  // Heavy text fields (leanContent / texContent / declaration) are
+  // lazy-fetched. If they're missing, kick the fetch and re-render once
+  // it lands. The first render below shows empty fields until then.
+  if (node
+      && !node.leanContent && !node.texContent && !node.declaration
+      && currentState && currentState.node_content_inline === false) {
+    const cycleAtFetch = currentCycleForContent();
+    fetchNodeContent(name).then(() => {
+      // Bail if the user navigated away or the cycle changed.
+      if (selectedNode !== name) return;
+      if (currentCycleForContent() !== cycleAtFetch) return;
+      // Force a re-render: clear the render-signature cache so the
+      // content-bearing pass isn't suppressed.
+      lastNodeRenderKey = null;
+      renderNodeDetail(name);
+    }).catch(() => {});
+  }
+  // If we previously rendered something OTHER than node detail (e.g.,
+  // the Progress / Usage / Kernel / Chat shells), the pane no longer
+  // contains a node-detail tree. Detect that and force a fresh render
+  // so the user gets the node view back when they click "Node".
+  if (lastNodeRenderKey && !pane.querySelector('h2')) {
+    lastNodeRenderKey = null;
+  }
+  if (!node) {
+    if (lastNodeRenderKey !== `${name}::missing`) {
+      pane.innerHTML = '<h2>Node not found</h2>';
+      lastNodeRenderKey = `${name}::missing`;
+    }
+    return;
+  }
+  const sig = renderNodeDetailSignature(name, node);
+  if (lastNodeRenderKey === sig) {
+    // Nothing changed — leave the DOM (and any expanded collapsibles +
+    // scroll position) alone.
+    return;
+  }
+  const uiSnap = captureNodeDetailUiState();
+  const committedStatus = isCommittedClosed(name, allNodes) ? 'closed' : 'open';
+
+  const statusColor = {
+    'closed': '#4a9eff',
+    'open': '#6272a4',
+  }[committedStatus] || '#6272a4';
+
+  // Stable IDs on every collapsible so captureNodeDetailUiState/
+  // restoreNodeDetailUiState can re-apply expanded state on data refresh.
+  const cid = (key) => `collapse-${name}-${key}`;
+
+  pane.innerHTML = `
+    <h2 style="color:${statusColor}">${node.title || name}</h2>
+    <div class="field">
+      <div class="field-label">Name</div>
+      <div class="field-value">${name}</div>
+    </div>
+    <div class="field">
+      <div class="field-label">Status</div>
+      <div class="field-value" style="color:${statusColor}">${committedStatus} (${node.kind})</div>
+    </div>
+    <div class="field">
+      <div class="field-label">Imports${includeDefs ? '' : ' (rewired, defs hidden)'}</div>
+      <div class="field-value">${
+        (includeDefs ? (node.imports || []) : getVisibleImports(name)).join(', ') || 'none'
+      }</div>
+    </div>
+    <div class="field">
+      <div class="field-label">Difficulty</div>
+      <div class="field-value">${node.difficulty || '?'}</div>
+    </div>
+    <div class="field">
+      <div class="field-label">Sorry</div>
+      <div class="field-value">${node.hasSorry ? '⚠ yes' : '✓ no'}</div>
+    </div>
+    ${node.verification ? `<div class="field">
+      <div class="field-label">Verification</div>
+      <div class="field-value">${
+        (node.verification.correspondence === 'fail' ? '<span style="color:#ff5555">Correspondence: FAIL</span>' :
+         node.verification.correspondence === 'pass' ? '<span style="color:#50fa7b">Correspondence: PASS</span>' : 'Correspondence: ?') +
+        // Only render Substantiveness if the lane is present in this project's
+        // protocol_state (older runs predate the substantiveness lane and the
+        // adapter omits the field for them).
+        (node.verification.substantiveness !== undefined ? '<br>' +
+          (node.verification.substantiveness === 'fail' ? '<span style="color:#ff5555">Substantiveness: FAIL</span>' :
+           node.verification.substantiveness === 'pass' ? '<span style="color:#50fa7b">Substantiveness: PASS</span>' : 'Substantiveness: ?') : '') +
+        '<br>' +
+        (node.verification.nl_proof === 'structural' ? '<span style="color:#ff5555">NL Proof: STRUCTURAL</span>' :
+         node.verification.nl_proof === 'fail' ? '<span style="color:#ff5555">NL Proof: FAIL</span>' :
+         node.verification.nl_proof === 'pass' ? '<span style="color:#50fa7b">NL Proof: PASS</span>' : 'NL Proof: ?') +
+        // "Lean closed" indicator: same color scheme as the lane verdicts —
+        // green when the lean file compiles without sorry, red otherwise.
+        '<br>' +
+        (committedStatus === 'closed'
+          ? '<span style="color:#50fa7b">Lean closed: YES</span>'
+          : '<span style="color:#ff5555">Lean closed: NO</span>')
+      }</div>
+      ${node.verification.correspondence_issue ? `<div id="${cid('corr-issue')}" class="field-value collapsible" onclick="this.classList.toggle('expanded')" style="color:#ff5555;font-size:11px;margin-top:4px">${escHtml(node.verification.correspondence_issue)}</div>` : ''}
+      ${node.verification.nl_proof_issue ? `<div id="${cid('sound-issue')}" class="field-value collapsible" onclick="this.classList.toggle('expanded')" style="color:#ff5555;font-size:11px;margin-top:4px">${escHtml(node.verification.nl_proof_issue)}</div>` : ''}
+    </div>` : ''}
+    <!-- Five collapsible content sections. Default-open: NL statement only.
+         Each <details> uses .node-section styling (arrow on same line as
+         heading, click summary to toggle). Stable IDs let
+         captureNodeDetailUiState/restoreNodeDetailUiState preserve open
+         state across re-renders. -->
+    <details class="node-section" id="${cid('sec-imports')}">
+      <summary>Lean Imports</summary>
+      <div class="field-value">${
+        ((includeDefs ? (node.imports || []) : getVisibleImports(name)).join('\n')) || '(none)'
+      }</div>
+    </details>
+    <details class="node-section" id="${cid('sec-nl-stmt')}" open>
+      <summary>NL statement
+        <label style="display:flex;align-items:center;gap:5px;cursor:pointer;text-transform:none;color:#8be9fd;font-size:10px;margin-left:auto">
+          <input type="checkbox" id="${cid('tex-toggle')}" ${isRenderedTexEnabled() ? 'checked' : ''} onclick="event.stopPropagation()" onchange="setRenderedTexEnabled(this.checked)" style="cursor:pointer;margin:0">
+          <span>Rendered</span>
+        </label>
+      </summary>
+      ${renderTexFieldValueHtml(cid('nl-stmt'), extractTexStatement(node.texContent || ''))}
+    </details>
+    <details class="node-section" id="${cid('sec-lean-stmt')}">
+      <summary>Lean statement</summary>
+      <div class="field-value" style="color:#f8f8f2">${escHtml(extractLeanStatement(node.leanContent || '') || '(none)')}</div>
+    </details>
+    <details class="node-section" id="${cid('sec-nl-proof')}">
+      <summary>NL proof</summary>
+      ${renderTexFieldValueHtml(cid('nl-proof'), extractTexProof(node.texContent || ''))}
+    </details>
+    <details class="node-section" id="${cid('sec-lean-proof')}">
+      <summary>Lean Proof</summary>
+      <div class="field-value" style="color:#f8f8f2">${escHtml(extractLeanProof(node.leanContent || '') || '(none)')}</div>
+    </details>
+    <!-- Semantic closure: Tablet nodes that enter the seed's
+         lean_semantic_closure walk. For theorem-kind seeds only the
+         TYPE is walked (proof body is excluded); for definition seeds
+         both type and value. Lazy-fetched on first expand; cached
+         client-side so auto-refresh re-renders don't reset to loading. -->
+    <details class="node-section" id="${cid('sec-sem-closure')}">
+      <summary>Semantic closure</summary>
+      <div id="${cid('sem-closure-body')}" class="field-value" style="color:#6272a4">${
+        renderSemanticClosureBody(name) || 'click to load'
+      }</div>
+    </details>
+  `;
+  // Wire the lazy fetch. Uses an ID-based handler so re-renders don't
+  // detach the body element from the closure. The result is cached in
+  // `semanticClosureCache` (keyed on cycle+node) so the next renderNodeDetail
+  // can populate the body synchronously without re-fetching.
+  {
+    const sec = document.getElementById(cid('sec-sem-closure'));
+    if (sec) {
+      sec.addEventListener('toggle', () => {
+        if (!sec.open) return;
+        loadSemanticClosure(name, cid('sem-closure-body'));
+      });
+      // If the user opens the section via restoreNodeDetailUiState (state
+      // preserved across an auto-refresh) AND we already had a cached
+      // value, the body was already populated synchronously above — no
+      // fetch needed. If the section opens and we DON'T have a cached
+      // value, the toggle event will kick the fetch.
+      if (sec.open) loadSemanticClosure(name, cid('sem-closure-body'));
+    }
+  }
+  restoreNodeDetailUiState(uiSnap);
+  // If the Rendered-TeX toggle is on, run KaTeX over the two tex
+  // containers (NL statement + NL proof). This is a no-op when the
+  // toggle is off (each field contains plain escaped text and
+  // renderTexInto is never called).
+  if (isRenderedTexEnabled()) {
+    const stmtEl = document.getElementById(cid('nl-stmt'));
+    if (stmtEl) renderTexInto(stmtEl, extractTexStatement(node.texContent || ''));
+    const proofEl = document.getElementById(cid('nl-proof'));
+    if (proofEl) renderTexInto(proofEl, extractTexProof(node.texContent || ''));
+  }
+  lastNodeRenderKey = sig;
+}
+
+// =====================================================================
+// Progress / Usage / Kernel tabs.
+// All three follow the "build shell once, refresh content sub-tree only"
+// pattern (mirrors Chats) so the periodic refresh never nukes the pane
+// and never resets scroll/expanded state.
+// =====================================================================
+
+let progressShellBuilt = false;
+let usageShellBuilt = false;
+let kernelShellBuilt = false;
+let kernelAutoRefreshTimer = null;
+let lastUsageDataKey = null;
+let lastProgressDataKey = null;
+const PROGRESS_PHASE_VIEW_STORAGE_KEY = 'trellis.viewer.progressPhaseView';
+function readProgressPhaseView() {
+  try {
+    const raw = localStorage.getItem(PROGRESS_PHASE_VIEW_STORAGE_KEY);
+    if (raw === 'current') return 'current';
+  } catch {}
+  return 'all';
+}
+let progressPhaseView = readProgressPhaseView();
+
+function progressPhaseLabel(phase) {
+  const p = String(phase || '').trim();
+  if (!p) return 'current phase';
+  if (/formalization/i.test(p)) return 'formalization';
+  if (/theorem/i.test(p)) return 'theorem stating';
+  if (/cleanup/i.test(p)) return 'cleanup';
+  return p
+    .replace(/_/g, ' ')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .toLowerCase();
+}
+
+function latestProgressPhase(checkpoints) {
+  for (let i = checkpoints.length - 1; i >= 0; i--) {
+    const phase = String(checkpoints[i].phase || '').trim();
+    if (phase) return phase;
+  }
+  return '';
+}
+
+function setProgressPhaseView(value) {
+  const next = value === 'current' ? 'current' : 'all';
+  if (next === progressPhaseView) return;
+  progressPhaseView = next;
+  try { localStorage.setItem(PROGRESS_PHASE_VIEW_STORAGE_KEY, next); } catch {}
+  lastProgressDataKey = null;
+  renderProgressDetail();
+}
+
+function fmtSecondsToHm(s) {
+  if (!s || !isFinite(s)) return '0';
+  if (s < 60) return `${s.toFixed(0)}s`;
+  if (s < 3600) return `${(s / 60).toFixed(1)}m`;
+  return `${(s / 3600).toFixed(2)}h`;
+}
+function fmtTokens(n) {
+  if (!n || !isFinite(n)) return '0';
+  if (n >= 1e6) return `${(n / 1e6).toFixed(2)}M`;
+  if (n >= 1e3) return `${(n / 1e3).toFixed(1)}K`;
+  return `${n}`;
+}
+function fmtUsd(x) {
+  if (!x || !isFinite(x)) return '—';
+  return `$${x.toFixed(2)}`;
+}
+
+// ---------- Progress ----------
+
+async function renderProgressDetail() {
+  const pane = document.getElementById('detail-content');
+  if (progressShellBuilt && !document.getElementById('progress-charts')) {
+    progressShellBuilt = false;
+    lastProgressDataKey = null;  // force a re-paint of the new shell
+  }
+  if (!progressShellBuilt) {
+    pane.innerHTML = `
+      <h2>Progress</h2>
+      <p style="color:#6272a4;font-size:12px">
+        Per-checkpoint trends. Each line is a metric over the run's
+        commit history. Refreshes on the DAG cadence (~30s).
+      </p>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+        <label for="progress-phase-view-select" style="color:#8be9fd;font-size:12px">View:</label>
+        <select id="progress-phase-view-select" onchange="setProgressPhaseView(this.value)"
+          style="background:#0f0f23;color:#e0e0e0;border:1px solid #444;border-radius:4px;padding:4px 8px;font-size:12px">
+          <option value="all">Whole process</option>
+          <option value="current">Current phase</option>
+        </select>
+        <span id="progress-phase-view-note" style="color:#6272a4;font-size:11px"></span>
+      </div>
+      <div id="progress-status" style="color:#6272a4;font-size:11px;margin-bottom:8px">Loading…</div>
+      <div id="progress-charts" style="display:flex;flex-direction:column;gap:16px"></div>
+    `;
+    progressShellBuilt = true;
+  }
+  try {
+    const r = await fetch(apiPath('progress.json'));
+    if (!r.ok) throw new Error(`progress.json -> ${r.status}`);
+    const d = await r.json();
+    const cps = d.checkpoints || [];
+    const currentPhase = latestProgressPhase(cps);
+    const viewCps = progressPhaseView === 'current' && currentPhase
+      ? cps.filter((c) => String(c.phase || '').trim() === currentPhase)
+      : cps;
+    const allKey = includeDefs ? 'all' : 'all_proofs_only';
+    const key = viewCps.length
+      ? `${progressPhaseView}::${currentPhase}::${viewCps.length}::${viewCps[viewCps.length - 1].sha}::${allKey}`
+      : `${progressPhaseView}::${currentPhase}::empty::${allKey}`;
+    if (key === lastProgressDataKey) return;
+    lastProgressDataKey = key;
+    const select = document.getElementById('progress-phase-view-select');
+    if (select) select.value = progressPhaseView;
+    const currentPhaseLabel = progressPhaseLabel(currentPhase);
+    const currentOpt = select && select.querySelector('option[value="current"]');
+    if (currentOpt) currentOpt.textContent = `Current phase (${currentPhaseLabel})`;
+    const note = document.getElementById('progress-phase-view-note');
+    if (note) {
+      note.textContent = progressPhaseView === 'current'
+        ? `showing ${currentPhaseLabel} only`
+        : 'showing whole process';
+    }
+    document.getElementById('progress-status').textContent =
+      `${viewCps.length} of ${cps.length} checkpoints (cycles ${viewCps.length ? viewCps[0].cycle : '?'} — ${viewCps.length ? viewCps[viewCps.length - 1].cycle : '?'})${includeDefs ? '' : ' · proofs only'}`;
+    const charts = document.getElementById('progress-charts');
+    charts.innerHTML = '';
+    // Nodes chart: keep total/corr/subst/sound, drop the lean-closed
+    // pair, add `unclosed` first in the list so it z-layers underneath
+    // the other curves where they overlap.
+    charts.appendChild(buildProgressChartCard(
+      `Nodes${includeDefs ? '' : ' (excluding definitions)'}`,
+      viewCps,
+      allKey,
+      ['unclosed', 'total', 'corr', 'subst', 'sound'],
+    ));
+    // Proofs chart: NL word curves only. `leanProofChars` is hidden
+    // for now — the 2026-05-12 FILESPEC v2 deploy revealed that the
+    // pre-marker `lastIndexOf(':=')` extractor was systematically
+    // under-counting (proof bodies contain `have x :=` / `let y :=`
+    // so the heuristic returned only the tail after the last token).
+    // The new -- BODY scan is correct, but the curve now has a huge
+    // 2026-05-12 discontinuity at cycle 695 that drowns the chart;
+    // hide until we decide whether to re-extract historical
+    // checkpoints or just amputate pre-fix data.
+    charts.appendChild(buildProgressChartCard(
+      `Proofs${includeDefs ? '' : ' (excluding definitions)'}`,
+      viewCps,
+      allKey,
+      ['nlProofUnclosedWords', 'nlProofWords'],
+    ));
+    charts.appendChild(buildProgressChartCard(
+      `Coarse-DAG progress${includeDefs ? '' : ' (excluding definitions)'}`,
+      viewCps,
+      includeDefs ? 'coarse_shallow' : 'coarse_shallow_proofs_only',
+      ['coarseUnclosed', 'total'],
+    ));
+    charts.appendChild(buildProgressChartCard(
+      'Task blockers',
+      viewCps,
+      'task_blockers',
+      ['taskBlockers', 'taskPaper', 'taskCorr', 'taskSubst', 'taskSound'],
+    ));
+  } catch (e) {
+    document.getElementById('progress-status').textContent = `Load failed: ${e.message}`;
+  }
+}
+
+const PROGRESS_SERIES = {
+  total:    { color: '#bd93f9', label: 'total' },
+  corr:     { color: '#8be9fd', label: 'corr-pass' },
+  subst:    { color: '#ffb86c', label: 'subst-pass' },
+  sound:    { color: '#f1fa8c', label: '[sound/waived, not-definitively-failing]', band: true },
+  closed:   { color: '#50fa7b', label: 'lean-closed (shallow)' },
+  closedTr: { color: '#ff79c6', label: 'lean-closed (recursive)' },
+  unclosed:   { color: '#50fa7b', label: 'lean-unclosed' },
+  unclosedTr: { color: '#ff79c6', label: 'lean-unclosed (recursive)' },
+  // Coarse-DAG-chart-specific aliases of `closed` / `unclosed`. Same colors
+  // and data accessors (read `lean_closed` from the bucket) but cleaner
+  // labels — the (shallow)/(recursive) contrast on the Nodes chart isn't
+  // meaningful here because the coarse chart doesn't plot the recursive
+  // counterpart, so the parenthetical reads as clutter.
+  coarseClosed: { color: '#50fa7b', label: 'lean-closed' },
+  coarseUnclosed: { color: '#50fa7b', label: 'lean-unclosed' },
+  leanProofChars: { color: '#ff79c6', label: 'lean proof chars' },
+  taskBlockers: { color: '#bd93f9', label: 'task blockers' },
+  taskPaper: { color: '#ff5555', label: 'paper' },
+  taskCorr: { color: '#8be9fd', label: 'corr' },
+  taskSubst: { color: '#ffb86c', label: 'subst' },
+  taskSound: { color: '#f1fa8c', label: 'sound' },
+  // NL word counts run an order of magnitude larger than lean chars,
+  // so they live on the right y-axis when charted together with
+  // leanProofChars. The chart code reads `axis: 'right'` to opt a
+  // series into the right-side scale. Colors (yellow / green) mirror
+  // the corresponding "total" / "unclosed" pair on the Nodes chart so
+  // the eye can carry the same color semantics across both panels.
+  nlProofWords: { color: '#f1fa8c', label: 'All NL proof words', axis: 'right' },
+  nlProofUnclosedWords: { color: '#50fa7b', label: 'NL proof words in nodes not yet lean-closed', axis: 'right' },
+};
+const DEFAULT_PROGRESS_SERIES = ['total', 'corr', 'subst', 'sound', 'closed', 'closedTr'];
+
+function buildProgressChartCard(title, checkpoints, key, seriesKeys = DEFAULT_PROGRESS_SERIES) {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'background:#0b0b1e;border:1px solid #333;border-radius:6px;padding:10px';
+  const legend = seriesKeys
+    .map((name) => PROGRESS_SERIES[name])
+    .filter(Boolean)
+    .map((s) => `<span><span style="color:${s.color}">■</span> ${escHtml(s.label)}</span>`)
+    .join('');
+  wrap.innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px;flex-wrap:wrap">
+      <div style="color:#8be9fd;font-weight:bold">${escHtml(title)}</div>
+      <div style="font-size:11px;color:#6272a4;display:flex;gap:10px;flex-wrap:wrap">
+        ${legend}
+      </div>
+    </div>
+  `;
+  wrap.appendChild(buildLineChartSvg(checkpoints, key, seriesKeys));
+  return wrap;
+}
+
+function buildLineChartSvg(checkpoints, key, seriesKeys = DEFAULT_PROGRESS_SERIES) {
+  // padR is always reserved at the right-axis width (38) so charts with
+  // and without a right axis share the same plot-area pixel range. This
+  // keeps the x-axis cycle positions horizontally aligned across the
+  // Nodes / Proofs / Task-blockers cards regardless of which ones happen
+  // to use the right axis.
+  const W = 720, H = 220, padL = 38, padR = 38, padT = 10, padB = 24;
+  const innerW = W - padL - padR, innerH = H - padT - padB;
+  // For the coarse chart, omit checkpoints where the kernel hadn't populated
+  // coarse_dag_nodes yet (theorem-stating phase, post-restructure transitions).
+  // The server marks those by omitting the `coarse` field entirely; we treat
+  // values as `null` and the path() helper breaks the line at gaps.
+  function valueAt(c) {
+    const bucket = c[key];
+    if (bucket === undefined || bucket === null) return null;
+    return bucket;
+  }
+  const series = {
+    total:    { color: PROGRESS_SERIES.total.color, values: checkpoints.map((c) => { const b = valueAt(c); return b ? (b.total || 0) : null; }) },
+    corr:     { color: PROGRESS_SERIES.corr.color, values: checkpoints.map((c) => { const b = valueAt(c); return b ? (b.corr_passing || 0) : null; }) },
+    // Substantiveness — null on pre-lane checkpoints, so the line breaks
+    // there rather than misleadingly drawing a flat zero. `?? null`
+    // preserves an explicit null from the server (vs `||` which would
+    // collapse a valid 0 to null).
+    subst:    { color: PROGRESS_SERIES.subst.color, values: checkpoints.map((c) => { const b = valueAt(c); return b ? (b.substantiveness_passing ?? null) : null; }) },
+    sound:    {
+      color: PROGRESS_SERIES.sound.color,
+      values: checkpoints.map((c) => { const b = valueAt(c); return b ? (b.sound_or_waived || 0) : null; }),
+      // Upper edge: total nodes not "definitively failing" soundness.
+      // Definitively failing = (verifier-Fail in current form) ∪ (SKETCH-marked):
+      //   - verifier-Fail in current form: most recent Sound verifier verdict
+      //     was Fail/Structural AND that verdict's fingerprint matches the
+      //     node's current sound fingerprint (no worker drift since).
+      //   - SKETCH-marked: .tex proof block opens with literal `SKETCH:`.
+      //     The supervisor auto-fails these whenever they are Sound-dispatched
+      //     (`_maybe_synthesize_sketch_soundness_artifact` in
+      //     trellis/agent_wrapper/executor.py); we count them here so the
+      //     chart doesn't have to wait for held_target rotation to reach them.
+      // Both signals are stable across reviewer task↔reset relabeling, so
+      // the upper edge doesn't share the saw-tooth that `current_sound_state
+      // == Fail` exhibits.
+      //
+      // Fallbacks: `sound_definitive_fail` (preferred) → `sound_verifier_fail`
+      // → original (`sound_or_waived + sound_unknown`) when older cached
+      // checkpoints lack either field. Each fallback widens the band toward
+      // the legacy semantic, so the chart never breaks on stale data.
+      valuesUpper: checkpoints.map((c) => {
+        const b = valueAt(c);
+        if (!b) return null;
+        if (b.sound_definitive_fail !== undefined && b.sound_definitive_fail !== null) {
+          return Math.max(0, (b.total || 0) - b.sound_definitive_fail);
+        }
+        if (b.sound_verifier_fail !== undefined && b.sound_verifier_fail !== null) {
+          return Math.max(0, (b.total || 0) - b.sound_verifier_fail);
+        }
+        return (b.sound_or_waived || 0) + (b.sound_unknown || 0);
+      }),
+    },
+    closed:   { color: PROGRESS_SERIES.closed.color, values: checkpoints.map((c) => { const b = valueAt(c); return b ? (b.lean_closed || 0) : null; }) },
+    closedTr: { color: PROGRESS_SERIES.closedTr.color, values: checkpoints.map((c) => { const b = valueAt(c); return b ? (b.lean_closed_transitive || 0) : null; }) },
+    coarseClosed: { color: PROGRESS_SERIES.coarseClosed.color, values: checkpoints.map((c) => { const b = valueAt(c); return b ? (b.lean_closed || 0) : null; }) },
+    unclosed: { color: PROGRESS_SERIES.unclosed.color, values: checkpoints.map((c) => {
+      const b = valueAt(c);
+      return b ? Math.max(0, (b.total || 0) - (b.lean_closed || 0)) : null;
+    }) },
+    coarseUnclosed: { color: PROGRESS_SERIES.coarseUnclosed.color, values: checkpoints.map((c) => {
+      const b = valueAt(c);
+      return b ? Math.max(0, (b.total || 0) - (b.lean_closed || 0)) : null;
+    }) },
+    unclosedTr: { color: PROGRESS_SERIES.unclosedTr.color, values: checkpoints.map((c) => {
+      const b = valueAt(c);
+      return b ? Math.max(0, (b.total || 0) - (b.lean_closed_transitive || 0)) : null;
+    }) },
+    leanProofChars: { color: PROGRESS_SERIES.leanProofChars.color, values: checkpoints.map((c) => {
+      const b = valueAt(c);
+      return b ? (b.lean_proof_chars || 0) : null;
+    }) },
+    nlProofWords: { color: PROGRESS_SERIES.nlProofWords.color, values: checkpoints.map((c) => {
+      const b = valueAt(c);
+      return b ? (b.nl_proof_words || 0) : null;
+    }) },
+    nlProofUnclosedWords: { color: PROGRESS_SERIES.nlProofUnclosedWords.color, values: checkpoints.map((c) => {
+      const b = valueAt(c);
+      return b ? (b.nl_proof_unclosed_words || 0) : null;
+    }) },
+    taskBlockers: { color: PROGRESS_SERIES.taskBlockers.color, values: checkpoints.map((c) => {
+      const b = valueAt(c);
+      return b ? (b.total || 0) : null;
+    }) },
+    taskPaper: { color: PROGRESS_SERIES.taskPaper.color, values: checkpoints.map((c) => {
+      const b = valueAt(c);
+      return b ? (b.paper || 0) : null;
+    }) },
+    taskCorr: { color: PROGRESS_SERIES.taskCorr.color, values: checkpoints.map((c) => {
+      const b = valueAt(c);
+      return b ? (b.corr || 0) : null;
+    }) },
+    taskSubst: { color: PROGRESS_SERIES.taskSubst.color, values: checkpoints.map((c) => {
+      const b = valueAt(c);
+      return b ? (b.subst || 0) : null;
+    }) },
+    taskSound: { color: PROGRESS_SERIES.taskSound.color, values: checkpoints.map((c) => {
+      const b = valueAt(c);
+      return b ? (b.sound || 0) : null;
+    }) },
+  };
+  const xs = checkpoints.map((c) => c.cycle || 0);
+  // Per-series axis assignment from PROGRESS_SERIES.<name>.axis
+  // (defaults to 'left'). Series with `axis: 'right'` get their own
+  // right-side y scale so curves with very different magnitudes (e.g.
+  // lean chars vs NL words) can share one chart legibly.
+  const axisFor = (name) => (PROGRESS_SERIES[name] && PROGRESS_SERIES[name].axis) || 'left';
+  const leftKeys = seriesKeys.filter((k) => series[k] && axisFor(k) === 'left');
+  const rightKeys = seriesKeys.filter((k) => series[k] && axisFor(k) === 'right');
+  const hasRight = rightKeys.length > 0;
+  // padR already reserves right-axis room unconditionally (see top of
+  // function), so the effective right padding is just padR. Keep the
+  // padREff alias to minimize churn elsewhere in the function.
+  const padREff = padR;
+  const innerWEff = W - padL - padREff;
+  const valsForKeys = (keys) => [].concat(...keys.map((k) => series[k].values)).filter((v) => v !== null);
+  const leftMax = Math.max(1, ...(valsForKeys(leftKeys).length ? valsForKeys(leftKeys) : [0]));
+  const rightMax = hasRight ? Math.max(1, ...valsForKeys(rightKeys)) : 0;
+  // Shared visual range: both scales use the larger of the two axes'
+  // maxes as their denominator, so curves on different axes are
+  // visually comparable (the smaller-magnitude curve renders at the
+  // proportionally smaller height it actually has). Each axis still
+  // labels its own ticks in its own unit; the difference is that the
+  // smaller axis's ticks no longer span the full chart height.
+  const yMaxShared = hasRight ? Math.max(leftMax, rightMax) : leftMax;
+  const xMin = xs.length ? xs[0] : 0, xMax = xs.length ? xs[xs.length - 1] : 1;
+  const xScale = (x) => padL + (xMax === xMin ? innerWEff / 2 : ((x - xMin) / (xMax - xMin)) * innerWEff);
+  const yScaleLeft = (y) => padT + (1 - y / yMaxShared) * innerH;
+  const yScaleRight = (y) => padT + (1 - y / yMaxShared) * innerH;
+  const yScaleFor = (k) => (axisFor(k) === 'right' ? yScaleRight : yScaleLeft);
+
+  function path(values, yScale) {
+    // Break the path at any null value so gaps in coverage render as
+    // missing segments rather than dropping the line to zero.
+    let out = '';
+    let needM = true;
+    for (let i = 0; i < values.length; i++) {
+      const v = values[i];
+      if (v === null) { needM = true; continue; }
+      out += `${needM ? 'M' : 'L'} ${xScale(xs[i]).toFixed(1)} ${yScale(v).toFixed(1)} `;
+      needM = false;
+    }
+    return out.trim();
+  }
+
+  // Tick values at 0, 1/4, 1/2, 3/4, max for each axis. Gridlines live
+  // on the left axis only; the right axis just adds tick numbers at
+  // the corresponding y positions (so reading both axes against the
+  // same horizontal lines is visually consistent).
+  const leftTicks = [0, Math.ceil(leftMax / 4), Math.ceil(leftMax / 2), Math.ceil(3 * leftMax / 4), leftMax];
+  const rightTicks = hasRight ? [0, Math.ceil(rightMax / 4), Math.ceil(rightMax / 2), Math.ceil(3 * rightMax / 4), rightMax] : [];
+  const xTickCount = Math.min(xs.length, 8);
+  const xStep = xs.length > 1 ? Math.max(1, Math.floor((xs.length - 1) / xTickCount)) : 1;
+  // Tick-label color matches the curve drawn on top (= last in
+  // seriesKeys for that axis). The "last drawn" curve is the
+  // visually-dominant one — e.g. nlProofWords drawn over
+  // nlProofUnclosedWords on the right axis — so its color reads as
+  // the axis's color.
+  const NEUTRAL_TICK_COLOR = '#6272a4';
+  const leftTickColor = leftKeys.length ? series[leftKeys[leftKeys.length - 1]].color : NEUTRAL_TICK_COLOR;
+  const rightTickColor = hasRight ? series[rightKeys[rightKeys.length - 1]].color : NEUTRAL_TICK_COLOR;
+
+  let svg = `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block;background:#0f0f23;border-radius:4px">`;
+  // Y gridlines at the *shared* range's quartiles so they always span
+  // the full chart height. Each axis's tick labels are then drawn at
+  // the y-positions corresponding to that axis's own values (which
+  // may be squashed below the top when its max is smaller than the
+  // shared max).
+  const sharedGridTicks = [0, yMaxShared / 4, yMaxShared / 2, 3 * yMaxShared / 4, yMaxShared];
+  for (const t of sharedGridTicks) {
+    const yy = yScaleLeft(t).toFixed(1);
+    svg += `<line x1="${padL}" y1="${yy}" x2="${W - padREff}" y2="${yy}" stroke="#222a4d" stroke-width="1"/>`;
+  }
+  // Left axis tick labels (at positions of leftTicks within shared scale).
+  // Skip when no left-axis series is in the chart — otherwise we'd render
+  // a meaningless `[0, 0, 0, 0, 1]` ladder when every visible curve is on
+  // the right axis.
+  if (leftKeys.length) {
+    for (const t of leftTicks) {
+      svg += `<text x="${padL - 4}" y="${(yScaleLeft(t) + 4).toFixed(1)}" fill="${leftTickColor}" font-size="10" text-anchor="end" font-family="Menlo,monospace">${t}</text>`;
+    }
+  }
+  // Right-axis tick labels (no extra gridlines — they share the
+  // left-axis grid). Each right tick is drawn at the y position
+  // corresponding to its proportion of rightMax (which lines up with
+  // the matching proportion of leftMax on the same horizontal line).
+  if (hasRight) {
+    for (const t of rightTicks) {
+      svg += `<text x="${(W - padREff + 4).toFixed(1)}" y="${(yScaleRight(t) + 4).toFixed(1)}" fill="${rightTickColor}" font-size="10" text-anchor="start" font-family="Menlo,monospace">${t}</text>`;
+    }
+  }
+  // X ticks (cycle numbers)
+  for (let i = 0; i < xs.length; i += xStep) {
+    const xx = xScale(xs[i]).toFixed(1);
+    svg += `<line x1="${xx}" y1="${padT}" x2="${xx}" y2="${H - padB}" stroke="#161e3a" stroke-width="1"/>`;
+    svg += `<text x="${xx}" y="${H - padB + 12}" fill="#6272a4" font-size="10" text-anchor="middle" font-family="Menlo,monospace">${xs[i]}</text>`;
+  }
+  // Band path between a lower and upper value array. Walks forward along the
+  // upper edge, then backward along the lower edge, closing the polygon.
+  // Breaks the area into independent polygons at any index where either
+  // edge is null, matching how `path()` breaks lines at gaps.
+  function areaPath(lowerVals, upperVals, yScale) {
+    let out = '';
+    let lo = [], up = [];
+    function flush() {
+      if (up.length < 2) { lo = []; up = []; return; }
+      let s = `M ${xScale(xs[up[0].i]).toFixed(1)} ${yScale(up[0].v).toFixed(1)} `;
+      for (let k = 1; k < up.length; k++) {
+        s += `L ${xScale(xs[up[k].i]).toFixed(1)} ${yScale(up[k].v).toFixed(1)} `;
+      }
+      for (let k = lo.length - 1; k >= 0; k--) {
+        s += `L ${xScale(xs[lo[k].i]).toFixed(1)} ${yScale(lo[k].v).toFixed(1)} `;
+      }
+      s += 'Z ';
+      out += s;
+      lo = []; up = [];
+    }
+    for (let i = 0; i < xs.length; i++) {
+      const a = lowerVals[i], b = upperVals[i];
+      if (a === null || b === null) { flush(); continue; }
+      lo.push({ i, v: a });
+      up.push({ i, v: b });
+    }
+    flush();
+    return out.trim();
+  }
+
+  // Lines (later in seriesKeys draws on top; each curve uses its
+  // configured axis's scale). Series with a `valuesUpper` array render as
+  // a filled band between values (lower) and valuesUpper (upper), with the
+  // lower edge drawn as a stroke for emphasis.
+  for (const k of seriesKeys) {
+    if (!series[k]) continue;
+    const yScale = yScaleFor(k);
+    if (series[k].valuesUpper) {
+      svg += `<path d="${areaPath(series[k].values, series[k].valuesUpper, yScale)}" fill="${series[k].color}" fill-opacity="0.22" stroke="none"/>`;
+      svg += `<path d="${path(series[k].values, yScale)}" fill="none" stroke="${series[k].color}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+    } else {
+      svg += `<path d="${path(series[k].values, yScale)}" fill="none" stroke="${series[k].color}" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+    }
+  }
+  // Hover overlay: an initially hidden vertical guide + per-series
+  // markers. The mousemove handler positions these and shows a floating
+  // HTML tooltip alongside.
+  const drawnSeriesKeys = seriesKeys.filter((k) => series[k]);
+  svg += `<g class="chart-hover" style="display:none;pointer-events:none">`;
+  svg += `<line class="chart-hover-line" x1="0" y1="${padT}" x2="0" y2="${H - padB}" stroke="#bd93f9" stroke-width="1" stroke-dasharray="3,3" opacity="0.85"/>`;
+  for (const k of drawnSeriesKeys) {
+    svg += `<circle class="chart-hover-dot" data-series="${k}" cx="0" cy="0" r="3" fill="${series[k].color}" stroke="#0f0f23" stroke-width="1"/>`;
+  }
+  svg += `</g>`;
+  svg += `</svg>`;
+
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:relative';
+  wrap.innerHTML = svg;
+  const svgEl = wrap.firstChild;
+
+  if (xs.length) {
+    const tooltip = document.createElement('div');
+    tooltip.style.cssText =
+      'position:absolute;display:none;pointer-events:none;z-index:10;'
+      + 'background:rgba(15,15,35,0.96);border:1px solid #444;border-radius:4px;'
+      + 'padding:6px 8px;font-size:11px;font-family:Menlo,monospace;color:#e0e0e0;'
+      + 'white-space:nowrap;box-shadow:0 2px 8px rgba(0,0,0,0.5)';
+    wrap.appendChild(tooltip);
+
+    const hoverGroup = svgEl.querySelector('.chart-hover');
+    const hoverLine = svgEl.querySelector('.chart-hover-line');
+    const hoverDots = Array.from(svgEl.querySelectorAll('.chart-hover-dot'));
+
+    const fmtVal = (v) => {
+      if (v === null || v === undefined) return '—';
+      if (!isFinite(v)) return String(v);
+      if (Number.isInteger(v)) return v.toLocaleString();
+      return Number(v.toFixed(2)).toLocaleString();
+    };
+
+    function updateHover(ev) {
+      const rect = svgEl.getBoundingClientRect();
+      if (!rect.width) return;
+      const mxPx = ev.clientX - rect.left;
+      // Map client-pixel x into viewBox coordinates so xScale comparisons match.
+      const svgX = (mxPx / rect.width) * W;
+      let bestI = 0, bestDist = Infinity;
+      for (let i = 0; i < xs.length; i++) {
+        const d = Math.abs(xScale(xs[i]) - svgX);
+        if (d < bestDist) { bestDist = d; bestI = i; }
+      }
+      const cycleX = xScale(xs[bestI]);
+      hoverLine.setAttribute('x1', cycleX.toFixed(1));
+      hoverLine.setAttribute('x2', cycleX.toFixed(1));
+      hoverGroup.style.display = '';
+
+      let html = `<div style="color:#bd93f9;margin-bottom:3px">cycle ${xs[bestI]}</div>`;
+      for (let j = 0; j < drawnSeriesKeys.length; j++) {
+        const k = drawnSeriesKeys[j];
+        const v = series[k].values[bestI];
+        const meta = PROGRESS_SERIES[k];
+        const dot = hoverDots[j];
+        if (v === null || v === undefined) {
+          if (dot) dot.setAttribute('opacity', '0');
+          html += `<div style="color:${meta.color};opacity:0.6">${escHtml(meta.label)}: —</div>`;
+        } else if (series[k].valuesUpper) {
+          // Band: lower = confirmed-Pass-or-waived; upper = total − definitive-Fail.
+          // definitive-Fail = (verifier-Fail in current form) ∪ (SKETCH-marked).
+          // Both signals are stable across reviewer task↔reset relabeling.
+          // Tooltip also surfaces the noisier kernel-Fail / Unknown split for
+          // diagnostic visibility — those oscillate cycle-to-cycle as the
+          // reviewer relabels via task/reset blockers without verifier evidence.
+          const upper = series[k].valuesUpper[bestI];
+          const bucket = checkpoints[bestI] ? valueAt(checkpoints[bestI]) : null;
+          const unk = bucket ? (bucket.sound_unknown || 0) : null;
+          const total = bucket ? (bucket.total || 0) : null;
+          const verifierFail = (bucket && bucket.sound_verifier_fail !== undefined && bucket.sound_verifier_fail !== null)
+            ? bucket.sound_verifier_fail : null;
+          const definitiveFail = (bucket && bucket.sound_definitive_fail !== undefined && bucket.sound_definitive_fail !== null)
+            ? bucket.sound_definitive_fail : null;
+          const reviewerFail = (total !== null && v !== null && v !== undefined && unk !== null)
+            ? Math.max(0, total - v - unk) : null;
+          if (dot) {
+            dot.setAttribute('opacity', '1');
+            dot.setAttribute('cx', cycleX.toFixed(1));
+            dot.setAttribute('cy', yScaleFor(k)(v).toFixed(1));
+          }
+          const dfStr = definitiveFail !== null ? fmtVal(definitiveFail) : '—';
+          const vfStr = verifierFail !== null ? fmtVal(verifierFail) : '—';
+          html += `<div style="color:${meta.color}">sound/waived: ${fmtVal(v)} · definitive-fail: ${dfStr} (verifier: ${vfStr}, SKETCH: ${definitiveFail !== null && verifierFail !== null ? fmtVal(definitiveFail - verifierFail) : '—'}) · kernel-fail: ${fmtVal(reviewerFail)} · unknown: ${fmtVal(unk)} · total: ${fmtVal(upper)}</div>`;
+        } else {
+          if (dot) {
+            dot.setAttribute('opacity', '1');
+            dot.setAttribute('cx', cycleX.toFixed(1));
+            dot.setAttribute('cy', yScaleFor(k)(v).toFixed(1));
+          }
+          html += `<div style="color:${meta.color}">${escHtml(meta.label)}: ${fmtVal(v)}</div>`;
+        }
+      }
+      tooltip.innerHTML = html;
+      tooltip.style.display = 'block';
+
+      // Position tooltip in client-pixel space relative to the wrapper.
+      // Default to right-of-cursor; flip to the left if it would overflow.
+      const tipW = tooltip.offsetWidth;
+      const tipH = tooltip.offsetHeight;
+      const wrapRect = wrap.getBoundingClientRect();
+      let tx = mxPx + 12;
+      if (tx + tipW > wrapRect.width - 4) tx = mxPx - tipW - 12;
+      if (tx < 4) tx = 4;
+      let ty = (ev.clientY - rect.top) + 12;
+      if (ty + tipH > rect.height - 4) ty = (ev.clientY - rect.top) - tipH - 12;
+      if (ty < 4) ty = 4;
+      tooltip.style.left = `${tx.toFixed(0)}px`;
+      tooltip.style.top = `${ty.toFixed(0)}px`;
+    }
+
+    function clearHover() {
+      hoverGroup.style.display = 'none';
+      tooltip.style.display = 'none';
+    }
+
+    svgEl.addEventListener('mousemove', updateHover);
+    svgEl.addEventListener('mouseleave', clearHover);
+  }
+
+  return wrap;
+}
+
+// ---------- Usage ----------
+
+async function renderUsageDetail() {
+  const pane = document.getElementById('detail-content');
+  if (usageShellBuilt && !document.getElementById('usage-content')) {
+    usageShellBuilt = false;
+    lastUsageDataKey = null;
+  }
+  if (!usageShellBuilt) {
+    pane.innerHTML = `
+      <h2>Usage</h2>
+      <div style="background:#3a2a1a;border:1px solid #ffb86c;border-radius:6px;color:#ffb86c;font-size:12px;padding:8px 10px;margin-bottom:10px">
+        <strong>Experimental — do not rely on these numbers.</strong>
+      </div>
+      <p style="color:#6272a4;font-size:12px">
+        Per-burst rollup from the cost ledger + check-ledger + per-stage
+        wall-clock + latest quota snapshots. Refreshes on the DAG cadence.
+      </p>
+      <div id="usage-status" style="color:#6272a4;font-size:11px;margin-bottom:8px">Loading…</div>
+      <div id="usage-content" style="display:flex;flex-direction:column;gap:14px"></div>
+    `;
+    usageShellBuilt = true;
+  }
+  try {
+    const r = await fetch(apiPath('usage.json'));
+    if (!r.ok) throw new Error(`usage.json -> ${r.status}`);
+    const d = await r.json();
+    const c = d.counts || {};
+    const key = `${c.cost_rows}::${c.check_rows}::${c.quota_rows}::${c.event_rows}`;
+    if (key === lastUsageDataKey) return;
+    lastUsageDataKey = key;
+    document.getElementById('usage-status').textContent =
+      `cost rows: ${c.cost_rows} · check rows: ${c.check_rows} · quota snapshots: ${c.quota_rows} · event log: ${c.event_rows}`;
+    const out = document.getElementById('usage-content');
+    out.innerHTML = '';
+    // Build a quick lookup: provider → llm_seconds (from on-demand
+    // codex_timing aggregate). For non-codex providers this stays absent
+    // and the column renders '—'. cache_w is dropped (all-zero for codex —
+    // OpenAI doesn't surface a cache-creation token count).
+    const llmByProvider = {};
+    for (const r of (d.codex_timing_by_provider || [])) {
+      llmByProvider[r.key] = r.llm_seconds;
+    }
+    out.appendChild(usageTable(
+      'Per provider',
+      ['provider', 'msgs', 'hours', 'in thought', 'burn %', 'USD'],
+      d.by_provider.map((r) => [
+        r.provider,
+        r.bursts_with_msgs ? r.messages : '—',
+        fmtSecondsToHm(r.duration_s),
+        llmByProvider[r.provider] != null ? fmtSecondsToHm(llmByProvider[r.provider]) : '—',
+        r.monthly_burn_pct == null ? '—' : `${r.monthly_burn_pct}%`,
+        r.monthly_burn_usd == null ? '—' : `$${r.monthly_burn_usd.toFixed(2)}`,
+      ])));
+    out.appendChild(usageTable(
+      'Per (provider, category)',
+      ['provider', 'category', 'msgs', 'hours', 'burn %', 'USD'],
+      (d.by_provider_category || []).map((r) => [
+        r.provider, r.category,
+        r.bursts_with_msgs ? r.messages : '—',
+        fmtSecondsToHm(r.duration_s),
+        r.monthly_burn_pct == null ? '—' : `${r.monthly_burn_pct}%`,
+        r.monthly_burn_usd == null ? '—' : `$${r.monthly_burn_usd.toFixed(2)}`,
+      ])));
+    if ((d.wall_clock || []).length) {
+      // Merged wall-clock breakdown: protocol stages from event_log
+      // (kind=stage) + deterministic check.py subcommands (kind=check)
+      // + raw git subprocesses from the kernel (kind=git). All in one
+      // table sorted by total time, totals only — per-call averages
+      // were dropped per design discussion.
+      out.appendChild(usageTable(
+        'Wall-clock (totals)',
+        ['kind', 'name', 'count', 'total'],
+        d.wall_clock.map((r) => [
+          r.kind, r.name,
+          (r.intervals != null ? r.intervals : (r.count != null ? r.count : '—')),
+          fmtSecondsToHm(r.duration_s),
+        ])));
+    }
+    // 'Codex wall-clock decomposition' table and the latest-quota
+    // section are intentionally hidden from the rendered Usage page;
+    // the data is still in /api/usage.json for any downstream
+    // consumer that wants it.
+  } catch (e) {
+    document.getElementById('usage-status').textContent = `Load failed: ${e.message}`;
+  }
+}
+
+function usageTable(title, cols, rows) {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'background:#0b0b1e;border:1px solid #333;border-radius:6px;padding:10px';
+  let html = `<div style="color:#8be9fd;font-weight:bold;margin-bottom:6px">${escHtml(title)}</div>`;
+  html += `<table style="width:100%;border-collapse:collapse;font-size:11px;font-family:Menlo,monospace">`;
+  html += `<thead><tr>${cols.map((c) => `<th style="text-align:right;padding:3px 6px;border-bottom:1px solid #333;color:#6272a4">${escHtml(String(c))}</th>`).join('')}</tr></thead>`;
+  html += `<tbody>`;
+  for (const r of rows) {
+    html += `<tr>${r.map((cell) => `<td style="text-align:right;padding:3px 6px;border-bottom:1px solid #1a1a2e">${escHtml(String(cell))}</td>`).join('')}</tr>`;
+  }
+  html += `</tbody></table>`;
+  wrap.innerHTML = html;
+  return wrap;
+}
+
+function usageQuotaSection(quota) {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'background:#0b0b1e;border:1px solid #333;border-radius:6px;padding:10px';
+  let html = `<div style="color:#8be9fd;font-weight:bold;margin-bottom:6px">Current quota windows
+    <span style="color:#6272a4;font-size:11px;font-weight:normal">(monthly_burn = pct_used × window_fraction_of_30-day_month)</span>
+  </div>`;
+  // Per-provider headline: longest-cadence window's pct-used translated
+  // to a dollar value against the configured monthly subscription price.
+  // (Not a rate — the actual subscription value consumed so far this
+  // window.) Cross-provider "what has this run actually consumed?"
+  const priceRows = [];
+  for (const prov of Object.keys(quota).sort()) {
+    const snap = quota[prov] || {};
+    if (snap.effective_monthly_usd == null) continue;
+    priceRows.push(`<tr>
+      <td style="padding:3px 6px">${escHtml(prov)}</td>
+      <td style="text-align:right;padding:3px 6px">$${snap.effective_monthly_usd.toFixed(2)}</td>
+      <td style="text-align:right;padding:3px 6px;color:#6272a4">/ $${snap.subscription_usd}/mo</td>
+      <td style="padding:3px 6px;color:#6272a4">${escHtml(snap.effective_monthly_usd_basis || '')}</td>
+    </tr>`);
+  }
+  if (priceRows.length) {
+    html += `<table style="width:100%;border-collapse:collapse;font-size:11px;font-family:Menlo,monospace;margin-bottom:8px">
+      <thead><tr>
+        <th style="text-align:left;padding:3px 6px;border-bottom:1px solid #333;color:#6272a4">provider</th>
+        <th style="text-align:right;padding:3px 6px;border-bottom:1px solid #333;color:#6272a4">consumed (USD)</th>
+        <th style="text-align:right;padding:3px 6px;border-bottom:1px solid #333;color:#6272a4">/ subscription</th>
+        <th style="text-align:left;padding:3px 6px;border-bottom:1px solid #333;color:#6272a4">basis</th>
+      </tr></thead><tbody>${priceRows.join('')}</tbody></table>`;
+  }
+  const providers = Object.keys(quota).sort();
+  if (!providers.length) {
+    html += `<div style="color:#6272a4;font-size:11px">no probes yet</div>`;
+    wrap.innerHTML = html;
+    return wrap;
+  }
+  html += `<table style="width:100%;border-collapse:collapse;font-size:11px;font-family:Menlo,monospace">
+    <thead><tr>
+      <th style="text-align:left;padding:3px 6px;border-bottom:1px solid #333;color:#6272a4">provider</th>
+      <th style="text-align:left;padding:3px 6px;border-bottom:1px solid #333;color:#6272a4">scope</th>
+      <th style="text-align:right;padding:3px 6px;border-bottom:1px solid #333;color:#6272a4">pct_used</th>
+      <th style="text-align:right;padding:3px 6px;border-bottom:1px solid #333;color:#6272a4">resets_in</th>
+      <th style="text-align:right;padding:3px 6px;border-bottom:1px solid #333;color:#6272a4">monthly_burn</th>
+    </tr></thead><tbody>`;
+  const now = Math.floor(Date.now() / 1000);
+  function fmtPct(p) { if (p == null) return '—'; if (p === 0) return '0%'; if (p < 0.1) return p.toFixed(2) + '%'; if (p < 1) return p.toFixed(1) + '%'; return p.toFixed(0) + '%'; }
+  function fmtResets(s) {
+    if (s == null) return '—';
+    s = Math.max(0, s | 0);
+    if (s >= 86400) return `${Math.floor(s / 86400)}d ${Math.floor((s % 86400) / 3600)}h`;
+    if (s >= 3600) return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+    if (s >= 60) return `${Math.floor(s / 60)}m`;
+    return `${s}s`;
+  }
+  for (const prov of providers) {
+    const snap = quota[prov] || {};
+    if (!snap.ok) {
+      html += `<tr><td style="padding:3px 6px;color:#ff5555">${escHtml(prov)}</td><td colspan="4" style="padding:3px 6px;color:#ff5555">probe failed: ${escHtml((snap.error || '').slice(0, 80))}</td></tr>`;
+      continue;
+    }
+    const wins = snap.windows || [];
+    const models = snap.models || [];
+    for (const w of wins) {
+      const ri = (w.resets_in_seconds != null) ? w.resets_in_seconds :
+        (w.resets_at != null ? Math.max(0, Number(w.resets_at) - now) : null);
+      html += `<tr>
+        <td style="padding:3px 6px">${escHtml(prov)}</td>
+        <td style="padding:3px 6px">${escHtml((w.name || '?') + (w.pct_used_kind === 'band' ? ' (band)' : ''))}</td>
+        <td style="text-align:right;padding:3px 6px">${fmtPct(w.pct_used)}</td>
+        <td style="text-align:right;padding:3px 6px">${fmtResets(ri)}</td>
+        <td style="text-align:right;padding:3px 6px">${fmtPct(w.monthly_burn_pct)}</td>
+      </tr>`;
+    }
+    for (const m of models) {
+      html += `<tr>
+        <td style="padding:3px 6px">${escHtml(prov)}</td>
+        <td style="padding:3px 6px">model:${escHtml(m.category || m.model || '?')}</td>
+        <td style="text-align:right;padding:3px 6px">${fmtPct(m.pct_used)}</td>
+        <td style="text-align:right;padding:3px 6px">${fmtResets(m.resets_in_seconds)}</td>
+        <td style="text-align:right;padding:3px 6px">${fmtPct(m.monthly_burn_pct)}</td>
+      </tr>`;
+    }
+  }
+  html += `</tbody></table>`;
+  wrap.innerHTML = html;
+  return wrap;
+}
+
+// ---------- Kernel pane ----------
+
+function stopKernelAutoRefresh() {
+  if (kernelAutoRefreshTimer) {
+    clearTimeout(kernelAutoRefreshTimer);
+    kernelAutoRefreshTimer = null;
+  }
+}
+
+async function renderKernelDetail() {
+  const pane = document.getElementById('detail-content');
+  if (kernelShellBuilt && !document.getElementById('kernel-events-text')) {
+    kernelShellBuilt = false;
+  }
+  if (!kernelShellBuilt) {
+    pane.innerHTML = `
+      <h2>Kernel</h2>
+      <p style="color:#6272a4;font-size:12px">
+        Top: tail of the supervisor's structured event log
+        (cycle starts / wrapper responses / commit_checkpoints).
+        Bottom: live tmux pane (usually blank — kernel only writes
+        stdout on errors). Refreshes every 3s; auto-pinned to the
+        bottom unless you scroll up.
+      </p>
+      <div id="kernel-status" style="color:#6272a4;font-size:11px;margin-bottom:6px"></div>
+      <div style="color:#8be9fd;font-size:12px;margin-bottom:4px">Event log tail</div>
+      <pre id="kernel-events-text" style="background:#0b0b1e;color:#e0e0e0;border:1px solid #333;border-radius:6px;padding:8px;font-family:Menlo,monospace;font-size:11px;white-space:pre;overflow:auto;max-height:42vh;line-height:1.4;margin:0 0 8px 0"></pre>
+      <div style="color:#8be9fd;font-size:12px;margin-bottom:4px">Live tmux pane</div>
+      <pre id="kernel-pane-text" style="background:#0b0b1e;color:#e0e0e0;border:1px solid #333;border-radius:6px;padding:8px;font-family:Menlo,monospace;font-size:11px;white-space:pre;overflow:auto;max-height:30vh;line-height:1.35;margin:0"></pre>
+    `;
+    kernelShellBuilt = true;
+  }
+  await refreshKernelPane();
+  scheduleKernelAutoRefresh();
+}
+
+function scheduleKernelAutoRefresh() {
+  stopKernelAutoRefresh();
+  if (detailMode !== 'kernel') return;
+  kernelAutoRefreshTimer = setTimeout(async () => {
+    await refreshKernelPane();
+    scheduleKernelAutoRefresh();
+  }, 3000);
+}
+
+async function refreshKernelPane() {
+  const status = document.getElementById('kernel-status');
+  const eventsPre = document.getElementById('kernel-events-text');
+  const pane = document.getElementById('kernel-pane-text');
+  if (!eventsPre || !pane) return;
+  // Preserve scroll-pinned-to-bottom across refreshes per pre.
+  function wasPinned(el) { return (el.scrollTop + el.clientHeight) >= (el.scrollHeight - 8); }
+  function maybePin(el, was) { if (was) el.scrollTop = el.scrollHeight; }
+  const wasEvPinned = wasPinned(eventsPre);
+  const wasPanePinned = wasPinned(pane);
+  try {
+    const r = await fetch(apiPath('kernel-pane.json?tail=80'));
+    if (!r.ok) throw new Error(`kernel-pane.json -> ${r.status}`);
+    const d = await r.json();
+    // Status line: pane source + event count.
+    const p = d.pane || {};
+    const evCount = (d.events || []).length;
+    let statusBits = [];
+    if (p.source === 'tmux') statusBits.push(`pane: tmux ${p.session}`);
+    else if (p.source === 'logfile') statusBits.push(`pane: tail of ${p.logfile}`);
+    else statusBits.push(`pane: ${p.note || 'unavailable'}`);
+    statusBits.push(`events: ${evCount}`);
+    status.textContent = statusBits.join(' · ');
+    // Format events: idx | kind | summary | cmds
+    const evLines = (d.events || []).map((e) => {
+      const cmds = e.commands && e.commands.length ? `[${e.commands.join(',')}]` : '';
+      const sum = e.summary || '';
+      return `${String(e.index).padStart(4)} ${e.kind.padEnd(18)} ${sum} ${cmds}`.trimEnd();
+    }).join('\n');
+    if (eventsPre.textContent !== evLines) {
+      eventsPre.textContent = evLines;
+      maybePin(eventsPre, wasEvPinned);
+    }
+    const paneText = (p.text || '');
+    if (pane.textContent !== paneText) {
+      pane.textContent = paneText || '(pane empty — kernel writes stdout only on errors)';
+      maybePin(pane, wasPanePinned);
+    }
+  } catch (e) {
+    status.textContent = `Load failed: ${e.message}`;
+  }
+}
+
+function selectedTimelineSlot() {
+  const slider = document.getElementById('cycle-slider');
+  const idx = parseInt(slider.value || '0', 10);
+  return timelineSlots[idx];
+}
+
+function renderTimelineSlotLabels() {
+  const container = document.getElementById('timeline-slot-labels');
+  if (!container) return;
+  const selected = selectedTimelineSlot();
+  container.innerHTML = timelineSlots.map((slot, idx) => {
+    const label = slot === 'current' ? `Live ${liveCycleNumber()}` : `Cycle ${slot}`;
+    const cls = slot === selected ? 'selected' : '';
+    return `<button type="button" class="${cls}" onclick="selectTimelineSlot(${idx})">${escHtml(label)}</button>`;
+  }).join('');
+}
+
+function selectTimelineSlot(idx) {
+  const slider = document.getElementById('cycle-slider');
+  slider.value = String(idx);
+  updateCycleInfo();
+}
+
+// ----- Unified Chats tab -----
+// One dropdown of calls for the currently-selected timeline cycle (live or
+// historical), each rendering as a structured event card view. Live cycle
+// + claude/gemini can optionally toggle to a raw tmux-TUI tail.
+let chatSelectedCallId = null;
+let chatUserTouchedSelect = false;
+let chatUserTouchedTui = false;
+let chatAutoRefreshTimer = null;
+let chatShellBuilt = false;
+let chatScrollPinnedToBottom = true;
+let chatTuiMode = false;
+let chatThoughtsOnlyMode = false;
+// Stats from the last successful chat-events render — let the Thoughts-only
+// toggle update the status line without re-fetching.
+let chatLastRenderStats = null;
+let chatCurrentCycleKey = null; // 'live' | number
+// Monotonic invocation counter for refreshChatView. Any in-flight refresh
+// re-checks this against its captured `seq` after every await; if a newer
+// refresh has started (user dropdown change, auto-refresh tick, slider move,
+// tab switch), the older invocation bails out without mutating the DOM. Same
+// pattern as `timelineUpdateSeq`.
+let chatRefreshSeq = 0;
+
+function stopChatAutoRefresh() {
+  if (chatAutoRefreshTimer) {
+    clearTimeout(chatAutoRefreshTimer);
+    chatAutoRefreshTimer = null;
+  }
+}
+
+function selectedChatCycleKey() {
+  const slot = selectedTimelineSlot();
+  return slot === 'current' ? 'live' : String(slot);
+}
+
+function fmtUnixMs(ms) {
+  if (!ms) return '';
+  return new Date(ms).toLocaleTimeString();
+}
+
+async function renderChatDetail() {
+  const pane = document.getElementById('detail-content');
+  // Switching to the Node tab nukes pane.innerHTML, which destroys our
+  // shell DOM. Detect that case (probe a known shell element) and force
+  // a rebuild — without this, switching tabs and coming back would leave
+  // the renderer trying to update vanished DOM nodes.
+  if (chatShellBuilt && !document.getElementById('chat-call-select')) {
+    chatShellBuilt = false;
+  }
+  if (!chatShellBuilt) {
+    pane.innerHTML = `
+      <h2>Chats</h2>
+      <p style="color:#6272a4;font-size:12px">
+        Per-burst transcripts for the selected cycle. The live cycle
+        auto-refreshes every 3s; historical cycles are static.
+      </p>
+      <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+        <label for="chat-call-select" style="color:#8be9fd;font-size:12px">Call:</label>
+        <select id="chat-call-select" style="background:#0f0f23;color:#e0e0e0;border:1px solid #444;border-radius:4px;padding:4px 8px;font-size:12px;min-width:320px"></select>
+        <label id="chat-tui-toggle-label" style="color:#8be9fd;font-size:12px;display:flex;align-items:center;gap:4px">
+          <input type="checkbox" id="chat-tui-toggle" disabled style="margin:0">
+          Live TUI
+        </label>
+        <label id="chat-thoughts-only-toggle-label" style="color:#8be9fd;font-size:12px;display:flex;align-items:center;gap:4px">
+          <input type="checkbox" id="chat-thoughts-only-toggle" style="margin:0">
+          Thoughts only
+        </label>
+        <button class="btn" id="chat-refresh-now" style="background:#8be9fd;color:#1a1a2e;border:none;border-radius:4px;padding:4px 10px;font-size:12px;cursor:pointer">Refresh</button>
+        <span id="chat-refresh-status" style="color:#6272a4;font-size:11px;margin-left:auto"></span>
+      </div>
+      <div id="chat-view-container" style="background:#0b0b1e;border:1px solid #333;border-radius:4px;padding:10px;max-height:60vh;overflow:auto"></div>
+    `;
+    document.getElementById('chat-call-select').addEventListener('change', (e) => {
+      chatSelectedCallId = e.target.value || null;
+      chatUserTouchedSelect = true;
+      chatScrollPinnedToBottom = true;
+      refreshChatView({ immediate: true });
+    });
+    document.getElementById('chat-tui-toggle').addEventListener('change', (e) => {
+      chatTuiMode = !!e.target.checked;
+      chatUserTouchedTui = true;
+      chatScrollPinnedToBottom = true;
+      refreshChatView({ immediate: true });
+    });
+    document.getElementById('chat-thoughts-only-toggle').addEventListener('change', (e) => {
+      chatThoughtsOnlyMode = !!e.target.checked;
+      // Pure CSS-class flip + status-line update — no fetch, no DOM rebuild.
+      // The events are already in the DOM with .chat-card-tool tags; the
+      // container class controls visibility.
+      applyChatThoughtsOnlyClass();
+      updateChatStatusForThoughtsToggle();
+    });
+    document.getElementById('chat-refresh-now').addEventListener('click', () => {
+      refreshChatView({ immediate: true });
+    });
+    const container = document.getElementById('chat-view-container');
+    container.addEventListener('scroll', () => {
+      const pinned = (container.scrollTop + container.clientHeight) >= (container.scrollHeight - 8);
+      chatScrollPinnedToBottom = pinned;
+    });
+    chatShellBuilt = true;
+  }
+  await refreshChatView({ immediate: true });
+}
+
+function buildChatCallOptions(calls) {
+  const opts = [];
+  // Group in request_id order (already sorted server-side) but annotate grouping.
+  for (const c of (calls || [])) {
+    const provider = c.provider || '?';
+    const role = c.role || inferRoleFromKind(c.kind);
+    const req = c.request_id != null ? `#${c.request_id}` : '';
+    const model = c.model ? ` — ${c.model}` : '';
+    const node = c.active_node ? ` @${c.active_node}` : '';
+    const liveBadge = c.tmux_session ? ' ▶live' : '';
+    const staleBadge = c.transcript_is_stale_scope_dir && !c.tmux_session ? ' ⚠stale-scope' : '';
+    const missingBadge = c.artifact_id == null ? ' ∅no-dir' : '';
+    const artifact = c.artifact_id ? ` (${c.artifact_id})` : '';
+    const label = `[${provider}] ${role}${req}${node}${artifact}${model}${liveBadge}${staleBadge}${missingBadge}`;
+    // Key must uniquely identify this call row — scope dirs are shared
+    // across bursts (every worker of the same provider/role writes to the
+    // same artifact_id), so we include request_id + event_index in the key
+    // itself. The actual server call still uses artifact_id via a separate
+    // field on the option object.
+    const reqTag = c.request_id != null ? c.request_id : '?';
+    const evTag = c.event_index != null ? c.event_index : '?';
+    const baseId = c.artifact_id || '__missing__';
+    const key = `${reqTag}:${evTag}:${baseId}`;
+    // callId is what we send to chat-events.json (artifact_id, or a
+    // missing placeholder matching the server's behavior).
+    const callId = c.artifact_id || `__missing__:${reqTag}:${evTag}`;
+    opts.push({ key, callId, label, call: c });
+  }
+  return opts;
+}
+
+function inferRoleFromKind(kind) {
+  return kind || 'agent';
+}
+
+// Returns the HTML string for one chat-event card. Switched from
+// createElement + per-card innerHTML to a string return so renderChatEvents
+// can concat 150+ cards and set the container's innerHTML once — dramatically
+// faster on chat switches (one HTML parse vs. one per card + one reflow per
+// appendChild).
+function renderChatCard(ev) {
+  const cls = isChatToolEvent(ev) ? ' class="chat-card-tool"' : '';
+  const outer = (inner) => `<div${cls} style="margin-bottom:6px;font-size:12px;line-height:1.4">${inner}</div>`;
+  if (ev.kind === 'thread_started') {
+    return outer(`<span style="color:#6272a4">— thread ${escHtml(String(ev.thread_id || '').slice(0,12) || '?')} started —</span>`);
+  } else if (ev.kind === 'turn_started') {
+    return outer(`<span style="color:#6272a4;font-weight:bold">— turn started —</span>`);
+  } else if (ev.kind === 'turn_completed') {
+    const u = ev.usage || {};
+    const parts = [];
+    if (u.input_tokens != null) parts.push(`in=${u.input_tokens}`);
+    if (u.input != null) parts.push(`in=${u.input}`);
+    if (u.cached_input_tokens != null) parts.push(`cached=${u.cached_input_tokens}`);
+    if (u.cached != null) parts.push(`cached=${u.cached}`);
+    if (u.output_tokens != null) parts.push(`out=${u.output_tokens}`);
+    if (u.output != null) parts.push(`out=${u.output}`);
+    if (u.total != null) parts.push(`total=${u.total}`);
+    return outer(`<span style="color:#50fa7b;font-weight:bold">✓ turn completed</span> <span style="color:#6272a4">${escHtml(parts.join(' '))}</span>`);
+  } else if (ev.kind === 'agent_message') {
+    return outer(`<div style="background:#1e1e3a;border-left:3px solid #bd93f9;padding:6px 10px;border-radius:3px;color:#f8f8f2;white-space:pre-wrap">${escHtml(ev.text || '')}</div>`);
+  } else if (ev.kind === 'user_message') {
+    return outer(`<div style="background:#1a2332;border-left:3px solid #8be9fd;padding:6px 10px;border-radius:3px;color:#f8f8f2;white-space:pre-wrap">${escHtml(ev.text || '')}</div>`);
+  } else if (ev.kind === 'thinking') {
+    return outer(`<div style="background:#0f0f23;border-left:3px dashed #f1fa8c;padding:6px 10px;border-radius:3px;color:#bbb;font-style:italic;white-space:pre-wrap;font-size:11px">${escHtml(ev.thinking || '')}</div>`);
+  } else if (ev.kind === 'tool_call') {
+    const inputStr = ev.tool_input == null ? '' : (typeof ev.tool_input === 'string' ? ev.tool_input : JSON.stringify(ev.tool_input, null, 2));
+    return outer(`<div style="background:#0f0f23;border:1px solid #44475a;border-radius:3px;padding:6px 10px;color:#8be9fd;font-family:Menlo,Consolas,monospace;font-size:11px"><div><span style="color:#ff79c6">tool</span> ${escHtml(ev.tool_name || '?')} ${ev.id ? `<span style="color:#6272a4">[${escHtml(ev.id)}]</span>` : ''}</div>${inputStr ? `<pre style="margin:4px 0 0 0;color:#f8f8f2;white-space:pre-wrap;max-height:200px;overflow:auto">${escHtml(inputStr)}</pre>` : ''}</div>`);
+  } else if (ev.kind === 'tool_result') {
+    const outStr = ev.tool_output == null ? '' : (typeof ev.tool_output === 'string' ? ev.tool_output : JSON.stringify(ev.tool_output, null, 2));
+    const badge = ev.is_error
+      ? '<span style="color:#ff5555">✗ error</span>'
+      : '<span style="color:#50fa7b">✓ ok</span>';
+    return outer(`<div style="background:#0f0f23;border:1px solid #44475a;border-radius:3px;padding:6px 10px;color:#f8f8f2;font-family:Menlo,Consolas,monospace;font-size:11px"><div><span style="color:#ff79c6">result</span> ${ev.id ? `<span style="color:#6272a4">[${escHtml(ev.id)}]</span>` : ''} ${badge}</div>${outStr ? `<pre style="margin:4px 0 0 0;white-space:pre-wrap;max-height:200px;overflow:auto">${escHtml(outStr)}</pre>` : ''}</div>`);
+  } else if (ev.kind === 'command_execution') {
+    const statusBadge = ev.status === 'in_progress'
+      ? '<span style="color:#f1fa8c">⏵ running</span>'
+      : ev.exit_code === 0
+        ? '<span style="color:#50fa7b">✓ exit 0</span>'
+        : `<span style="color:#ff5555">✗ exit ${ev.exit_code}</span>`;
+    return outer(`<div style="background:#0f0f23;border:1px solid #44475a;border-radius:3px;padding:6px 10px;color:#8be9fd;font-family:Menlo,Consolas,monospace;font-size:11px"><div style="display:flex;gap:6px;align-items:baseline"><span style="color:#ff79c6">$</span><span style="flex:1;white-space:pre-wrap">${escHtml(ev.command || '')}</span>${statusBadge}</div>${ev.aggregated_output ? `<pre style="margin:4px 0 0 0;color:#f8f8f2;white-space:pre-wrap;max-height:200px;overflow:auto">${escHtml(ev.aggregated_output)}</pre>` : ''}</div>`);
+  } else if (ev.kind === 'file_change') {
+    const rows = (ev.changes || []).map((c) => {
+      const icon = c.kind === 'add' ? '＋' : c.kind === 'delete' ? '−' : c.kind === 'modify' ? '✎' : '·';
+      const color = c.kind === 'add' ? '#50fa7b' : c.kind === 'delete' ? '#ff5555' : '#f1fa8c';
+      return `<div style="font-family:Menlo,Consolas,monospace;font-size:11px"><span style="color:${color}">${icon}</span> ${escHtml(c.path)}</div>`;
+    }).join('');
+    const statusBadge = ev.status === 'in_progress'
+      ? '<span style="color:#f1fa8c">⏵ writing</span>'
+      : '<span style="color:#50fa7b">✓ done</span>';
+    return outer(`<div style="background:#0f0f23;border:1px solid #44475a;border-radius:3px;padding:6px 10px"><div style="color:#8be9fd;font-size:11px;margin-bottom:4px">file changes ${statusBadge}</div>${rows}</div>`);
+  } else if (ev.kind === 'item_other') {
+    return outer(`<div style="color:#6272a4;font-family:Menlo,Consolas,monospace;font-size:11px">(${escHtml(ev.item_type)}) <span style="color:#8be9fd">${ev.status || ''}</span></div>`);
+  } else {
+    const raw = typeof ev.raw === 'string' ? ev.raw : (ev.text ? ev.text : JSON.stringify(ev.raw || ev));
+    return outer(`<div style="color:#6272a4;font-family:Menlo,Consolas,monospace;font-size:11px;white-space:pre-wrap">${escHtml(raw).slice(0,600)}</div>`);
+  }
+}
+
+function isChatToolEvent(ev) {
+  const kind = String(ev?.kind || '');
+  if (['tool_call', 'tool_result', 'command_execution', 'file_change'].includes(kind)) return true;
+  if (kind === 'item_other') {
+    const itemType = String(ev.item_type || '').toLowerCase();
+    if (/(tool|function|command|file_change)/.test(itemType)) return true;
+  }
+  if (kind === 'other') {
+    const raw = typeof ev.raw === 'string' ? ev.raw : JSON.stringify(ev.raw || '');
+    return /\b(tool_call|tool_use|tool_result|function_call|command_execution|file_change)\b/i.test(raw);
+  }
+  return false;
+}
+
+// Always render every event; let CSS hide tool cards when the "Thoughts
+// only" class is on the container. Toggling the filter is then a class flip
+// with no fetch or DOM rebuild. The empty-state element is rendered too —
+// CSS only reveals it when (a) thoughts-only is active and (b) every event
+// in the burst was a tool event (so the user sees a clear message instead
+// of an empty pane).
+//
+// Builds one big HTML string and sets innerHTML once: a 150-event chat used
+// to take ~150 createElement+innerHTML+appendChild round-trips (~hundreds of
+// ms on a switch); the single-set approach is one HTML parse + one reflow.
+function renderChatEvents(container, events, opts) {
+  const allEvents = Array.isArray(events) ? events : [];
+  let toolCount = 0;
+  const parts = new Array(allEvents.length);
+  for (let i = 0; i < allEvents.length; i++) {
+    const ev = allEvents[i];
+    if (isChatToolEvent(ev)) toolCount++;
+    parts[i] = renderChatCard(ev);
+  }
+  const allTools = allEvents.length > 0 && toolCount === allEvents.length;
+  parts.push(`<div class="chat-thoughts-empty-state${allTools ? ' show' : ''}" style="color:#6272a4;font-size:12px">All transcript events in this burst are tool events hidden by Thoughts only.</div>`);
+  container.innerHTML = parts.join('');
+  applyChatThoughtsOnlyClass(container);
+  return {
+    shown: allEvents.length - toolCount,
+    hidden: toolCount,
+    total: allEvents.length,
+  };
+}
+
+// Per-call render cache so switching back to a previously-viewed call is
+// instant — no fetch, no re-render. Keyed on (cycle, call_id, source); not
+// populated for the live cycle (events grow with time, and the live tab is
+// already on a 3s auto-refresh anyway).
+const CHAT_EVENTS_RENDER_CACHE_MAX = 16;
+const chatEventsRenderCache = new Map(); // key -> {html, stats, statusText, staleNote}
+
+function chatRenderCacheKey(cycleKey, callId, source) {
+  return `${cycleKey}|${callId}|${source || 'transcript'}`;
+}
+
+function rememberChatRender(key, entry) {
+  if (chatEventsRenderCache.has(key)) chatEventsRenderCache.delete(key);
+  chatEventsRenderCache.set(key, entry);
+  while (chatEventsRenderCache.size > CHAT_EVENTS_RENDER_CACHE_MAX) {
+    const firstKey = chatEventsRenderCache.keys().next().value;
+    chatEventsRenderCache.delete(firstKey);
+  }
+}
+
+function applyChatThoughtsOnlyClass(container) {
+  const c = container || document.getElementById('chat-view-container');
+  if (!c) return;
+  c.classList.toggle('thoughts-only', !!chatThoughtsOnlyMode);
+}
+
+// Update the "Cycle X • N events [• thoughts only, K hidden]" status line
+// without going through refreshChatView (which would re-fetch).
+function updateChatStatusForThoughtsToggle() {
+  const status = document.getElementById('chat-refresh-status');
+  if (!status || !chatLastRenderStats) return;
+  const { total, hidden } = chatLastRenderStats;
+  const cycleKey = chatCurrentCycleKey;
+  if (!cycleKey) return;
+  const suffix = chatThoughtsOnlyMode ? ` • thoughts only, ${hidden} hidden` : '';
+  status.textContent = `Cycle ${cycleKey} • ${total} event${total === 1 ? '' : 's'}${suffix}`;
+}
+
+function renderChatMissing(container, promptExcerpt, opts) {
+  const { isLive, canTui } = opts || {};
+  let banner;
+  if (canTui) {
+    banner = `
+      <div style="color:#f1fa8c;font-size:12px;margin-bottom:8px">
+        Transcript not yet written — this burst is still running.
+        <button id="chat-missing-use-tui" style="margin-left:6px;padding:2px 8px;font-size:11px;background:#24345f;color:#fff;border:1px solid #8be9fd;border-radius:4px;cursor:pointer">View live pane</button>
+      </div>`;
+  } else if (isLive) {
+    banner = `
+      <div style="color:#f1fa8c;font-size:12px;margin-bottom:8px">
+        No transcript yet for this burst.
+      </div>`;
+  } else {
+    banner = `
+      <div style="color:#f1fa8c;font-size:12px;margin-bottom:8px">
+        This burst predates the per-cycle transcript snapshot; only the prompt is available.
+      </div>`;
+  }
+  container.innerHTML = `
+    ${banner}
+    <details>
+      <summary style="cursor:pointer;color:#8be9fd;font-size:12px">Prompt</summary>
+      <pre style="margin:6px 0 0 0;color:#e0e0e0;font-family:Menlo,Consolas,monospace;font-size:11px;white-space:pre-wrap;max-height:50vh;overflow:auto">${escHtml(promptExcerpt || '(empty)')}</pre>
+    </details>
+  `;
+  const tuiBtn = document.getElementById('chat-missing-use-tui');
+  if (tuiBtn) {
+    tuiBtn.addEventListener('click', () => {
+      const toggle = document.getElementById('chat-tui-toggle');
+      if (toggle && !toggle.disabled) {
+        toggle.checked = true;
+        chatTuiMode = true;
+        chatUserTouchedTui = true;
+        chatScrollPinnedToBottom = true;
+        refreshChatView({ immediate: true });
+      }
+    });
+  }
+}
+
+function renderChatTui(container, text) {
+  container.innerHTML = '';
+  const pre = document.createElement('pre');
+  pre.style.cssText = 'color:#e0e0e0;font-family:Menlo,Consolas,monospace;font-size:11px;line-height:1.35;white-space:pre;margin:0';
+  pre.textContent = text || '(pane empty)';
+  container.appendChild(pre);
+}
+
+async function refreshChatView(opts) {
+  stopChatAutoRefresh();
+  if (detailMode !== 'chat') return;
+  // Capture an invocation sequence number; if a newer refresh starts (user
+  // dropdown change, slider, auto-refresh tick, tab switch), every later
+  // await-resume point checks `seq !== chatRefreshSeq` and bails out before
+  // touching the DOM. Without this, a stale in-flight chat-events fetch for
+  // the previously-selected burst overwrites the user's new selection. The
+  // helper `stale()` returns true once we've been superseded.
+  const seq = ++chatRefreshSeq;
+  const stale = () => seq !== chatRefreshSeq;
+  // Notify the historical-state prewarm to back off while we're fetching
+  // interactive chat data — the prewarm queue saturates the browser's
+  // per-host connection pool and otherwise queues our fetches behind it.
+  chatRefreshInFlight++;
+  markInteractiveActivity();
+  try {
+  const status = document.getElementById('chat-refresh-status');
+  const select = document.getElementById('chat-call-select');
+  const tuiToggle = document.getElementById('chat-tui-toggle');
+  const thoughtsToggle = document.getElementById('chat-thoughts-only-toggle');
+  const container = document.getElementById('chat-view-container');
+  if (!status || !select || !container || !tuiToggle || !thoughtsToggle) return;
+  thoughtsToggle.checked = chatThoughtsOnlyMode;
+  const cycleKey = selectedChatCycleKey();
+  const cycleChanged = cycleKey !== chatCurrentCycleKey;
+  chatCurrentCycleKey = cycleKey;
+  if (cycleChanged) {
+    // Reset selection when moving between cycles.
+    chatSelectedCallId = null;
+    chatTuiMode = false;
+    tuiToggle.checked = false;
+    chatUserTouchedSelect = false;
+    chatUserTouchedTui = false;
+  }
+  try {
+    const callsUrl = apiPath(`chat-calls.json?cycle=${encodeURIComponent(cycleKey)}`);
+    const callsResp = await fetch(callsUrl);
+    if (stale()) return;
+    if (!callsResp.ok) throw new Error(`HTTP ${callsResp.status}`);
+    const callsData = await callsResp.json();
+    if (stale()) return;
+    const calls = Array.isArray(callsData.calls) ? callsData.calls : [];
+    const options = buildChatCallOptions(calls);
+    const optionsHtml = options.length
+      ? options.map((o) => `<option value="${escHtml(o.key)}">${escHtml(o.label)}</option>`).join('')
+      : '<option value="">(no calls)</option>';
+    // For the live cycle, the "current agent" is the burst with an active
+    // tmux session. Prefer it as the default selection; and since the user
+    // will almost always want to see its live pane, default TUI mode on too.
+    const liveOption = cycleKey === 'live'
+      ? options.find((o) => o.call && o.call.tmux_session)
+      : null;
+    // Detect option-list changes via a stable signature of the keys instead
+    // of comparing serialized `select.innerHTML` — browsers normalize attr
+    // order/case and reflect the user's selected option, so the round-tripped
+    // innerHTML usually doesn't match what we set, triggering a full rebuild
+    // every auto-refresh tick and collapsing the open dropdown mid-click.
+    const optionsKeySig = options.length
+      ? `${cycleKey}|${options.map((o) => o.key).join('||')}`
+      : `${cycleKey}|__empty__`;
+    if (select.dataset.optionsKeySig !== optionsKeySig) {
+      const prev = chatSelectedCallId;
+      select.innerHTML = optionsHtml;
+      select.dataset.optionsKeySig = optionsKeySig;
+      if (prev && options.some((o) => o.key === prev)) {
+        select.value = prev;
+      } else if (chatUserTouchedSelect && prev) {
+        // User explicitly picked this burst but it's no longer in the list.
+        // Don't silently jump them elsewhere — surface it via the empty-state
+        // block below.
+        chatSelectedCallId = null;
+      } else if (liveOption) {
+        chatSelectedCallId = liveOption.key;
+        select.value = chatSelectedCallId;
+        if (!chatUserTouchedTui) {
+          chatTuiMode = true;
+          tuiToggle.checked = true;
+        }
+      } else if (options.length > 0) {
+        chatSelectedCallId = options[0].key;
+        select.value = chatSelectedCallId;
+      } else {
+        chatSelectedCallId = null;
+      }
+    } else if (liveOption && !chatUserTouchedSelect
+               && chatSelectedCallId !== liveOption.key) {
+      // A new live burst appeared while we were sitting on a finished one —
+      // swap to it unless the user has manually changed the selection.
+      chatSelectedCallId = liveOption.key;
+      select.value = chatSelectedCallId;
+      if (!chatUserTouchedTui) {
+        chatTuiMode = true;
+        tuiToggle.checked = true;
+      }
+    }
+    if (!chatSelectedCallId || !options.length) {
+      const msg = options.length
+        ? 'Your previously-selected burst is no longer available. Choose another from the dropdown.'
+        : 'No calls recorded for this cycle.';
+      container.innerHTML = `<div style="color:#6272a4;font-size:12px">${msg}</div>`;
+      status.textContent = `Cycle ${cycleKey}`;
+      tuiToggle.disabled = true;
+      return;
+    }
+    const currentOpt = options.find((o) => o.key === chatSelectedCallId) || null;
+    const currentCall = currentOpt?.call || null;
+    const currentCallId = currentOpt?.callId || null;
+    const canTui = !!(cycleKey === 'live' && currentCall && currentCall.has_tui_pane);
+    tuiToggle.disabled = !canTui;
+    if (!canTui && chatTuiMode) {
+      chatTuiMode = false;
+      tuiToggle.checked = false;
+    }
+    // Codex is headless — there's no tmux pane behind a codex burst, so
+    // hide the Live TUI label entirely for codex calls rather than show it
+    // as a permanently-disabled control. For claude/gemini calls we keep
+    // the label visible (even when canTui=false) so the user can see the
+    // option exists when a pane becomes available later.
+    const tuiLabel = document.getElementById('chat-tui-toggle-label');
+    if (tuiLabel) {
+      tuiLabel.style.display =
+        currentCall && currentCall.provider === 'codex' ? 'none' : 'flex';
+    }
+    const thoughtsLabel = document.getElementById('chat-thoughts-only-toggle-label');
+    thoughtsToggle.disabled = chatTuiMode;
+    if (thoughtsLabel) thoughtsLabel.style.opacity = chatTuiMode ? '0.55' : '1';
+    // Burst with no resolved chat dir — transcript fetches have nothing to
+    // read, but live TUI can still be available via the request's tmux pane.
+    if (currentCall && !currentCall.artifact_id && !chatTuiMode) {
+      container.innerHTML = `
+        <div style="color:#f1fa8c;font-size:12px;margin-bottom:8px">
+          This burst was issued (request #${escHtml(String(currentCall.request_id))}, ${escHtml(currentCall.kind || '')}${currentCall.active_node ? ' @' + escHtml(currentCall.active_node) : ''}) but no chat directory was located. It may have been evicted or never written.
+        </div>
+      `;
+      status.textContent = `Cycle ${cycleKey} • no chat dir`;
+      return;
+    }
+    const source = chatTuiMode ? 'tui' : 'transcript';
+    const evParams = new URLSearchParams({
+      cycle: cycleKey,
+      call_id: currentCallId || '',
+      source,
+    });
+    if (currentCall) {
+      if (currentCall.request_id != null) evParams.set('request_id', String(currentCall.request_id));
+      if (currentCall.event_index != null) evParams.set('event_index', String(currentCall.event_index));
+      if (currentCall.lane) evParams.set('lane', String(currentCall.lane));
+      if (currentCall.kind) evParams.set('kind', String(currentCall.kind));
+      if (currentCall.provider) evParams.set('provider', String(currentCall.provider));
+      if (currentCall.role) evParams.set('role', String(currentCall.role));
+    }
+    const evUrl = apiPath(`chat-events.json?${evParams.toString()}`);
+    // Render-cache fast path: for non-live cycles in transcript mode, a given
+    // (cycle, call_id, source) is immutable — replay the cached HTML + status
+    // and skip the fetch + render entirely.
+    // Cache key uses the dropdown row's unique key — *not* `currentCallId`,
+    // which is the artifact_id and can be shared across bursts that wrote to
+    // the same scope dir. Using artifact_id here caused the cache to return a
+    // sibling burst's content when the user switched rows.
+    const cacheKey = cycleKey !== 'live' && !chatTuiMode
+      ? chatRenderCacheKey(cycleKey, chatSelectedCallId, source)
+      : null;
+    if (cacheKey) {
+      const cached = chatEventsRenderCache.get(cacheKey);
+      if (cached) {
+        if (stale()) return;
+        container.classList.remove('tui-snapshot','tui-live');
+        container.innerHTML = cached.html;
+        applyChatThoughtsOnlyClass(container);
+        chatLastRenderStats = cached.stats;
+        const suffix = chatThoughtsOnlyMode ? ` • thoughts only, ${cached.stats.hidden} hidden` : '';
+        status.textContent = `Cycle ${cycleKey} • ${cached.stats.total} event${cached.stats.total === 1 ? '' : 's'}${suffix}`;
+        if (chatScrollPinnedToBottom) container.scrollTop = container.scrollHeight;
+        return;
+      }
+    }
+    const evResp = await fetch(evUrl);
+    if (stale()) return;
+    if (!evResp.ok) throw new Error(`HTTP ${evResp.status}`);
+    const evData = await evResp.json();
+    if (stale()) return;
+    const staleNote = (evData.call && evData.call.transcript_is_stale_scope_dir)
+      ? `<div style="background:#332b1a;border-left:3px solid #f1fa8c;padding:6px 10px;margin-bottom:8px;color:#f1fa8c;font-size:11px">
+          ⚠ Stale-scope transcript: ${escHtml(evData.note || 'This dir is rewritten each burst in this scope; attribution to this specific request is best-effort.')}
+        </div>`
+      : '';
+    if (chatTuiMode) {
+      // TUI mode renders raw pane text — no per-event cards, so the
+      // Thoughts-only toggle has no transcript stats to apply.
+      chatLastRenderStats = null;
+      const text = (evData.events || []).map((e) => e.text || '').join('\n');
+      renderChatTui(container, text);
+      const isSnapshot = !!evData.snapshot_mtime_ms;
+      // Visually distinguish a frozen snapshot from a live capture so the
+      // user doesn't think a silent agent is still churning. Apply a
+      // grey dashed border + dim overlay + prominent banner on the
+      // container. Live capture gets a green pulsing border.
+      container.classList.toggle('tui-snapshot', isSnapshot);
+      container.classList.toggle('tui-live', !isSnapshot);
+      if (isSnapshot) {
+        const ts = new Date(evData.snapshot_mtime_ms).toLocaleTimeString();
+        const banner = `<div style="background:#3d2a1a;border:2px solid #ffb86c;border-radius:6px;padding:10px 12px;margin-bottom:10px;color:#ffb86c;font-size:13px;font-weight:bold;text-align:center;letter-spacing:0.5px">
+          📸 FROZEN PANE SNAPSHOT — captured at ${escHtml(ts)}
+          <div style="font-weight:normal;font-size:11px;color:#d6a875;margin-top:3px">Burst has exited; no live tmux session. Content below will not update.</div>
+        </div>`;
+        container.insertAdjacentHTML('afterbegin', banner);
+      } else {
+        const banner = `<div style="background:#1a3d2e;border-left:3px solid #50fa7b;padding:5px 10px;margin-bottom:8px;color:#50fa7b;font-size:11px">
+          <span class="live-dot"></span> LIVE TUI — capturing tmux session in real time (auto-refresh 3 s)
+        </div>`;
+        container.insertAdjacentHTML('afterbegin', banner);
+      }
+      if (staleNote) container.insertAdjacentHTML('afterbegin', staleNote);
+      status.textContent = isSnapshot
+        ? `Cycle ${cycleKey} • 📸 FROZEN snapshot`
+        : `Cycle ${cycleKey} • ▶ live TUI`;
+    } else if (evData.missing) {
+      container.classList.remove('tui-snapshot','tui-live');
+      renderChatMissing(container, evData.prompt_excerpt || '', {
+        isLive: cycleKey === 'live',
+        canTui,
+      });
+      if (staleNote) container.insertAdjacentHTML('afterbegin', staleNote);
+      status.textContent = cycleKey === 'live'
+        ? `Cycle ${cycleKey} • transcript not yet written`
+        : `Cycle ${cycleKey} • legacy burst (no transcript)`;
+    } else {
+      container.classList.remove('tui-snapshot','tui-live');
+      const renderStats = renderChatEvents(container, evData.events || [], {
+        thoughtsOnly: chatThoughtsOnlyMode,
+      });
+      chatLastRenderStats = renderStats;
+      if (staleNote) container.insertAdjacentHTML('afterbegin', staleNote);
+      const n = renderStats.total;
+      const suffix = chatThoughtsOnlyMode ? ` • thoughts only, ${renderStats.hidden} hidden` : '';
+      status.textContent = `Cycle ${cycleKey} • ${n} event${n === 1 ? '' : 's'}${suffix}`;
+      // Cache the rendered HTML so a future switch back to this call is
+      // instant. Capture innerHTML *after* the staleNote prepend so the
+      // replay path doesn't need to re-derive it.
+      if (cacheKey) {
+        rememberChatRender(cacheKey, { html: container.innerHTML, stats: renderStats });
+      }
+    }
+    if (chatScrollPinnedToBottom) {
+      container.scrollTop = container.scrollHeight;
+    }
+  } catch (err) {
+    if (!stale()) status.textContent = `Error: ${err.message || err}`;
+  }
+  // Don't schedule a follow-up refresh from a superseded invocation — the
+  // newer refresh that bumped chatRefreshSeq already owns the timer.
+  if (!stale() && detailMode === 'chat' && chatCurrentCycleKey === 'live') {
+    chatAutoRefreshTimer = setTimeout(() => refreshChatView({ immediate: false }), 3000);
+  }
+  } finally {
+    chatRefreshInFlight = Math.max(0, chatRefreshInFlight - 1);
+  }
+}
+
+function renderCurrentDetail() {
+  for (const [id, key] of [
+    ['mode-node', 'node'], ['mode-chat', 'chat'],
+    ['mode-progress', 'progress'], ['mode-usage', 'usage'], ['mode-kernel', 'kernel'],
+  ]) {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('active', detailMode === key);
+  }
+  if (detailMode === 'chat') { renderChatDetail(); return; }
+  if (detailMode === 'progress') { renderProgressDetail(); return; }
+  if (detailMode === 'usage') { renderUsageDetail(); return; }
+  if (detailMode === 'kernel') { renderKernelDetail(); return; }
+  if (selectedNode) {
+    renderNodeDetail(selectedNode);
+    return;
+  }
+  document.getElementById('detail-content').innerHTML = `
+    <h2>Select a node</h2>
+    <p style="color:#6272a4">Tap a node in the DAG to see details.</p>
+  `;
+}
+
+const VALID_DETAIL_MODES = new Set(['node', 'chat', 'progress', 'usage', 'kernel']);
+function setDetailMode(mode) {
+  const nextMode = VALID_DETAIL_MODES.has(mode) ? mode : 'node';
+  if (detailMode === 'chat' && nextMode !== 'chat') stopChatAutoRefresh();
+  if (detailMode === 'kernel' && nextMode !== 'kernel') stopKernelAutoRefresh();
+  detailMode = nextMode;
+  renderCurrentDetail();
+}
+
+// Mobile pane switcher: flip between the DAG and the Details pane full-screen.
+// On desktop this is a no-op (the switcher itself is display:none via CSS).
+function setMobilePane(pane) {
+  const showDetail = pane === 'detail';
+  document.body.classList.toggle('mobile-view-detail', showDetail);
+  const dagBtn = document.getElementById('mobile-tab-dag');
+  const detailBtn = document.getElementById('mobile-tab-detail');
+  if (dagBtn) dagBtn.classList.toggle('active', !showDetail);
+  if (detailBtn) detailBtn.classList.toggle('active', showDetail);
+}
+
+function escHtml(s) {
+  // Escape both element-text-relevant chars and attribute-quote chars so it's
+  // safe to use the result inside `attr="…"` and `attr='…'` contexts as well.
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// Client-side cache for historical state-at responses. Past cycles are
+// immutable, so once fetched (or prewarmed by the server) we never need
+// to refetch them. Skipping the round-trip lets the slider feel
+// instantaneous when revisiting cycles.
+const historicalStateCache = new Map();
+const historicalStateInflight = new Map();
+
+function fetchHistoricalState(cycle) {
+  if (historicalStateCache.has(cycle)) return Promise.resolve(historicalStateCache.get(cycle));
+  if (historicalStateInflight.has(cycle)) return historicalStateInflight.get(cycle);
+  const p = (async () => {
+    const resp = await fetch(apiPath(`state-at/${cycle}.json`));
+    if (!resp.ok) throw new Error(`state-at/${cycle} -> ${resp.status}`);
+    const data = await resp.json();
+    historicalStateCache.set(cycle, data);
+    return data;
+  })().finally(() => historicalStateInflight.delete(cycle));
+  historicalStateInflight.set(cycle, p);
+  return p;
+}
+
+// Speculative prewarm — kick off background fetches once the server has
+// answered the cycles list. They populate the client cache so the slider
+// feels instant on cycles the user hasn't visited yet. The server's own
+// prewarm runs in parallel; whichever populates first wins.
+//
+// Throttled and UI-aware: at 75 ms/tick with hundreds of cycles, the prior
+// implementation saturated the browser's 6-connection-per-host pool with
+// state-at fetches, queuing interactive requests (chat-events.json on a
+// dropdown change) for seconds. Now the tick (a) waits 1.5 s after the last
+// observed user interaction (`markInteractiveActivity`), (b) skips while a
+// chat refresh is in flight (`chatRefreshInFlight > 0`) or any historical
+// fetch is in flight (cap concurrency at 1), and (c) uses a 500 ms gap.
+let lastInteractiveActivityAt = 0;
+let chatRefreshInFlight = 0;
+function markInteractiveActivity() {
+  lastInteractiveActivityAt = Date.now();
+}
+function prewarmHistoricalStates(cycles) {
+  if (!Array.isArray(cycles) || !cycles.length) return;
+  const queue = cycles
+    .map(c => (c && typeof c === 'object') ? c.cycle : c)
+    .filter(c => Number.isInteger(c))
+    .filter(c => !historicalStateCache.has(c) && !historicalStateInflight.has(c));
+  let i = 0;
+  const PREWARM_GAP_MS = 500;
+  const PREWARM_IDLE_REQUIRED_MS = 1500;
+  const tick = () => {
+    if (i >= queue.length) return;
+    const sinceActivity = Date.now() - lastInteractiveActivityAt;
+    const blocked =
+      chatRefreshInFlight > 0
+      || historicalStateInflight.size > 0
+      || sinceActivity < PREWARM_IDLE_REQUIRED_MS;
+    if (blocked) {
+      // Defer; check again after the idle requirement could plausibly clear.
+      const wait = Math.max(PREWARM_GAP_MS,
+        PREWARM_IDLE_REQUIRED_MS - sinceActivity);
+      setTimeout(tick, wait);
+      return;
+    }
+    // Skip cycles that became cached / inflight while we were waiting.
+    while (i < queue.length
+           && (historicalStateCache.has(queue[i]) || historicalStateInflight.has(queue[i]))) {
+      i++;
+    }
+    if (i >= queue.length) return;
+    fetchHistoricalState(queue[i++]).catch(() => {});
+    setTimeout(tick, PREWARM_GAP_MS);
+  };
+  setTimeout(tick, 2000);  // initial settle so first user actions go first
+}
+
+async function updateCycleInfo() {
+  const slider = document.getElementById('cycle-slider');
+  const idx = parseInt(slider.value);
+  const slot = timelineSlots[idx];
+  const info = document.getElementById('cycle-info');
+  const isLatest = slot === 'current';
+  const seq = ++timelineUpdateSeq;
+  refreshCycleStepButtons();
+  renderTimelineSlotLabels();
+
+  if (isLatest) {
+    // Show current live state
+    const liveCycle = liveCycleNumber();
+    info.textContent = `Current (live, cycle ${liveCycle})`;
+    const live = await fetchViewerState(apiPath('viewer-state.json'));
+    if (seq !== timelineUpdateSeq) return;
+    liveState = live;
+    allNodes = live.nodes || {};
+    invalidateDefClosure();
+    currentState = live;
+    renderTimelineSlotLabels();
+    renderHeader();
+    renderDAG();
+    renderCurrentDetail();
+    return;
+  }
+
+  const val = slot;
+  const cycle = allCycles.find(c => c.cycle === val);
+  if (cycle) {
+    info.textContent = `Cycle ${val}: ${cycle.phase || '?'} | ${cycle.outcome || '?'}`;
+  } else {
+    info.textContent = `Cycle ${val}`;
+  }
+
+  // Load historical state — cache hit returns synchronously-fast,
+  // cache miss issues one fetch and stores for next time.
+  try {
+    const data = await fetchHistoricalState(val);
+    if (seq !== timelineUpdateSeq) return;
+    allNodes = data.nodes || {};
+    invalidateDefClosure();
+    currentState = data;
+    renderHeader();
+    const svg = document.getElementById('dag-svg');
+    const savedVB = svg.getAttribute('viewBox');
+    renderDAG();
+    if (savedVB) svg.setAttribute('viewBox', savedVB);
+    renderCurrentDetail();
+  } catch {}
+}
+
+document.getElementById('cycle-slider').addEventListener('input', () => {
+  // Tell the prewarm to back off — slider movement bursts state-at fetches
+  // that we'd otherwise have to fight for connection-pool slots.
+  markInteractiveActivity();
+  updateCycleInfo();
+});
+
+function stepCycle(delta) {
+  const slider = document.getElementById('cycle-slider');
+  const min = parseInt(slider.min || '0', 10);
+  const max = parseInt(slider.max || '0', 10);
+  const cur = parseInt(slider.value || '0', 10);
+  const next = Math.min(max, Math.max(min, cur + delta));
+  if (next === cur) return;
+  selectTimelineSlot(next);
+}
+
+function refreshCycleStepButtons() {
+  const slider = document.getElementById('cycle-slider');
+  const prev = document.getElementById('cycle-prev');
+  const next = document.getElementById('cycle-next');
+  if (!slider || !prev || !next) return;
+  const min = parseInt(slider.min || '0', 10);
+  const max = parseInt(slider.max || '0', 10);
+  const cur = parseInt(slider.value || '0', 10);
+  prev.disabled = cur <= min;
+  next.disabled = cur >= max;
+}
+
+document.getElementById('cycle-prev').addEventListener('click', () => stepCycle(-1));
+document.getElementById('cycle-next').addEventListener('click', () => stepCycle(1));
+
+function renderFeedbackPanel() {
+  const container = document.getElementById('feedback-container');
+  const phase = currentState?.state?.phase || '';
+  const lastReview = currentState?.state?.last_review || {};
+  const decision = normalizeReviewDecision(lastReview.decision || '');
+  const stopped = !currentState?.state?.cycle; // crude check
+
+  // Show feedback panel only when the supervisor is awaiting human input
+  const awaiting = Boolean(
+    currentState?.state?.awaiting_human_input ||
+    currentState?.state?.human_input_outstanding
+  );
+  if (awaiting) {
+    const downloadUrl = apiPath('download-tablet');
+    // On mobile, auto-switch to the Details pane when feedback is needed
+    setMobilePane('detail');
+    container.innerHTML = `
+      <div class="feedback-panel">
+        <h3>Human Review (${phase})</h3>
+        <p style="color:#6272a4; font-size:11px; margin-bottom:8px">
+          ${decision === 'advance_phase' ? 'Reviewer wants to advance. Approve or give feedback.' :
+            decision === 'need_input' ? 'Reviewer requested human input.' :
+            'Review the tablet structure and provide feedback.'}
+        </p>
+        <p style="margin-bottom:8px"><a href="${downloadUrl}" style="color:#8be9fd; font-size:12px">Download tablet snapshot (.zip)</a></p>
+        <textarea id="feedback-text" placeholder="Enter feedback for the worker (or leave empty to approve)..."></textarea>
+        <div>
+          <button class="btn btn-approve" onclick="submitFeedback('approve')">✓ Approve & Advance</button>
+          <button class="btn btn-feedback" onclick="submitFeedback('feedback')">↩ Send Feedback</button>
+        </div>
+        <div class="msg" id="feedback-msg"></div>
+      </div>
+    `;
+  } else {
+    container.innerHTML = '';
+  }
+}
+
+function normalizeReviewDecision(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+  return raw
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/[\s-]+/g, '_')
+    .replace(/_+/g, '_')
+    .toLowerCase();
+}
+
+async function submitFeedback(action) {
+  const text = document.getElementById('feedback-text')?.value || '';
+  const msg = document.getElementById('feedback-msg');
+  try {
+    const resp = await fetch(apiPath('feedback'), {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ action, feedback: text }),
+    });
+    const data = await resp.json();
+    if (msg) msg.textContent = data.message || data.error || 'Done';
+  } catch (e) {
+    if (msg) msg.textContent = 'Error: ' + e.message;
+  }
+}
+
+// --- Pan & zoom for DAG ---
+(function() {
+  const svgEl = document.getElementById('dag-svg');
+  const pane = document.getElementById('dag-pane');
+  let viewBox = { x: 0, y: 0, w: 800, h: 600 };
+  let isPanning = false, startPt = null, startVB = null;
+  let lastPinchDist = 0;
+
+  function updateViewBox() {
+    svgEl.setAttribute('viewBox', `${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`);
+  }
+
+  // Observe when DAG re-renders to capture the initial viewBox
+  const observer = new MutationObserver(() => {
+    const vb = svgEl.getAttribute('viewBox');
+    if (vb) {
+      const [x, y, w, h] = vb.split(' ').map(Number);
+      if (w > 0 && h > 0) { viewBox = { x, y, w, h }; }
+    }
+  });
+  observer.observe(svgEl, { attributes: true, attributeFilter: ['viewBox'] });
+
+  // Mouse wheel zoom
+  pane.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const scale = e.deltaY > 0 ? 1.1 : 0.9;
+    const rect = svgEl.getBoundingClientRect();
+    const mx = (e.clientX - rect.left) / rect.width;
+    const my = (e.clientY - rect.top) / rect.height;
+    const newW = viewBox.w * scale, newH = viewBox.h * scale;
+    viewBox.x += (viewBox.w - newW) * mx;
+    viewBox.y += (viewBox.h - newH) * my;
+    viewBox.w = newW; viewBox.h = newH;
+    updateViewBox();
+  }, { passive: false });
+
+  // Mouse drag pan
+  pane.addEventListener('mousedown', (e) => {
+    if (e.target.closest('.node')) return; // don't pan when clicking nodes
+    isPanning = true;
+    startPt = { x: e.clientX, y: e.clientY };
+    startVB = { ...viewBox };
+    pane.style.cursor = 'grabbing';
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!isPanning) return;
+    const rect = svgEl.getBoundingClientRect();
+    const dx = (e.clientX - startPt.x) / rect.width * viewBox.w;
+    const dy = (e.clientY - startPt.y) / rect.height * viewBox.h;
+    viewBox.x = startVB.x - dx;
+    viewBox.y = startVB.y - dy;
+    updateViewBox();
+  });
+  window.addEventListener('mouseup', () => { isPanning = false; pane.style.cursor = ''; });
+
+  // ----- Detail-pane resizer -----
+  // Drag the vertical handle between the DAG and detail panes to resize.
+  // Width persists in localStorage. Double-click resets to the default.
+  const DETAIL_WIDTH_STORAGE_KEY = 'trellis.viewer.detailPaneWidth';
+  const DETAIL_WIDTH_DEFAULT = 420;
+  const DETAIL_WIDTH_MIN = 220;
+  const DETAIL_WIDTH_MAX_MARGIN = 360; // leave this much room for the DAG
+
+  function applyDetailWidth(px) {
+    const clamped = Math.max(
+      DETAIL_WIDTH_MIN,
+      Math.min(window.innerWidth - DETAIL_WIDTH_MAX_MARGIN, px),
+    );
+    document.body.style.setProperty('--detail-pane-width', clamped + 'px');
+    return clamped;
+  }
+
+  function readSavedDetailWidth() {
+    try {
+      const raw = localStorage.getItem(DETAIL_WIDTH_STORAGE_KEY);
+      const parsed = raw ? Number(raw) : NaN;
+      if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    } catch {}
+    return DETAIL_WIDTH_DEFAULT;
+  }
+
+  applyDetailWidth(readSavedDetailWidth());
+
+  const resizer = document.getElementById('detail-resizer');
+  if (resizer) {
+    let dragStartX = 0;
+    let dragStartWidth = 0;
+    let dragging = false;
+
+    const onMove = (e) => {
+      if (!dragging) return;
+      const clientX = e.clientX != null ? e.clientX : (e.touches && e.touches[0] && e.touches[0].clientX);
+      if (clientX == null) return;
+      // Handle sits between dag-pane and detail-pane. Moving left grows the
+      // detail-pane, right shrinks it — so subtract the delta.
+      const delta = clientX - dragStartX;
+      applyDetailWidth(dragStartWidth - delta);
+      e.preventDefault();
+    };
+    const onUp = () => {
+      if (!dragging) return;
+      dragging = false;
+      resizer.classList.remove('dragging');
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      try {
+        const current = document.body.style.getPropertyValue('--detail-pane-width') || (DETAIL_WIDTH_DEFAULT + 'px');
+        localStorage.setItem(DETAIL_WIDTH_STORAGE_KEY, String(parseInt(current, 10) || DETAIL_WIDTH_DEFAULT));
+      } catch {}
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onUp);
+    };
+    const onDown = (e) => {
+      dragging = true;
+      resizer.classList.add('dragging');
+      const clientX = e.clientX != null ? e.clientX : (e.touches && e.touches[0] && e.touches[0].clientX);
+      dragStartX = clientX || 0;
+      const styleVal = document.body.style.getPropertyValue('--detail-pane-width') || (DETAIL_WIDTH_DEFAULT + 'px');
+      dragStartWidth = parseInt(styleVal, 10) || DETAIL_WIDTH_DEFAULT;
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+      window.addEventListener('touchmove', onMove, { passive: false });
+      window.addEventListener('touchend', onUp);
+      e.preventDefault();
+    };
+    resizer.addEventListener('mousedown', onDown);
+    resizer.addEventListener('touchstart', onDown, { passive: false });
+    resizer.addEventListener('dblclick', () => {
+      applyDetailWidth(DETAIL_WIDTH_DEFAULT);
+      try {
+        localStorage.removeItem(DETAIL_WIDTH_STORAGE_KEY);
+      } catch {}
+    });
+    // Re-clamp on viewport changes (e.g. rotation, resize) so we never eat
+    // the whole width.
+    window.addEventListener('resize', () => {
+      const cur = parseInt(document.body.style.getPropertyValue('--detail-pane-width'), 10) || DETAIL_WIDTH_DEFAULT;
+      applyDetailWidth(cur);
+    });
+  }
+
+  // Touch: pinch zoom + pan
+  function pinchDist(touches) {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+  function touchCenter(touches) {
+    return {
+      x: (touches[0].clientX + touches[1].clientX) / 2,
+      y: (touches[0].clientY + touches[1].clientY) / 2,
+    };
+  }
+
+  pane.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 1 && !e.target.closest('.node')) {
+      isPanning = true;
+      startPt = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      startVB = { ...viewBox };
+    } else if (e.touches.length === 2) {
+      isPanning = false;
+      lastPinchDist = pinchDist(e.touches);
+      startVB = { ...viewBox };
+    }
+  }, { passive: true });
+
+  pane.addEventListener('touchmove', (e) => {
+    if (e.touches.length === 1 && isPanning) {
+      e.preventDefault();
+      const rect = svgEl.getBoundingClientRect();
+      const dx = (e.touches[0].clientX - startPt.x) / rect.width * startVB.w;
+      const dy = (e.touches[0].clientY - startPt.y) / rect.height * startVB.h;
+      viewBox.x = startVB.x - dx;
+      viewBox.y = startVB.y - dy;
+      updateViewBox();
+    } else if (e.touches.length === 2) {
+      e.preventDefault();
+      const dist = pinchDist(e.touches);
+      const scale = lastPinchDist / dist;
+      const rect = svgEl.getBoundingClientRect();
+      const c = touchCenter(e.touches);
+      const mx = (c.x - rect.left) / rect.width;
+      const my = (c.y - rect.top) / rect.height;
+      const newW = startVB.w * scale, newH = startVB.h * scale;
+      viewBox.x = startVB.x + (startVB.w - newW) * mx;
+      viewBox.y = startVB.y + (startVB.h - newH) * my;
+      viewBox.w = newW; viewBox.h = newH;
+      updateViewBox();
+    }
+  }, { passive: false });
+
+  pane.addEventListener('touchend', () => { isPanning = false; });
+})();
+
+// Sync the include-defs checkbox to the persisted state (defaults to checked,
+// but localStorage may have flipped it OFF on a prior visit).
+(function syncIncludeDefsCheckbox() {
+  const cb = document.getElementById('include-defs-checkbox');
+  if (cb) cb.checked = includeDefs;
+})();
+
+// Sync the coarse-open checkbox to the persisted state (default OFF).
+(function syncCoarseOpenCheckbox() {
+  const cb = document.getElementById('coarse-open-checkbox');
+  if (cb) cb.checked = coarseOpenOnly;
+})();
+
+// ---------------------------------------------------------------------------
+// "Auto-refresh" toggle (global, persists in localStorage; default ON).
+// When OFF: the 30s polling timer is cleared so the viewer's data stays
+// frozen at the last successful fetch. Useful for inspecting a particular
+// snapshot without the page mutating under you. The Refresh button next to
+// the toggle still works for one-shot manual reloads.
+// ---------------------------------------------------------------------------
+const AUTO_REFRESH_STORAGE_KEY = 'trellis.viewer.autoRefresh';
+const AUTO_REFRESH_INTERVAL_MS = 30000;
+function readAutoRefresh() {
+  try {
+    const raw = localStorage.getItem(AUTO_REFRESH_STORAGE_KEY);
+    if (raw === '0' || raw === 'false') return false;
+  } catch {}
+  return true;  // default ON
+}
+let autoRefreshEnabled = readAutoRefresh();
+let autoRefreshTimer = null;
+function startAutoRefreshTimer() {
+  if (autoRefreshTimer) return;
+  autoRefreshTimer = setInterval(fetchData, AUTO_REFRESH_INTERVAL_MS);
+}
+function stopAutoRefreshTimer() {
+  if (autoRefreshTimer) { clearInterval(autoRefreshTimer); autoRefreshTimer = null; }
+}
+function setAutoRefresh(value) {
+  const next = !!value;
+  if (next === autoRefreshEnabled) return;
+  autoRefreshEnabled = next;
+  try { localStorage.setItem(AUTO_REFRESH_STORAGE_KEY, next ? '1' : '0'); } catch {}
+  const cb = document.getElementById('auto-refresh-checkbox');
+  if (cb) cb.checked = next;
+  if (next) startAutoRefreshTimer(); else stopAutoRefreshTimer();
+}
+(function syncAutoRefreshCheckbox() {
+  const cb = document.getElementById('auto-refresh-checkbox');
+  if (cb) cb.checked = autoRefreshEnabled;
+})();
+
+// Initial fetch is always one-shot; the 30s timer only fires when the
+// auto-refresh toggle is ON.
+fetchData();
+if (autoRefreshEnabled) startAutoRefreshTimer();
+
+// ---------------------------------------------------------------------------
+// External-codex tracker (hidden feature).
+// Ctrl+Shift+E flips a server-side flag at <stateDir>/external_codex.json.
+// While ON, the current cycle and every cycle reached before the flag is
+// flipped OFF are added to a "tainted" list — those cycles' burn deltas are
+// confounded by codex usage outside this project, so the β-fitter
+// (scripts/fit_codex_burn_beta.py) can later drop them. A small badge
+// appears bottom-left while the flag is ON; clicking the badge flips it
+// off as well. Hidden by design — no menu entry, no settings switch.
+// ---------------------------------------------------------------------------
+let externalCodexState = null;
+async function fetchExternalCodex() {
+  try {
+    const r = await fetch(apiPath('external-codex.json'));
+    if (!r.ok) return;
+    externalCodexState = await r.json();
+    renderExternalCodexIndicator();
+  } catch { /* silent */ }
+}
+async function toggleExternalCodex() {
+  try {
+    const r = await fetch(apiPath('external-codex/toggle'), { method: 'POST' });
+    if (!r.ok) return;
+    externalCodexState = await r.json();
+    renderExternalCodexIndicator();
+  } catch { /* silent */ }
+}
+function renderExternalCodexIndicator() {
+  let el = document.getElementById('external-codex-indicator');
+  if (!externalCodexState || !externalCodexState.active) {
+    if (el) el.remove();
+    return;
+  }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'external-codex-indicator';
+    el.style.cssText = 'position:fixed; bottom:8px; left:8px; z-index:9999;'
+      + ' padding:5px 10px; background:#ff6e40; color:#1e1f29;'
+      + ' font-weight:bold; font-size:11px; border-radius:4px;'
+      + ' font-family:monospace; cursor:pointer;'
+      + ' box-shadow:0 2px 6px rgba(0,0,0,0.4);';
+    el.title = 'External codex is ON. Click or press Ctrl+Shift+E to turn off.';
+    el.addEventListener('click', toggleExternalCodex);
+    document.body.appendChild(el);
+  }
+  const since = externalCodexState.since_cycle;
+  const cur = externalCodexState.current_cycle;
+  el.textContent = (since != null && cur != null && since !== cur)
+    ? `EXT CODEX • cycles ${since}–${cur}`
+    : `EXT CODEX • cycle ${cur ?? since ?? '?'}`;
+}
+document.addEventListener('keydown', (ev) => {
+  if (!ev.ctrlKey || !ev.shiftKey) return;
+  if (ev.key !== 'E' && ev.key !== 'e') return;
+  // Don't intercept when the user is typing into a real input.
+  const t = ev.target;
+  if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+  ev.preventDefault();
+  toggleExternalCodex();
+});
+fetchExternalCodex();
+setInterval(fetchExternalCodex, 30_000);
+
+// Fail-loudly halt banner. The kernel persists
+// `<runtime>/checker_disagreement_halt.json` when its dual-collector
+// local-closure probe detects a primary-vs-axcheck disagreement. The
+// banner stays up until the operator deletes the marker.
+async function fetchHaltState() {
+  try {
+    const r = await fetch(apiPath('halt-state.json'));
+    if (!r.ok) return;
+    const s = await r.json();
+    const el = document.getElementById('halt-banner');
+    if (!el) return;
+    if (!s || !s.halted) {
+      el.style.display = 'none';
+      el.innerHTML = '';
+      return;
+    }
+    const marker = s.marker || {};
+    const node = marker.active_node ? String(marker.active_node) : '(unknown)';
+    const cycle = (marker.cycle !== undefined && marker.cycle !== null) ? marker.cycle : '?';
+    const markerPath = s.marker_path ? String(s.marker_path) : '<runtime>/checker_disagreement_halt.json';
+    el.style.display = 'block';
+    el.innerHTML =
+      '<div>HALTED — checker disagreement on node <code>' + node +
+      '</code> (cycle ' + cycle + '). Supervisor will not dispatch new bursts.</div>' +
+      '<div style="font-weight:normal;font-size:12px;margin-top:4px">Marker: <code>' +
+      markerPath + '</code>. Inspect for diagnostics + clear instructions; delete the file to resume.</div>';
+  } catch (e) { /* polling is best-effort */ }
+}
+fetchHaltState();
+setInterval(fetchHaltState, 30_000);
+</script>
+</body>
+</html>

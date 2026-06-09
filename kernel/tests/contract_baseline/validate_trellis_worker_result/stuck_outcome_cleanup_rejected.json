@@ -1,0 +1,28 @@
+{
+  "request": {
+    "acceptance_context": {
+      "worker_acceptance": {
+        "validation_kind": "cleanup"
+      }
+    },
+    "action": "validate_trellis_worker_result",
+    "raw_payload": {
+      "comments": "",
+      "difficulty_updates": {},
+      "outcome": "stuck",
+      "semantic_dep_updates": {},
+      "summary": "cleanup could not proceed",
+      "target_claim_updates": {}
+    }
+  },
+  "response": {
+    "output": {
+      "data": null,
+      "errors": [
+        "outcome must be one of ['valid', 'invalid']"
+      ],
+      "ok": false
+    },
+    "status": "validate_trellis_worker_result_ok"
+  }
+}

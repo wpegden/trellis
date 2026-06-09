@@ -1,0 +1,48 @@
+---
+source: tests/runtime_cli_snapshots.rs
+assertion_line: 444
+expression: response
+---
+{
+  "output": {
+    "response": {
+      "allow_new_obligations": true,
+      "authorized_nodes": [],
+      "cleanup_dismiss_tasks": [],
+      "cleanup_next_task": null,
+      "cleanup_request_reaudit": false,
+      "clear_human_input": false,
+      "comments": "",
+      "confirm_protected_semantic_change_scope": false,
+      "consume_global_repair_grant": false,
+      "cycle": 7,
+      "decision": "AdvancePhase",
+      "difficulty_updates": {},
+      "dismiss_audit_plan": false,
+      "dismissed_tasks": [],
+      "global_repair_request": null,
+      "must_close_active": false,
+      "next_active": "main_node",
+      "next_active_coarse": null,
+      "next_mode": "Targeted",
+      "next_worker_context_mode": "resume",
+      "paper_focus_ranges": [],
+      "paper_grounding": {
+        "basis_summary": "",
+        "consulted_cited_ranges": false
+      },
+      "protected_semantic_change_nodes": [],
+      "reason": "Theorem statements are settled.",
+      "request_id": 11,
+      "request_sound_verifier_nodes": [],
+      "reset": "None",
+      "reset_blockers": [],
+      "reset_node": null,
+      "status": "Ok",
+      "stuck_math_audit": null,
+      "task_blockers": [],
+      "work_style_hint": "none"
+    }
+  },
+  "status": "normalize_review_ok"
+}

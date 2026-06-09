@@ -1,0 +1,13 @@
+{
+  "action": "validate_deviation_authorization_result",
+  "raw_payload": {
+    "deviation_authorization": {
+      "id": "dev-001",
+      "decision": "PASS",
+      "comment": ""
+    },
+    "overall": "APPROVE",
+    "summary": "Authorized.",
+    "comments": ""
+  }
+}

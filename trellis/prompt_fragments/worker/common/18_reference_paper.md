@@ -1,0 +1,7 @@
+## Reference paper
+
+The `.tex` source of the paper being formalized is on disk at `{{paper_tex_path}}` (path relative to repo root). The repo is mounted into your sandbox, so `cat`, `grep`, `head`, etc. work directly on the file.
+
+The paper is the ground truth for what the tablet is supposed to express. Consult it directly whenever you are introducing or restructuring node statements, repairing a paper-faithfulness / substantiveness / correspondence blocker, writing or revising an NL proof (the paper's level of detail is a floor on yours), or attempting a different attack on a node that previous bursts couldn't close. When you are encountering real difficulty (repeated rejections on the active node, multiple cycles of blockers, or a reviewer-directed restructure), consider careful review of the relevant paper passage *mandatory*. Fundamental difficulties in formalization should correspond to either a genuine mathematical problem with the paper (rare! — signal via `stuck`), or, much more commonly, to the fact that one or more tablet nodes no longer faithfully express the paper's explicit or implicit statements. Use your access to the paper to diagnose the actual source of difficulty and align the next edit with the paper rather than with the prior failed attempt.
+
+If the reviewer attached `paper_focus_ranges` to the request, those are the passages the reviewer thinks matter most; read them first. Otherwise navigate the file yourself.

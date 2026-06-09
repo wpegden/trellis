@@ -1,0 +1,12 @@
+{
+  "action": "validate_paper_faithfulness_result",
+  "raw_payload": {
+    "paper_faithfulness": {
+      "decision": "PASS",
+      "issues": []
+    },
+    "overall": "APPROVE",
+    "summary": "Paper matches Lean statements.",
+    "comments": ""
+  }
+}

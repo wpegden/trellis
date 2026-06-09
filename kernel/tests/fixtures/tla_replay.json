@@ -1,0 +1,2864 @@
+{
+  "cases": [
+    {
+      "initial": {
+        "committed": {
+          "corr_current_fingerprints": {
+            "a": "ca"
+          },
+          "coverage": {
+            "t": [
+              "a"
+            ]
+          },
+          "open_nodes": [
+            "a"
+          ],
+          "paper_current_fingerprints": {
+            "t": "a=ta"
+          },
+          "present_nodes": [
+            "a"
+          ],
+          "sound_current_fingerprints": {
+            "a": "sa"
+          },
+          "target_fingerprints": {
+            "a": "ta"
+          }
+        },
+        "corr_approved_fingerprints": {
+          "a": "ca"
+        },
+        "corr_status": {
+          "a": "Pass"
+        },
+        "held_target": "a",
+        "live": {
+          "corr_current_fingerprints": {
+            "a": "ca"
+          },
+          "coverage": {
+            "t": [
+              "a"
+            ]
+          },
+          "open_nodes": [
+            "a"
+          ],
+          "paper_current_fingerprints": {
+            "t": "a=ta"
+          },
+          "present_nodes": [
+            "a"
+          ],
+          "sound_current_fingerprints": {
+            "a": "sa"
+          },
+          "target_fingerprints": {
+            "a": "ta"
+          }
+        },
+        "paper_approved_fingerprints": {
+          "t": "a=ta"
+        },
+        "paper_status": {
+          "t": "Pass"
+        },
+        "proof_nodes": [
+          "a"
+        ],
+        "sound_approved_fingerprints": {
+          "a": "sa"
+        },
+        "sound_assessment_schema_version": 0,
+        "sound_status": {
+          "a": "Fail"
+        }
+      },
+      "name": "start_valid_soundness_path",
+      "steps": [
+        {
+          "action": "start_cycle",
+          "event": {
+            "event": "start_cycle"
+          },
+          "expected": {
+            "attempt": 1,
+            "committed": {
+              "corr_current_fingerprints": {
+                "a": "ca"
+              },
+              "coverage": {
+                "t": [
+                  "a"
+                ]
+              },
+              "open_nodes": [
+                "a"
+              ],
+              "paper_current_fingerprints": {
+                "t": "a=ta"
+              },
+              "present_nodes": [
+                "a"
+              ],
+              "sound_current_fingerprints": {
+                "a": "sa"
+              },
+              "substantiveness_current_fingerprints": {
+                "a": "sub_a"
+              },
+              "target_fingerprints": {
+                "a": "ta"
+              }
+            },
+            "committed_node_kinds": {
+              "a": "Proof"
+            },
+            "committed_proof_nodes": [
+              "a"
+            ],
+            "committed_target_claims": {
+              "a": [
+                "t"
+              ]
+            },
+            "configured_targets": [
+              "t"
+            ],
+            "corr_approved_fingerprints": {
+              "a": "ca"
+            },
+            "corr_status": {
+              "a": "Pass"
+            },
+            "cycle": 1,
+            "easy_attempts": {
+              "a": 0
+            },
+            "held_target": "a",
+            "in_flight_request": {
+              "cycle": 1,
+              "id": 1,
+              "kind": "Worker"
+            },
+            "live": {
+              "corr_current_fingerprints": {
+                "a": "ca"
+              },
+              "coverage": {
+                "t": [
+                  "a"
+                ]
+              },
+              "open_nodes": [
+                "a"
+              ],
+              "paper_current_fingerprints": {
+                "t": "a=ta"
+              },
+              "present_nodes": [
+                "a"
+              ],
+              "sound_current_fingerprints": {
+                "a": "sa"
+              },
+              "substantiveness_current_fingerprints": {
+                "a": "sub_a"
+              },
+              "target_fingerprints": {
+                "a": "ta"
+              }
+            },
+            "node_difficulty": {
+              "a": "Hard"
+            },
+            "node_kinds": {
+              "a": "Proof"
+            },
+            "paper_approved_fingerprints": {
+              "t": "a=ta"
+            },
+            "paper_status": {
+              "t": "Pass"
+            },
+            "proof_nodes": [
+              "a"
+            ],
+            "request_seq": 1,
+            "sound_approved_fingerprints": {
+              "a": "sa"
+            },
+            "sound_assessment_schema_version": 0,
+            "sound_status": {
+              "a": "Fail"
+            },
+            "stage": "Worker",
+            "substantiveness_approved_fingerprints": {
+              "a": "sub_a"
+            },
+            "substantiveness_status": {
+              "a": "Pass"
+            },
+            "target_claims": {
+              "a": [
+                "t"
+              ]
+            }
+          },
+          "expected_commands": [
+            {
+              "command": "issue_request",
+              "request": {
+                "cycle": 1,
+                "id": 1,
+                "kind": "Worker"
+              }
+            }
+          ]
+        },
+        {
+          "action": "accept_valid_worker",
+          "event": {
+            "event": "wrapper_response",
+            "response": {
+              "cycle": 1,
+              "kind": "worker",
+              "request_id": 1,
+              "snapshot": {
+                "corr_current_fingerprints": {
+                  "a": "ca"
+                },
+                "coverage": {
+                  "t": [
+                    "a"
+                  ]
+                },
+                "open_nodes": [
+                  "a"
+                ],
+                "paper_current_fingerprints": {
+                  "t": "a=ta"
+                },
+                "present_nodes": [
+                  "a"
+                ],
+                "sound_current_fingerprints": {
+                  "a": "sa"
+                },
+                "target_fingerprints": {
+                  "a": "ta"
+                }
+              }
+            }
+          },
+          "expected": {
+            "attempt": 1,
+            "committed": {
+              "corr_current_fingerprints": {
+                "a": "ca"
+              },
+              "coverage": {
+                "t": [
+                  "a"
+                ]
+              },
+              "open_nodes": [
+                "a"
+              ],
+              "paper_current_fingerprints": {
+                "t": "a=ta"
+              },
+              "present_nodes": [
+                "a"
+              ],
+              "sound_current_fingerprints": {
+                "a": "sa"
+              },
+              "substantiveness_current_fingerprints": {
+                "a": "sub_a"
+              },
+              "target_fingerprints": {
+                "a": "ta"
+              }
+            },
+            "committed_node_kinds": {
+              "a": "Proof"
+            },
+            "committed_proof_nodes": [
+              "a"
+            ],
+            "committed_target_claims": {
+              "a": [
+                "t"
+              ]
+            },
+            "configured_targets": [
+              "t"
+            ],
+            "corr_approved_fingerprints": {
+              "a": "ca"
+            },
+            "corr_status": {
+              "a": "Pass"
+            },
+            "cycle": 1,
+            "easy_attempts": {
+              "a": 0
+            },
+            "held_target": "a",
+            "in_flight_request": {
+              "cycle": 1,
+              "id": 2,
+              "kind": "Review"
+            },
+            "live": {
+              "corr_current_fingerprints": {
+                "a": "ca"
+              },
+              "coverage": {
+                "t": [
+                  "a"
+                ]
+              },
+              "open_nodes": [
+                "a"
+              ],
+              "paper_current_fingerprints": {
+                "t": "a=ta"
+              },
+              "present_nodes": [
+                "a"
+              ],
+              "sound_current_fingerprints": {
+                "a": "sa"
+              },
+              "substantiveness_current_fingerprints": {
+                "a": "sub_a"
+              },
+              "target_fingerprints": {
+                "a": "ta"
+              }
+            },
+            "node_difficulty": {
+              "a": "Hard"
+            },
+            "node_kinds": {
+              "a": "Proof"
+            },
+            "paper_approved_fingerprints": {
+              "t": "a=ta"
+            },
+            "paper_status": {
+              "t": "Pass"
+            },
+            "proof_nodes": [
+              "a"
+            ],
+            "request_seq": 2,
+            "sound_approved_fingerprints": {
+              "a": "sa"
+            },
+            "sound_assessment_schema_version": 0,
+            "sound_status": {
+              "a": "Fail"
+            },
+            "stage": "Reviewer",
+            "substantiveness_approved_fingerprints": {
+              "a": "sub_a"
+            },
+            "substantiveness_status": {
+              "a": "Pass"
+            },
+            "target_claims": {
+              "a": [
+                "t"
+              ]
+            }
+          },
+          "expected_commands": [
+            {
+              "command": "issue_request",
+              "request": {
+                "cycle": 1,
+                "id": 2,
+                "kind": "Review"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "initial": {
+        "active_node": "a",
+        "attempt": 1,
+        "committed": {
+          "corr_current_fingerprints": {
+            "a": "ca",
+            "b": "cb"
+          },
+          "coverage": {
+            "t": [
+              "a"
+            ]
+          },
+          "open_nodes": [
+            "a",
+            "b"
+          ],
+          "present_nodes": [
+            "a",
+            "b"
+          ],
+          "sound_current_fingerprints": {
+            "a": "sa"
+          },
+          "target_fingerprints": {
+            "a": "ta"
+          }
+        },
+        "corr_approved_fingerprints": {
+          "a": "ca",
+          "b": "cb"
+        },
+        "corr_status": {
+          "a": "Pass",
+          "b": "Pass"
+        },
+        "cycle": 5,
+        "held_target": "a",
+        "in_flight_request": {
+          "cycle": 5,
+          "id": 1,
+          "kind": "Worker"
+        },
+        "live": {
+          "corr_current_fingerprints": {
+            "a": "ca",
+            "b": "cb"
+          },
+          "coverage": {
+            "t": [
+              "a"
+            ]
+          },
+          "open_nodes": [
+            "a",
+            "b"
+          ],
+          "present_nodes": [
+            "a",
+            "b"
+          ],
+          "sound_current_fingerprints": {
+            "a": "sa"
+          },
+          "target_fingerprints": {
+            "a": "ta"
+          }
+        },
+        "proof_nodes": [
+          "a"
+        ],
+        "request_seq": 1,
+        "sound_approved_fingerprints": {
+          "a": "sa"
+        },
+        "sound_assessment_schema_version": 0,
+        "sound_status": {
+          "a": "Pass"
+        },
+        "stage": "Worker",
+        "target_edit_mode": "Targeted"
+      },
+      "name": "invalid_need_input_roundtrip",
+      "steps": [
+        {
+          "action": "accept_invalid_worker",
+          "event": {
+            "event": "wrapper_response",
+            "response": {
+              "cycle": 5,
+              "kind": "worker",
+              "outcome": "Invalid",
+              "request_id": 1,
+              "snapshot": {
+                "corr_current_fingerprints": {
+                  "b": "cb_dirty"
+                },
+                "coverage": {
+                  "t": [
+                    "b"
+                  ]
+                },
+                "open_nodes": [
+                  "b"
+                ],
+                "present_nodes": [
+                  "b"
+                ]
+              }
+            }
+          },
+          "expected": {
+            "attempt": 2,
+            "committed": {
+              "corr_current_fingerprints": {
+                "a": "ca",
+                "b": "cb"
+              },
+              "coverage": {
+                "t": [
+                  "a"
+                ]
+              },
+              "open_nodes": [
+                "a",
+                "b"
+              ],
+              "paper_current_fingerprints": {
+                "t": "a=ta"
+              },
+              "present_nodes": [
+                "a",
+                "b"
+              ],
+              "sound_current_fingerprints": {
+                "a": "sa"
+              },
+              "substantiveness_current_fingerprints": {
+                "a": "sub_a",
+                "b": "sub_b"
+              },
+              "target_fingerprints": {
+                "a": "ta"
+              }
+            },
+            "committed_node_kinds": {
+              "a": "Proof",
+              "b": "Definition"
+            },
+            "committed_proof_nodes": [
+              "a"
+            ],
+            "committed_target_claims": {
+              "a": [
+                "t"
+              ]
+            },
+            "configured_targets": [
+              "t"
+            ],
+            "corr_approved_fingerprints": {
+              "a": "ca",
+              "b": "cb"
+            },
+            "corr_status": {
+              "a": "Pass",
+              "b": "Pass"
+            },
+            "cycle": 5,
+            "easy_attempts": {
+              "a": 0,
+              "b": 0
+            },
+            "in_flight_request": {
+              "cycle": 5,
+              "id": 2,
+              "kind": "Worker"
+            },
+            "invalid_attempt": true,
+            "live": {
+              "corr_current_fingerprints": {
+                "a": "ca",
+                "b": "cb"
+              },
+              "coverage": {
+                "t": [
+                  "a"
+                ]
+              },
+              "open_nodes": [
+                "a",
+                "b"
+              ],
+              "paper_current_fingerprints": {
+                "t": "a=ta"
+              },
+              "present_nodes": [
+                "a",
+                "b"
+              ],
+              "sound_current_fingerprints": {
+                "a": "sa"
+              },
+              "substantiveness_current_fingerprints": {
+                "a": "sub_a",
+                "b": "sub_b"
+              },
+              "target_fingerprints": {
+                "a": "ta"
+              }
+            },
+            "node_difficulty": {
+              "a": "Hard",
+              "b": "Hard"
+            },
+            "node_kinds": {
+              "a": "Proof",
+              "b": "Definition"
+            },
+            "paper_approved_fingerprints": {
+              "t": "a=ta"
+            },
+            "paper_status": {
+              "t": "Pass"
+            },
+            "pending_task": {
+              "allow_new_obligations": true,
+              "authorized_nodes": [],
+              "mode": "Global",
+              "must_close_active": false,
+              "next_worker_context_mode": "resume",
+              "node": null,
+              "orphan_cleanup_nodes": [
+                "b"
+              ],
+              "paper_focus_ranges": [],
+              "protected_semantic_change_nodes": [],
+              "task_blockers": [],
+              "work_style_hint": "restructure"
+            },
+            "proof_nodes": [
+              "a"
+            ],
+            "request_seq": 2,
+            "retry_outcome_kind": "Invalid",
+            "reviewer_comments": "Automatic supervisor orphan-cleanup task. The accepted live snapshot contains orphan nodes that are not in the import down-closure of any paper-target-claiming node: b. Remove at least one orphan node, or attach it by making an existing supported consumer add a genuine `import Tablet.<Orphan>` edge to that orphan. Keep the changes focused on orphan cleanup.",
+            "sound_approved_fingerprints": {
+              "a": "sa"
+            },
+            "sound_assessment_schema_version": 0,
+            "sound_status": {
+              "a": "Pass"
+            },
+            "stage": "Worker",
+            "substantiveness_approved_fingerprints": {
+              "a": "sub_a",
+              "b": "sub_b"
+            },
+            "substantiveness_status": {
+              "a": "Pass",
+              "b": "Pass"
+            },
+            "target_claims": {
+              "a": [
+                "t"
+              ]
+            }
+          },
+          "expected_commands": [
+            {
+              "command": "restore_worktree_to_active_worker_base"
+            },
+            {
+              "command": "issue_request",
+              "request": {
+                "cycle": 5,
+                "id": 2,
+                "kind": "Worker"
+              }
+            }
+          ]
+        },
+        {
+          "action": "accept_invalid_worker",
+          "event": {
+            "event": "wrapper_response",
+            "response": {
+              "cycle": 5,
+              "kind": "worker",
+              "outcome": "Invalid",
+              "request_id": 2,
+              "snapshot": {
+                "corr_current_fingerprints": {
+                  "b": "cb_dirty"
+                },
+                "coverage": {
+                  "t": [
+                    "b"
+                  ]
+                },
+                "open_nodes": [
+                  "b"
+                ],
+                "present_nodes": [
+                  "b"
+                ]
+              }
+            }
+          },
+          "expected": {
+            "attempt": 2,
+            "committed": {
+              "corr_current_fingerprints": {
+                "a": "ca",
+                "b": "cb"
+              },
+              "coverage": {
+                "t": [
+                  "a"
+                ]
+              },
+              "open_nodes": [
+                "a",
+                "b"
+              ],
+              "paper_current_fingerprints": {
+                "t": "a=ta"
+              },
+              "present_nodes": [
+                "a",
+                "b"
+              ],
+              "sound_current_fingerprints": {
+                "a": "sa"
+              },
+              "substantiveness_current_fingerprints": {
+                "a": "sub_a",
+                "b": "sub_b"
+              },
+              "target_fingerprints": {
+                "a": "ta"
+              }
+            },
+            "committed_node_kinds": {
+              "a": "Proof",
+              "b": "Definition"
+            },
+            "committed_proof_nodes": [
+              "a"
+            ],
+            "committed_target_claims": {
+              "a": [
+                "t"
+              ]
+            },
+            "configured_targets": [
+              "t"
+            ],
+            "corr_approved_fingerprints": {
+              "a": "ca",
+              "b": "cb"
+            },
+            "corr_status": {
+              "a": "Pass",
+              "b": "Pass"
+            },
+            "cycle": 5,
+            "easy_attempts": {
+              "a": 0,
+              "b": 0
+            },
+            "in_flight_request": {
+              "cycle": 5,
+              "id": 3,
+              "kind": "Review"
+            },
+            "invalid_attempt": true,
+            "live": {
+              "corr_current_fingerprints": {
+                "a": "ca",
+                "b": "cb"
+              },
+              "coverage": {
+                "t": [
+                  "a"
+                ]
+              },
+              "open_nodes": [
+                "a",
+                "b"
+              ],
+              "paper_current_fingerprints": {
+                "t": "a=ta"
+              },
+              "present_nodes": [
+                "a",
+                "b"
+              ],
+              "sound_current_fingerprints": {
+                "a": "sa"
+              },
+              "substantiveness_current_fingerprints": {
+                "a": "sub_a",
+                "b": "sub_b"
+              },
+              "target_fingerprints": {
+                "a": "ta"
+              }
+            },
+            "node_difficulty": {
+              "a": "Hard",
+              "b": "Hard"
+            },
+            "node_kinds": {
+              "a": "Proof",
+              "b": "Definition"
+            },
+            "paper_approved_fingerprints": {
+              "t": "a=ta"
+            },
+            "paper_status": {
+              "t": "Pass"
+            },
+            "proof_nodes": [
+              "a"
+            ],
+            "request_seq": 3,
+            "retry_outcome_kind": "Invalid",
+            "reviewer_comments": "Automatic supervisor orphan-cleanup task. The accepted live snapshot contains orphan nodes that are not in the import down-closure of any paper-target-claiming node: b. Remove at least one orphan node, or attach it by making an existing supported consumer add a genuine `import Tablet.<Orphan>` edge to that orphan. Keep the changes focused on orphan cleanup.",
+            "sound_approved_fingerprints": {
+              "a": "sa"
+            },
+            "sound_assessment_schema_version": 0,
+            "sound_status": {
+              "a": "Pass"
+            },
+            "stage": "Reviewer",
+            "substantiveness_approved_fingerprints": {
+              "a": "sub_a",
+              "b": "sub_b"
+            },
+            "substantiveness_status": {
+              "a": "Pass",
+              "b": "Pass"
+            },
+            "target_claims": {
+              "a": [
+                "t"
+              ]
+            }
+          },
+          "expected_commands": [
+            {
+              "command": "restore_worktree_to_active_worker_base"
+            },
+            {
+              "command": "issue_request",
+              "request": {
+                "cycle": 5,
+                "id": 3,
+                "kind": "Review"
+              }
+            }
+          ]
+        },
+        {
+          "action": "review_need_input_after_invalid",
+          "event": {
+            "event": "wrapper_response",
+            "response": {
+              "cycle": 5,
+              "decision": "NeedInput",
+              "kind": "review",
+              "request_id": 3
+            }
+          },
+          "expected": {
+            "attempt": 2,
+            "committed": {
+              "corr_current_fingerprints": {
+                "a": "ca",
+                "b": "cb"
+              },
+              "coverage": {
+                "t": [
+                  "a"
+                ]
+              },
+              "open_nodes": [
+                "a",
+                "b"
+              ],
+              "paper_current_fingerprints": {
+                "t": "a=ta"
+              },
+              "present_nodes": [
+                "a",
+                "b"
+              ],
+              "sound_current_fingerprints": {
+                "a": "sa"
+              },
+              "substantiveness_current_fingerprints": {
+                "a": "sub_a",
+                "b": "sub_b"
+              },
+              "target_fingerprints": {
+                "a": "ta"
+              }
+            },
+            "committed_node_kinds": {
+              "a": "Proof",
+              "b": "Definition"
+            },
+            "committed_proof_nodes": [
+              "a"
+            ],
+            "committed_target_claims": {
+              "a": [
+                "t"
+              ]
+            },
+            "configured_targets": [
+              "t"
+            ],
+            "corr_approved_fingerprints": {
+              "a": "ca",
+              "b": "cb"
+            },
+            "corr_status": {
+              "a": "Pass",
+              "b": "Pass"
+            },
+            "cycle": 5,
+            "easy_attempts": {
+              "a": 0,
+              "b": 0
+            },
+            "in_flight_request": {
+              "cycle": 5,
+              "id": 4,
+              "kind": "StuckMathAudit"
+            },
+            "invalid_attempt": true,
+            "last_stuck_math_audit_dispatched_cycle": 5,
+            "live": {
+              "corr_current_fingerprints": {
+                "a": "ca",
+                "b": "cb"
+              },
+              "coverage": {
+                "t": [
+                  "a"
+                ]
+              },
+              "open_nodes": [
+                "a",
+                "b"
+              ],
+              "paper_current_fingerprints": {
+                "t": "a=ta"
+              },
+              "present_nodes": [
+                "a",
+                "b"
+              ],
+              "sound_current_fingerprints": {
+                "a": "sa"
+              },
+              "substantiveness_current_fingerprints": {
+                "a": "sub_a",
+                "b": "sub_b"
+              },
+              "target_fingerprints": {
+                "a": "ta"
+              }
+            },
+            "node_difficulty": {
+              "a": "Hard",
+              "b": "Hard"
+            },
+            "node_kinds": {
+              "a": "Proof",
+              "b": "Definition"
+            },
+            "paper_approved_fingerprints": {
+              "t": "a=ta"
+            },
+            "paper_status": {
+              "t": "Pass"
+            },
+            "proof_nodes": [
+              "a"
+            ],
+            "request_seq": 4,
+            "retry_outcome_kind": "Invalid",
+            "sound_approved_fingerprints": {
+              "a": "sa"
+            },
+            "sound_assessment_schema_version": 0,
+            "sound_status": {
+              "a": "Pass"
+            },
+            "stage": "StuckMathAudit",
+            "stuck_math_audit": {
+              "active": true,
+              "active_since_cycle": 5,
+              "need_input_audit": {
+                "active_node": null,
+                "gate_from_invalid_attempt": true,
+                "held_target": null,
+                "mode": "Global",
+                "phase": "TheoremStating",
+                "review_cycle": 5,
+                "review_request_id": 3,
+                "reviewer_comments": "",
+                "reviewer_reason": ""
+              },
+              "trigger": "reviewer requested NeedInput: reviewer requested need_input without a detailed reason"
+            },
+            "substantiveness_approved_fingerprints": {
+              "a": "sub_a",
+              "b": "sub_b"
+            },
+            "substantiveness_status": {
+              "a": "Pass",
+              "b": "Pass"
+            },
+            "target_claims": {
+              "a": [
+                "t"
+              ]
+            }
+          },
+          "expected_commands": [
+            {
+              "command": "issue_request",
+              "request": {
+                "cycle": 5,
+                "id": 4,
+                "kind": "StuckMathAudit"
+              }
+            }
+          ]
+        },
+        {
+          "action": "accept_stuck_math_audit_dispatch_human_gate",
+          "event": {
+            "event": "wrapper_response",
+            "response": {
+              "confirm_need_input": true,
+              "cycle": 5,
+              "kind": "stuck_math_audit",
+              "report": "The NeedInputAuditor reviewed the reviewer's NeedInput escalation against the current Lean product. After inspecting the active node and the held target, the auditor concludes that human input is genuinely required to resolve the impasse: the existing tactic library does not appear sufficient and the protected semantic-scope nodes do not admit an algorithmic recovery within the current proof obligations.",
+              "request_id": 4
+            }
+          },
+          "expected": {
+            "attempt": 2,
+            "audit_plan": {
+              "cone_clean_node": null,
+              "need_input_audit": true,
+              "probe_paths": [],
+              "report": "The NeedInputAuditor reviewed the reviewer's NeedInput escalation against the current Lean product. After inspecting the active node and the held target, the auditor concludes that human input is genuinely required to resolve the impasse: the existing tactic library does not appear sufficient and the protected semantic-scope nodes do not admit an algorithmic recovery within the current proof obligations.",
+              "tasks": [],
+              "trigger_at_write": "reviewer requested NeedInput: reviewer requested need_input without a detailed reason",
+              "written_at_cycle": 5,
+              "written_by_request": 4
+            },
+            "committed": {
+              "corr_current_fingerprints": {
+                "a": "ca",
+                "b": "cb"
+              },
+              "coverage": {
+                "t": [
+                  "a"
+                ]
+              },
+              "open_nodes": [
+                "a",
+                "b"
+              ],
+              "paper_current_fingerprints": {
+                "t": "a=ta"
+              },
+              "present_nodes": [
+                "a",
+                "b"
+              ],
+              "sound_current_fingerprints": {
+                "a": "sa"
+              },
+              "substantiveness_current_fingerprints": {
+                "a": "sub_a",
+                "b": "sub_b"
+              },
+              "target_fingerprints": {
+                "a": "ta"
+              }
+            },
+            "committed_node_kinds": {
+              "a": "Proof",
+              "b": "Definition"
+            },
+            "committed_proof_nodes": [
+              "a"
+            ],
+            "committed_target_claims": {
+              "a": [
+                "t"
+              ]
+            },
+            "configured_targets": [
+              "t"
+            ],
+            "corr_approved_fingerprints": {
+              "a": "ca",
+              "b": "cb"
+            },
+            "corr_status": {
+              "a": "Pass",
+              "b": "Pass"
+            },
+            "cycle": 5,
+            "easy_attempts": {
+              "a": 0,
+              "b": 0
+            },
+            "gate_from_invalid_attempt": true,
+            "gate_kind": "NeedInput",
+            "in_flight_request": {
+              "cycle": 5,
+              "id": 5,
+              "kind": "HumanGate"
+            },
+            "invalid_attempt": true,
+            "last_stuck_math_audit_dispatched_cycle": 5,
+            "live": {
+              "corr_current_fingerprints": {
+                "a": "ca",
+                "b": "cb"
+              },
+              "coverage": {
+                "t": [
+                  "a"
+                ]
+              },
+              "open_nodes": [
+                "a",
+                "b"
+              ],
+              "paper_current_fingerprints": {
+                "t": "a=ta"
+              },
+              "present_nodes": [
+                "a",
+                "b"
+              ],
+              "sound_current_fingerprints": {
+                "a": "sa"
+              },
+              "substantiveness_current_fingerprints": {
+                "a": "sub_a",
+                "b": "sub_b"
+              },
+              "target_fingerprints": {
+                "a": "ta"
+              }
+            },
+            "node_difficulty": {
+              "a": "Hard",
+              "b": "Hard"
+            },
+            "node_kinds": {
+              "a": "Proof",
+              "b": "Definition"
+            },
+            "paper_approved_fingerprints": {
+              "t": "a=ta"
+            },
+            "paper_status": {
+              "t": "Pass"
+            },
+            "proof_nodes": [
+              "a"
+            ],
+            "request_seq": 5,
+            "retry_outcome_kind": "Invalid",
+            "sound_approved_fingerprints": {
+              "a": "sa"
+            },
+            "sound_assessment_schema_version": 0,
+            "sound_status": {
+              "a": "Pass"
+            },
+            "stage": "HumanGate",
+            "stuck_math_audit": {
+              "active": true,
+              "active_since_cycle": 5,
+              "trigger": "reviewer requested NeedInput: reviewer requested need_input without a detailed reason"
+            },
+            "substantiveness_approved_fingerprints": {
+              "a": "sub_a",
+              "b": "sub_b"
+            },
+            "substantiveness_status": {
+              "a": "Pass",
+              "b": "Pass"
+            },
+            "target_claims": {
+              "a": [
+                "t"
+              ]
+            }
+          },
+          "expected_commands": [
+            {
+              "command": "issue_request",
+              "request": {
+                "cycle": 5,
+                "id": 5,
+                "kind": "HumanGate"
+              }
+            }
+          ]
+        },
+        {
+          "action": "human_resolve_need_input",
+          "event": {
+            "event": "wrapper_response",
+            "response": {
+              "choice": "Feedback",
+              "cycle": 5,
+              "kind": "human_gate",
+              "request_id": 5
+            }
+          },
+          "expected": {
+            "attempt": 2,
+            "audit_plan": {
+              "cone_clean_node": null,
+              "need_input_audit": true,
+              "probe_paths": [],
+              "report": "The NeedInputAuditor reviewed the reviewer's NeedInput escalation against the current Lean product. After inspecting the active node and the held target, the auditor concludes that human input is genuinely required to resolve the impasse: the existing tactic library does not appear sufficient and the protected semantic-scope nodes do not admit an algorithmic recovery within the current proof obligations.",
+              "tasks": [],
+              "trigger_at_write": "reviewer requested NeedInput: reviewer requested need_input without a detailed reason",
+              "written_at_cycle": 5,
+              "written_by_request": 4
+            },
+            "committed": {
+              "corr_current_fingerprints": {
+                "a": "ca",
+                "b": "cb"
+              },
+              "coverage": {
+                "t": [
+                  "a"
+                ]
+              },
+              "open_nodes": [
+                "a",
+                "b"
+              ],
+              "paper_current_fingerprints": {
+                "t": "a=ta"
+              },
+              "present_nodes": [
+                "a",
+                "b"
+              ],
+              "sound_current_fingerprints": {
+                "a": "sa"
+              },
+              "substantiveness_current_fingerprints": {
+                "a": "sub_a",
+                "b": "sub_b"
+              },
+              "target_fingerprints": {
+                "a": "ta"
+              }
+            },
+            "committed_node_kinds": {
+              "a": "Proof",
+              "b": "Definition"
+            },
+            "committed_proof_nodes": [
+              "a"
+            ],
+            "committed_target_claims": {
+              "a": [
+                "t"
+              ]
+            },
+            "configured_targets": [
+              "t"
+            ],
+            "corr_approved_fingerprints": {
+              "a": "ca",
+              "b": "cb"
+            },
+            "corr_status": {
+              "a": "Pass",
+              "b": "Pass"
+            },
+            "cycle": 5,
+            "easy_attempts": {
+              "a": 0,
+              "b": 0
+            },
+            "human_input_outstanding": true,
+            "in_flight_request": {
+              "cycle": 5,
+              "id": 6,
+              "kind": "Review"
+            },
+            "invalid_attempt": true,
+            "last_stuck_math_audit_dispatched_cycle": 5,
+            "live": {
+              "corr_current_fingerprints": {
+                "a": "ca",
+                "b": "cb"
+              },
+              "coverage": {
+                "t": [
+                  "a"
+                ]
+              },
+              "open_nodes": [
+                "a",
+                "b"
+              ],
+              "paper_current_fingerprints": {
+                "t": "a=ta"
+              },
+              "present_nodes": [
+                "a",
+                "b"
+              ],
+              "sound_current_fingerprints": {
+                "a": "sa"
+              },
+              "substantiveness_current_fingerprints": {
+                "a": "sub_a",
+                "b": "sub_b"
+              },
+              "target_fingerprints": {
+                "a": "ta"
+              }
+            },
+            "node_difficulty": {
+              "a": "Hard",
+              "b": "Hard"
+            },
+            "node_kinds": {
+              "a": "Proof",
+              "b": "Definition"
+            },
+            "paper_approved_fingerprints": {
+              "t": "a=ta"
+            },
+            "paper_status": {
+              "t": "Pass"
+            },
+            "proof_nodes": [
+              "a"
+            ],
+            "request_seq": 6,
+            "retry_outcome_kind": "Invalid",
+            "sound_approved_fingerprints": {
+              "a": "sa"
+            },
+            "sound_assessment_schema_version": 0,
+            "sound_status": {
+              "a": "Pass"
+            },
+            "stage": "Reviewer",
+            "stuck_math_audit": {
+              "active": true,
+              "active_since_cycle": 5,
+              "trigger": "reviewer requested NeedInput: reviewer requested need_input without a detailed reason"
+            },
+            "substantiveness_approved_fingerprints": {
+              "a": "sub_a",
+              "b": "sub_b"
+            },
+            "substantiveness_status": {
+              "a": "Pass",
+              "b": "Pass"
+            },
+            "target_claims": {
+              "a": [
+                "t"
+              ]
+            }
+          },
+          "expected_commands": [
+            {
+              "command": "issue_request",
+              "request": {
+                "cycle": 5,
+                "id": 6,
+                "kind": "Review"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "initial": {
+        "committed": {
+          "corr_current_fingerprints": {
+            "a": "ca"
+          },
+          "coverage": {
+            "t": [
+              "a"
+            ]
+          },
+          "open_nodes": [
+            "a"
+          ],
+          "paper_current_fingerprints": {
+            "t": "a=ta"
+          },
+          "present_nodes": [
+            "a"
+          ],
+          "sound_current_fingerprints": {
+            "a": "sa"
+          },
+          "target_fingerprints": {
+            "a": "ta"
+          }
+        },
+        "corr_approved_fingerprints": {
+          "a": "ca"
+        },
+        "corr_status": {
+          "a": "Pass"
+        },
+        "held_target": "a",
+        "live": {
+          "corr_current_fingerprints": {
+            "a": "ca"
+          },
+          "coverage": {
+            "t": [
+              "a"
+            ]
+          },
+          "open_nodes": [
+            "a"
+          ],
+          "paper_current_fingerprints": {
+            "t": "a=ta"
+          },
+          "present_nodes": [
+            "a"
+          ],
+          "sound_current_fingerprints": {
+            "a": "sa"
+          },
+          "target_fingerprints": {
+            "a": "ta"
+          }
+        },
+        "paper_approved_fingerprints": {
+          "t": "a=ta"
+        },
+        "paper_status": {
+          "t": "Pass"
+        },
+        "proof_nodes": [
+          "a"
+        ],
+        "sound_assessment_schema_version": 0
+      },
+      "name": "start_unknown_sound_path",
+      "steps": [
+        {
+          "action": "start_cycle",
+          "event": {
+            "event": "start_cycle"
+          },
+          "expected": {
+            "attempt": 1,
+            "committed": {
+              "corr_current_fingerprints": {
+                "a": "ca"
+              },
+              "coverage": {
+                "t": [
+                  "a"
+                ]
+              },
+              "open_nodes": [
+                "a"
+              ],
+              "paper_current_fingerprints": {
+                "t": "a=ta"
+              },
+              "present_nodes": [
+                "a"
+              ],
+              "sound_current_fingerprints": {
+                "a": "sa"
+              },
+              "substantiveness_current_fingerprints": {
+                "a": "sub_a"
+              },
+              "target_fingerprints": {
+                "a": "ta"
+              }
+            },
+            "committed_node_kinds": {
+              "a": "Proof"
+            },
+            "committed_proof_nodes": [
+              "a"
+            ],
+            "committed_target_claims": {
+              "a": [
+                "t"
+              ]
+            },
+            "configured_targets": [
+              "t"
+            ],
+            "corr_approved_fingerprints": {
+              "a": "ca"
+            },
+            "corr_status": {
+              "a": "Pass"
+            },
+            "cycle": 1,
+            "easy_attempts": {
+              "a": 0
+            },
+            "held_target": "a",
+            "in_flight_request": {
+              "cycle": 1,
+              "id": 1,
+              "kind": "Sound"
+            },
+            "live": {
+              "corr_current_fingerprints": {
+                "a": "ca"
+              },
+              "coverage": {
+                "t": [
+                  "a"
+                ]
+              },
+              "open_nodes": [
+                "a"
+              ],
+              "paper_current_fingerprints": {
+                "t": "a=ta"
+              },
+              "present_nodes": [
+                "a"
+              ],
+              "sound_current_fingerprints": {
+                "a": "sa"
+              },
+              "substantiveness_current_fingerprints": {
+                "a": "sub_a"
+              },
+              "target_fingerprints": {
+                "a": "ta"
+              }
+            },
+            "node_difficulty": {
+              "a": "Hard"
+            },
+            "node_kinds": {
+              "a": "Proof"
+            },
+            "paper_approved_fingerprints": {
+              "t": "a=ta"
+            },
+            "paper_status": {
+              "t": "Pass"
+            },
+            "proof_nodes": [
+              "a"
+            ],
+            "request_seq": 1,
+            "sound_assessment_schema_version": 0,
+            "stage": "VerifySound",
+            "substantiveness_approved_fingerprints": {
+              "a": "sub_a"
+            },
+            "substantiveness_status": {
+              "a": "Pass"
+            },
+            "target_claims": {
+              "a": [
+                "t"
+              ]
+            }
+          },
+          "expected_commands": [
+            {
+              "command": "issue_request",
+              "request": {
+                "cycle": 1,
+                "id": 1,
+                "kind": "Sound"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "initial": {
+        "committed": {
+          "corr_current_fingerprints": {
+            "a": "ca",
+            "b": "cb"
+          },
+          "coverage": {
+            "t": [
+              "a"
+            ]
+          },
+          "open_nodes": [
+            "a",
+            "b"
+          ],
+          "paper_current_fingerprints": {
+            "t": "a=ta"
+          },
+          "present_nodes": [
+            "a",
+            "b"
+          ],
+          "sound_current_fingerprints": {
+            "a": "sa"
+          },
+          "target_fingerprints": {
+            "a": "ta"
+          }
+        },
+        "configured_targets": [
+          "t"
+        ],
+        "corr_approved_fingerprints": {
+          "a": "ca",
+          "b": "cb"
+        },
+        "corr_status": {
+          "a": "Pass",
+          "b": "Pass"
+        },
+        "cycle": 8,
+        "in_flight_request": {
+          "cycle": 8,
+          "id": 1,
+          "kind": "Review"
+        },
+        "live": {
+          "corr_current_fingerprints": {
+            "a": "ca",
+            "b": "cb"
+          },
+          "coverage": {
+            "t": [
+              "a"
+            ]
+          },
+          "open_nodes": [
+            "a",
+            "b"
+          ],
+          "paper_current_fingerprints": {
+            "t": "a=ta"
+          },
+          "present_nodes": [
+            "a",
+            "b"
+          ],
+          "sound_current_fingerprints": {
+            "a": "sa"
+          },
+          "target_fingerprints": {
+            "a": "ta"
+          }
+        },
+        "paper_approved_fingerprints": {
+          "t": "a=ta"
+        },
+        "paper_status": {
+          "t": "Pass"
+        },
+        "proof_nodes": [
+          "a"
+        ],
+        "request_seq": 1,
+        "sound_approved_fingerprints": {
+          "a": "sa"
+        },
+        "sound_assessment_schema_version": 0,
+        "sound_status": {
+          "a": "Pass"
+        },
+        "stage": "Reviewer"
+      },
+      "name": "advance_feedback_roundtrip",
+      "steps": [
+        {
+          "action": "review_advance_phase",
+          "event": {
+            "event": "wrapper_response",
+            "response": {
+              "cycle": 8,
+              "decision": "AdvancePhase",
+              "kind": "review",
+              "next_active": "a",
+              "request_id": 1
+            }
+          },
+          "expected": {
+            "active_node": "a",
+            "committed": {
+              "corr_current_fingerprints": {
+                "a": "ca",
+                "b": "cb"
+              },
+              "coverage": {
+                "t": [
+                  "a"
+                ]
+              },
+              "open_nodes": [
+                "a",
+                "b"
+              ],
+              "paper_current_fingerprints": {
+                "t": "a=ta"
+              },
+              "present_nodes": [
+                "a",
+                "b"
+              ],
+              "sound_current_fingerprints": {
+                "a": "sa"
+              },
+              "substantiveness_current_fingerprints": {
+                "a": "sub_a",
+                "b": "sub_b"
+              },
+              "target_fingerprints": {
+                "a": "ta"
+              }
+            },
+            "committed_node_kinds": {
+              "a": "Proof",
+              "b": "Definition"
+            },
+            "committed_proof_nodes": [
+              "a"
+            ],
+            "committed_target_claims": {
+              "a": [
+                "t"
+              ]
+            },
+            "configured_targets": [
+              "t"
+            ],
+            "corr_approved_fingerprints": {
+              "a": "ca",
+              "b": "cb"
+            },
+            "corr_status": {
+              "a": "Pass",
+              "b": "Pass"
+            },
+            "cycle": 8,
+            "easy_attempts": {
+              "a": 0,
+              "b": 0
+            },
+            "gate_kind": "Advance",
+            "has_ever_been_clean": true,
+            "in_flight_request": {
+              "cycle": 8,
+              "id": 2,
+              "kind": "HumanGate"
+            },
+            "last_clean_corr_approved_fingerprints": {
+              "a": "ca",
+              "b": "cb"
+            },
+            "last_clean_corr_status": {
+              "a": "Pass",
+              "b": "Pass"
+            },
+            "last_clean_live": {
+              "corr_current_fingerprints": {
+                "a": "ca",
+                "b": "cb"
+              },
+              "coverage": {
+                "t": [
+                  "a"
+                ]
+              },
+              "open_nodes": [
+                "a",
+                "b"
+              ],
+              "paper_current_fingerprints": {
+                "t": "a=ta"
+              },
+              "present_nodes": [
+                "a",
+                "b"
+              ],
+              "sound_current_fingerprints": {
+                "a": "sa"
+              },
+              "substantiveness_current_fingerprints": {
+                "a": "sub_a",
+                "b": "sub_b"
+              },
+              "target_fingerprints": {
+                "a": "ta"
+              }
+            },
+            "last_clean_local_closure_mirror_ready": true,
+            "last_clean_node_kinds": {
+              "a": "Proof",
+              "b": "Definition"
+            },
+            "last_clean_paper_approved_fingerprints": {
+              "t": "a=ta"
+            },
+            "last_clean_paper_status": {
+              "t": "Pass"
+            },
+            "last_clean_proof_nodes": [
+              "a"
+            ],
+            "last_clean_sound_approved_fingerprints": {
+              "a": "sa"
+            },
+            "last_clean_sound_status": {
+              "a": "Pass"
+            },
+            "last_clean_substantiveness_approved_fingerprints": {
+              "a": "sub_a",
+              "b": "sub_b"
+            },
+            "last_clean_substantiveness_status": {
+              "a": "Pass",
+              "b": "Pass"
+            },
+            "last_clean_target_claims": {
+              "a": [
+                "t"
+              ]
+            },
+            "last_clean_verifier_mirror_ready": true,
+            "live": {
+              "corr_current_fingerprints": {
+                "a": "ca",
+                "b": "cb"
+              },
+              "coverage": {
+                "t": [
+                  "a"
+                ]
+              },
+              "open_nodes": [
+                "a",
+                "b"
+              ],
+              "paper_current_fingerprints": {
+                "t": "a=ta"
+              },
+              "present_nodes": [
+                "a",
+                "b"
+              ],
+              "sound_current_fingerprints": {
+                "a": "sa"
+              },
+              "substantiveness_current_fingerprints": {
+                "a": "sub_a",
+                "b": "sub_b"
+              },
+              "target_fingerprints": {
+                "a": "ta"
+              }
+            },
+            "node_difficulty": {
+              "a": "Hard",
+              "b": "Hard"
+            },
+            "node_kinds": {
+              "a": "Proof",
+              "b": "Definition"
+            },
+            "paper_approved_fingerprints": {
+              "t": "a=ta"
+            },
+            "paper_status": {
+              "t": "Pass"
+            },
+            "progress_history": {
+              "next_index": 1,
+              "snapshots": [
+                {
+                  "present": [
+                    "a",
+                    "b"
+                  ],
+                  "progressed": [
+                    "a",
+                    "b"
+                  ],
+                  "snapshot_index": 0
+                }
+              ]
+            },
+            "proof_nodes": [
+              "a"
+            ],
+            "request_seq": 2,
+            "sound_approved_fingerprints": {
+              "a": "sa"
+            },
+            "sound_assessment_schema_version": 0,
+            "sound_status": {
+              "a": "Pass"
+            },
+            "stage": "HumanGate",
+            "substantiveness_approved_fingerprints": {
+              "a": "sub_a",
+              "b": "sub_b"
+            },
+            "substantiveness_status": {
+              "a": "Pass",
+              "b": "Pass"
+            },
+            "target_claims": {
+              "a": [
+                "t"
+              ]
+            }
+          },
+          "expected_commands": [
+            {
+              "command": "commit_checkpoint"
+            },
+            {
+              "command": "issue_request",
+              "request": {
+                "cycle": 8,
+                "id": 2,
+                "kind": "HumanGate"
+              }
+            }
+          ]
+        },
+        {
+          "action": "human_feedback_after_advance",
+          "event": {
+            "event": "wrapper_response",
+            "response": {
+              "choice": "Feedback",
+              "cycle": 8,
+              "kind": "human_gate",
+              "request_id": 2
+            }
+          },
+          "expected": {
+            "active_node": "a",
+            "committed": {
+              "corr_current_fingerprints": {
+                "a": "ca",
+                "b": "cb"
+              },
+              "coverage": {
+                "t": [
+                  "a"
+                ]
+              },
+              "open_nodes": [
+                "a",
+                "b"
+              ],
+              "paper_current_fingerprints": {
+                "t": "a=ta"
+              },
+              "present_nodes": [
+                "a",
+                "b"
+              ],
+              "sound_current_fingerprints": {
+                "a": "sa"
+              },
+              "substantiveness_current_fingerprints": {
+                "a": "sub_a",
+                "b": "sub_b"
+              },
+              "target_fingerprints": {
+                "a": "ta"
+              }
+            },
+            "committed_node_kinds": {
+              "a": "Proof",
+              "b": "Definition"
+            },
+            "committed_proof_nodes": [
+              "a"
+            ],
+            "committed_target_claims": {
+              "a": [
+                "t"
+              ]
+            },
+            "configured_targets": [
+              "t"
+            ],
+            "corr_approved_fingerprints": {
+              "a": "ca",
+              "b": "cb"
+            },
+            "corr_status": {
+              "a": "Pass",
+              "b": "Pass"
+            },
+            "cycle": 8,
+            "easy_attempts": {
+              "a": 0,
+              "b": 0
+            },
+            "has_ever_been_clean": true,
+            "human_input_outstanding": true,
+            "in_flight_request": {
+              "cycle": 8,
+              "id": 3,
+              "kind": "Review"
+            },
+            "last_clean_corr_approved_fingerprints": {
+              "a": "ca",
+              "b": "cb"
+            },
+            "last_clean_corr_status": {
+              "a": "Pass",
+              "b": "Pass"
+            },
+            "last_clean_live": {
+              "corr_current_fingerprints": {
+                "a": "ca",
+                "b": "cb"
+              },
+              "coverage": {
+                "t": [
+                  "a"
+                ]
+              },
+              "open_nodes": [
+                "a",
+                "b"
+              ],
+              "paper_current_fingerprints": {
+                "t": "a=ta"
+              },
+              "present_nodes": [
+                "a",
+                "b"
+              ],
+              "sound_current_fingerprints": {
+                "a": "sa"
+              },
+              "substantiveness_current_fingerprints": {
+                "a": "sub_a",
+                "b": "sub_b"
+              },
+              "target_fingerprints": {
+                "a": "ta"
+              }
+            },
+            "last_clean_local_closure_mirror_ready": true,
+            "last_clean_node_kinds": {
+              "a": "Proof",
+              "b": "Definition"
+            },
+            "last_clean_paper_approved_fingerprints": {
+              "t": "a=ta"
+            },
+            "last_clean_paper_status": {
+              "t": "Pass"
+            },
+            "last_clean_proof_nodes": [
+              "a"
+            ],
+            "last_clean_sound_approved_fingerprints": {
+              "a": "sa"
+            },
+            "last_clean_sound_status": {
+              "a": "Pass"
+            },
+            "last_clean_substantiveness_approved_fingerprints": {
+              "a": "sub_a",
+              "b": "sub_b"
+            },
+            "last_clean_substantiveness_status": {
+              "a": "Pass",
+              "b": "Pass"
+            },
+            "last_clean_target_claims": {
+              "a": [
+                "t"
+              ]
+            },
+            "last_clean_verifier_mirror_ready": true,
+            "live": {
+              "corr_current_fingerprints": {
+                "a": "ca",
+                "b": "cb"
+              },
+              "coverage": {
+                "t": [
+                  "a"
+                ]
+              },
+              "open_nodes": [
+                "a",
+                "b"
+              ],
+              "paper_current_fingerprints": {
+                "t": "a=ta"
+              },
+              "present_nodes": [
+                "a",
+                "b"
+              ],
+              "sound_current_fingerprints": {
+                "a": "sa"
+              },
+              "substantiveness_current_fingerprints": {
+                "a": "sub_a",
+                "b": "sub_b"
+              },
+              "target_fingerprints": {
+                "a": "ta"
+              }
+            },
+            "node_difficulty": {
+              "a": "Hard",
+              "b": "Hard"
+            },
+            "node_kinds": {
+              "a": "Proof",
+              "b": "Definition"
+            },
+            "paper_approved_fingerprints": {
+              "t": "a=ta"
+            },
+            "paper_status": {
+              "t": "Pass"
+            },
+            "proof_nodes": [
+              "a"
+            ],
+            "request_seq": 3,
+            "sound_approved_fingerprints": {
+              "a": "sa"
+            },
+            "sound_assessment_schema_version": 0,
+            "sound_status": {
+              "a": "Pass"
+            },
+            "stage": "Reviewer",
+            "substantiveness_approved_fingerprints": {
+              "a": "sub_a",
+              "b": "sub_b"
+            },
+            "substantiveness_status": {
+              "a": "Pass",
+              "b": "Pass"
+            },
+            "target_claims": {
+              "a": [
+                "t"
+              ]
+            }
+          },
+          "expected_commands": [
+            {
+              "command": "issue_request",
+              "request": {
+                "cycle": 8,
+                "id": 3,
+                "kind": "Review"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "initial": {
+        "committed": {
+          "corr_current_fingerprints": {
+            "a": "ca"
+          },
+          "coverage": {
+            "t": [
+              "a"
+            ]
+          },
+          "present_nodes": [
+            "a"
+          ],
+          "target_fingerprints": {
+            "a": "ta"
+          }
+        },
+        "corr_approved_fingerprints": {
+          "a": "ca"
+        },
+        "corr_status": {
+          "a": "Pass"
+        },
+        "cycle": 11,
+        "in_flight_request": {
+          "cycle": 11,
+          "id": 1,
+          "kind": "Review"
+        },
+        "live": {
+          "corr_current_fingerprints": {
+            "a": "ca"
+          },
+          "coverage": {
+            "t": [
+              "a"
+            ]
+          },
+          "present_nodes": [
+            "a"
+          ],
+          "target_fingerprints": {
+            "a": "ta"
+          }
+        },
+        "phase": "Cleanup",
+        "request_seq": 1,
+        "sound_assessment_schema_version": 0,
+        "stage": "Reviewer"
+      },
+      "name": "cleanup_done",
+      "steps": [
+        {
+          "action": "review_done_cleanup",
+          "event": {
+            "event": "wrapper_response",
+            "response": {
+              "cycle": 11,
+              "decision": "Done",
+              "kind": "review",
+              "next_mode": "Cleanup",
+              "request_id": 1
+            }
+          },
+          "expected": {
+            "committed": {
+              "corr_current_fingerprints": {
+                "a": "ca"
+              },
+              "coverage": {
+                "t": [
+                  "a"
+                ]
+              },
+              "paper_current_fingerprints": {
+                "t": "a=ta"
+              },
+              "present_nodes": [
+                "a"
+              ],
+              "substantiveness_current_fingerprints": {
+                "a": "sub_a"
+              },
+              "target_fingerprints": {
+                "a": "ta"
+              }
+            },
+            "committed_node_kinds": {
+              "a": "Definition"
+            },
+            "committed_target_claims": {
+              "a": [
+                "t"
+              ]
+            },
+            "configured_targets": [
+              "t"
+            ],
+            "corr_approved_fingerprints": {
+              "a": "ca"
+            },
+            "corr_status": {
+              "a": "Pass"
+            },
+            "cycle": 11,
+            "easy_attempts": {
+              "a": 0
+            },
+            "has_ever_been_clean": true,
+            "last_clean_corr_approved_fingerprints": {
+              "a": "ca"
+            },
+            "last_clean_corr_status": {
+              "a": "Pass"
+            },
+            "last_clean_live": {
+              "corr_current_fingerprints": {
+                "a": "ca"
+              },
+              "coverage": {
+                "t": [
+                  "a"
+                ]
+              },
+              "paper_current_fingerprints": {
+                "t": "a=ta"
+              },
+              "present_nodes": [
+                "a"
+              ],
+              "substantiveness_current_fingerprints": {
+                "a": "sub_a"
+              },
+              "target_fingerprints": {
+                "a": "ta"
+              }
+            },
+            "last_clean_local_closure_mirror_ready": true,
+            "last_clean_node_kinds": {
+              "a": "Definition"
+            },
+            "last_clean_paper_approved_fingerprints": {
+              "t": "a=ta"
+            },
+            "last_clean_paper_status": {
+              "t": "Pass"
+            },
+            "last_clean_substantiveness_approved_fingerprints": {
+              "a": "sub_a"
+            },
+            "last_clean_substantiveness_status": {
+              "a": "Pass"
+            },
+            "last_clean_target_claims": {
+              "a": [
+                "t"
+              ]
+            },
+            "last_clean_verifier_mirror_ready": true,
+            "live": {
+              "corr_current_fingerprints": {
+                "a": "ca"
+              },
+              "coverage": {
+                "t": [
+                  "a"
+                ]
+              },
+              "paper_current_fingerprints": {
+                "t": "a=ta"
+              },
+              "present_nodes": [
+                "a"
+              ],
+              "substantiveness_current_fingerprints": {
+                "a": "sub_a"
+              },
+              "target_fingerprints": {
+                "a": "ta"
+              }
+            },
+            "node_difficulty": {
+              "a": "Hard"
+            },
+            "node_kinds": {
+              "a": "Definition"
+            },
+            "paper_approved_fingerprints": {
+              "t": "a=ta"
+            },
+            "paper_status": {
+              "t": "Pass"
+            },
+            "phase": "Complete",
+            "progress_history": {
+              "next_index": 1,
+              "snapshots": [
+                {
+                  "present": [
+                    "a"
+                  ],
+                  "progressed": [
+                    "a"
+                  ],
+                  "snapshot_index": 0
+                }
+              ]
+            },
+            "request_seq": 1,
+            "sound_assessment_schema_version": 0,
+            "stage": "Complete",
+            "substantiveness_approved_fingerprints": {
+              "a": "sub_a"
+            },
+            "substantiveness_status": {
+              "a": "Pass"
+            },
+            "target_claims": {
+              "a": [
+                "t"
+              ]
+            }
+          },
+          "expected_commands": [
+            {
+              "command": "commit_checkpoint"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "initial": {
+        "committed": {
+          "corr_current_fingerprints": {
+            "a": "ca"
+          },
+          "coverage": {
+            "t": [
+              "a"
+            ]
+          },
+          "open_nodes": [
+            "a"
+          ],
+          "paper_current_fingerprints": {
+            "t": "a=ta"
+          },
+          "present_nodes": [
+            "a"
+          ],
+          "sound_current_fingerprints": {
+            "a": "sa"
+          },
+          "target_fingerprints": {
+            "a": "ta"
+          }
+        },
+        "corr_approved_fingerprints": {
+          "a": "ca"
+        },
+        "corr_status": {
+          "a": "Pass"
+        },
+        "live": {
+          "corr_current_fingerprints": {
+            "a": "ca"
+          },
+          "coverage": {
+            "t": [
+              "a"
+            ]
+          },
+          "open_nodes": [
+            "a"
+          ],
+          "paper_current_fingerprints": {
+            "t": "a=ta"
+          },
+          "present_nodes": [
+            "a"
+          ],
+          "sound_current_fingerprints": {
+            "a": "sa"
+          },
+          "target_fingerprints": {
+            "a": "ta"
+          }
+        },
+        "paper_approved_fingerprints": {
+          "t": "a=ta"
+        },
+        "paper_status": {
+          "t": "Pass"
+        },
+        "proof_nodes": [
+          "a"
+        ],
+        "sound_approved_fingerprints": {
+          "a": "sa"
+        },
+        "sound_assessment_schema_version": 0,
+        "sound_status": {
+          "a": "Pass"
+        },
+        "substantiveness_status": {
+          "a": "Pass"
+        }
+      },
+      "name": "start_unknown_substantiveness_dispatches_paper",
+      "steps": [
+        {
+          "action": "start_cycle",
+          "event": {
+            "event": "start_cycle"
+          },
+          "expected": {
+            "attempt": 1,
+            "committed": {
+              "corr_current_fingerprints": {
+                "a": "ca"
+              },
+              "coverage": {
+                "t": [
+                  "a"
+                ]
+              },
+              "open_nodes": [
+                "a"
+              ],
+              "paper_current_fingerprints": {
+                "t": "a=ta"
+              },
+              "present_nodes": [
+                "a"
+              ],
+              "sound_current_fingerprints": {
+                "a": "sa"
+              },
+              "target_fingerprints": {
+                "a": "ta"
+              }
+            },
+            "committed_node_kinds": {
+              "a": "Proof"
+            },
+            "committed_proof_nodes": [
+              "a"
+            ],
+            "committed_target_claims": {
+              "a": [
+                "t"
+              ]
+            },
+            "configured_targets": [
+              "t"
+            ],
+            "corr_approved_fingerprints": {
+              "a": "ca"
+            },
+            "corr_status": {
+              "a": "Pass"
+            },
+            "cycle": 1,
+            "easy_attempts": {
+              "a": 0
+            },
+            "in_flight_request": {
+              "cycle": 1,
+              "id": 1,
+              "kind": "Paper"
+            },
+            "live": {
+              "corr_current_fingerprints": {
+                "a": "ca"
+              },
+              "coverage": {
+                "t": [
+                  "a"
+                ]
+              },
+              "open_nodes": [
+                "a"
+              ],
+              "paper_current_fingerprints": {
+                "t": "a=ta"
+              },
+              "present_nodes": [
+                "a"
+              ],
+              "sound_current_fingerprints": {
+                "a": "sa"
+              },
+              "target_fingerprints": {
+                "a": "ta"
+              }
+            },
+            "node_difficulty": {
+              "a": "Hard"
+            },
+            "node_kinds": {
+              "a": "Proof"
+            },
+            "paper_approved_fingerprints": {
+              "t": "a=ta"
+            },
+            "paper_status": {
+              "t": "Pass"
+            },
+            "proof_nodes": [
+              "a"
+            ],
+            "request_seq": 1,
+            "sound_approved_fingerprints": {
+              "a": "sa"
+            },
+            "sound_assessment_schema_version": 0,
+            "sound_status": {
+              "a": "Pass"
+            },
+            "stage": "VerifyPaper",
+            "substantiveness_status": {
+              "a": "Pass"
+            },
+            "target_claims": {
+              "a": [
+                "t"
+              ]
+            }
+          },
+          "expected_commands": [
+            {
+              "command": "issue_request",
+              "request": {
+                "cycle": 1,
+                "id": 1,
+                "kind": "Paper"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "initial": {
+        "active_node": "a",
+        "committed": {
+          "corr_current_fingerprints": {
+            "a": "ca"
+          },
+          "coverage": {
+            "t": [
+              "a"
+            ]
+          },
+          "open_nodes": [
+            "a"
+          ],
+          "paper_current_fingerprints": {
+            "t": "a=ta"
+          },
+          "present_nodes": [
+            "a"
+          ],
+          "sound_current_fingerprints": {
+            "a": "sa"
+          },
+          "target_fingerprints": {
+            "a": "ta"
+          }
+        },
+        "corr_approved_fingerprints": {
+          "a": "ca"
+        },
+        "corr_status": {
+          "a": "Pass"
+        },
+        "live": {
+          "corr_current_fingerprints": {
+            "a": "ca"
+          },
+          "coverage": {
+            "t": [
+              "a"
+            ]
+          },
+          "open_nodes": [
+            "a"
+          ],
+          "paper_current_fingerprints": {
+            "t": "a=ta"
+          },
+          "present_nodes": [
+            "a"
+          ],
+          "sound_current_fingerprints": {
+            "a": "sa"
+          },
+          "target_fingerprints": {
+            "a": "ta"
+          }
+        },
+        "paper_approved_fingerprints": {
+          "t": "a=ta"
+        },
+        "paper_status": {
+          "t": "Pass"
+        },
+        "phase": "ProofFormalization",
+        "proof_nodes": [
+          "a"
+        ],
+        "sound_approved_fingerprints": {
+          "a": "sa"
+        },
+        "sound_assessment_schema_version": 0,
+        "sound_status": {
+          "a": "Pass"
+        },
+        "substantiveness_status": {
+          "a": "Pass"
+        }
+      },
+      "name": "proof_start_unknown_substantiveness_dispatches_paper",
+      "steps": [
+        {
+          "action": "start_cycle",
+          "event": {
+            "event": "start_cycle"
+          },
+          "expected": {
+            "active_node": "a",
+            "attempt": 1,
+            "committed": {
+              "corr_current_fingerprints": {
+                "a": "ca"
+              },
+              "coverage": {
+                "t": [
+                  "a"
+                ]
+              },
+              "open_nodes": [
+                "a"
+              ],
+              "paper_current_fingerprints": {
+                "t": "a=ta"
+              },
+              "present_nodes": [
+                "a"
+              ],
+              "sound_current_fingerprints": {
+                "a": "sa"
+              },
+              "target_fingerprints": {
+                "a": "ta"
+              }
+            },
+            "committed_node_kinds": {
+              "a": "Proof"
+            },
+            "committed_proof_nodes": [
+              "a"
+            ],
+            "committed_target_claims": {
+              "a": [
+                "t"
+              ]
+            },
+            "configured_targets": [
+              "t"
+            ],
+            "corr_approved_fingerprints": {
+              "a": "ca"
+            },
+            "corr_status": {
+              "a": "Pass"
+            },
+            "cycle": 1,
+            "easy_attempts": {
+              "a": 0
+            },
+            "in_flight_request": {
+              "cycle": 1,
+              "id": 1,
+              "kind": "Paper"
+            },
+            "live": {
+              "corr_current_fingerprints": {
+                "a": "ca"
+              },
+              "coverage": {
+                "t": [
+                  "a"
+                ]
+              },
+              "open_nodes": [
+                "a"
+              ],
+              "paper_current_fingerprints": {
+                "t": "a=ta"
+              },
+              "present_nodes": [
+                "a"
+              ],
+              "sound_current_fingerprints": {
+                "a": "sa"
+              },
+              "target_fingerprints": {
+                "a": "ta"
+              }
+            },
+            "node_difficulty": {
+              "a": "Hard"
+            },
+            "node_kinds": {
+              "a": "Proof"
+            },
+            "paper_approved_fingerprints": {
+              "t": "a=ta"
+            },
+            "paper_status": {
+              "t": "Pass"
+            },
+            "phase": "ProofFormalization",
+            "proof_nodes": [
+              "a"
+            ],
+            "request_seq": 1,
+            "sound_approved_fingerprints": {
+              "a": "sa"
+            },
+            "sound_assessment_schema_version": 0,
+            "sound_status": {
+              "a": "Pass"
+            },
+            "stage": "VerifyPaper",
+            "substantiveness_status": {
+              "a": "Pass"
+            },
+            "target_claims": {
+              "a": [
+                "t"
+              ]
+            }
+          },
+          "expected_commands": [
+            {
+              "command": "issue_request",
+              "request": {
+                "cycle": 1,
+                "id": 1,
+                "kind": "Paper"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+### `reset = last_clean`
+If the review contract allows `reset = last_clean`, you may use it to rewind the repo to the most recent checkpoint where `global_blockers()` was empty. This is coarser than `last_commit` — it may discard several cycles of worker effort.
+
+You should consider `last_clean` when blockers have persisted over several cycles. Consult the history and ask yourself; are the new blockers saddling the process with incorrectly-implemented complexity that might be better implemented with another attempt from a clean state? Or perhaps: have you learned enough shepharding the run through this sequence of blockers that you think you could guide it more productively from a clean slate? Or is the process just doing a long hard and necessary decomposition that shouldn't be put off? (The last story is more compelling if the history shows you already tried last_clean from a similar point, and are still facing the same difficulties). To check prior `last_clean` attempts, `grep '"reset":"last_clean"' .trellis/logs/burst-history.jsonl`.
+
+**Required threshold**: when `cycles_since_clean >= csc_last_clean_threshold` (both fields are in the request summary; the threshold is what the kernel actually enforces this run), you must choose `reset = last_clean`. The watch policy escalates here because hitting the threshold means the local-repair narrative has failed for a significant stretch. Read both fields verbatim from the request.
+
+**Exception**: this mandate is waived once `last_clean_rewind_count >= csc_rewind_waiver_count` (both fields are in the request summary; the waiver count is what the kernel actually enforces this run).
+
+When you use `last_clean`, the kernel restores `paper_status`, `corr_status`, and `sound_status` from the snapshot taken at the clean checkpoint — verifier lanes do NOT need to re-run for nodes whose state at the clean checkpoint already matched approved fingerprints. Only nodes that genuinely diverged post-rewind get re-verified.
+
+`last_clean` is a pure rewind: leave `next_active` empty in this same response. The kernel applies the reset and immediately re-issues a fresh review request from the post-reset state, where you decide `next_active`, `next_mode`, blocker adjudications, etc. against the actual restored state — no need to predict what's legal post-restore.
+
+**Post-rewind expectation**: after a `last_clean` reset, the next reviewer should target the same logical obligation that triggered the rewind, with a meaningfully different strategy than the one that just failed. Pivoting to an unrelated open node — one whose closure does not directly contribute to resolving the rewound obligation — wastes the rewind window: the obligation will still be there later. If a different open node genuinely needs to be tackled first as preparation, say in `comments` how its closure will enable a new attack on the rewound obligation.

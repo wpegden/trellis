@@ -1,0 +1,14 @@
+{
+  "action": "validate_substantiveness_result",
+  "raw_payload": {
+    "substantiveness": {
+      "decision": "FAIL",
+      "verdicts": [
+        {"node": "FooLemma", "verdict": "Fail", "comment": "Statement is too weak."}
+      ]
+    },
+    "overall": "REJECT",
+    "summary": "needs strengthening",
+    "comments": "Add the missing hypothesis."
+  }
+}

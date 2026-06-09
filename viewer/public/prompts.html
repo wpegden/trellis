@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trellis Prompt Browser</title>
+<style>
+* { box-sizing: border-box; }
+body { margin: 0; font-family: Menlo, Monaco, "Courier New", monospace; background: #0f172a; color: #e2e8f0; }
+header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid #243146; background: #111c31; }
+h1 { margin: 0; font-size: 16px; color: #7dd3fc; }
+.controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+label { font-size: 12px; color: #94a3b8; display: flex; gap: 6px; align-items: center; }
+select { background: #0f172a; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px; padding: 6px 8px; font: inherit; }
+.layout { display: grid; grid-template-columns: 320px 1fr; min-height: calc(100vh - 57px); }
+.sidebar { border-right: 1px solid #243146; overflow: auto; padding: 14px; background: #0b1222; }
+.role-group { margin-bottom: 18px; }
+.role-group h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: #94a3b8; margin: 0 0 8px; }
+.scenario-list { display: flex; flex-direction: column; gap: 8px; }
+.scenario-button { width: 100%; text-align: left; background: #111c31; color: #e2e8f0; border: 1px solid #243146; border-radius: 8px; padding: 10px 11px; cursor: pointer; }
+.scenario-button:hover { border-color: #38bdf8; }
+.scenario-button.active { border-color: #7dd3fc; background: #16233c; }
+.scenario-title { font-size: 12px; margin-bottom: 4px; }
+.scenario-desc { font-size: 11px; line-height: 1.4; color: #94a3b8; }
+.content { overflow: auto; padding: 18px; }
+.hero { margin-bottom: 18px; }
+.hero h2 { margin: 0 0 6px; font-size: 18px; color: #f8fafc; }
+.hero p { margin: 0; color: #94a3b8; font-size: 13px; max-width: 1100px; }
+.meta { display: flex; flex-wrap: wrap; gap: 10px; margin: 12px 0 16px; }
+.pill { background: #111c31; border: 1px solid #243146; border-radius: 999px; padding: 5px 10px; font-size: 11px; color: #cbd5e1; }
+.prompt-box, .request-box { border: 1px solid #243146; border-radius: 12px; background: #0b1222; padding: 14px; margin-bottom: 18px; }
+.prompt-box h3, .request-box h3 { margin: 0 0 10px; color: #7dd3fc; font-size: 14px; }
+.request-box pre, .prompt-full { margin: 0; white-space: pre-wrap; word-break: break-word; line-height: 1.5; font-size: 12px; }
+.section { border: 1px solid #243146; border-radius: 12px; margin-bottom: 14px; background: #0b1222; overflow: hidden; }
+.section-head { padding: 10px 12px; background: #111c31; border-bottom: 1px solid #243146; }
+.fragment-id { font-size: 12px; color: #f8fafc; margin-bottom: 4px; }
+.source-path { font-size: 11px; color: #94a3b8; word-break: break-all; }
+.section pre { margin: 0; padding: 14px; white-space: pre-wrap; word-break: break-word; line-height: 1.55; font-size: 12px; }
+.loading, .error { padding: 16px; border: 1px solid #243146; border-radius: 12px; background: #0b1222; }
+.error { color: #fca5a5; border-color: #7f1d1d; }
+@media (max-width: 980px) {
+  .layout { grid-template-columns: 1fr; }
+  .sidebar { border-right: none; border-bottom: 1px solid #243146; max-height: 45vh; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>Trellis Prompt Browser</h1>
+  <div class="controls">
+    <label>Project
+      <select id="project-select"></select>
+    </label>
+  </div>
+</header>
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <div class="loading">Loading scenarios...</div>
+  </aside>
+  <main class="content" id="content">
+    <div class="loading">Loading prompt browser...</div>
+  </main>
+</div>
+<script>
+const API_BASE = '/prompts/api';
+let currentProject = '';
+let catalog = [];
+let selectedScenario = '';
+
+function queryProject() {
+  const params = new URLSearchParams(window.location.search);
+  return params.get('project') || '';
+}
+
+function setProjectQuery(project) {
+  const url = new URL(window.location.href);
+  url.searchParams.set('project', project);
+  history.replaceState({}, '', url);
+}
+
+async function fetchJson(url) {
+  const response = await fetch(url);
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.error || `HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+function groupedCatalog(items) {
+  const groups = new Map();
+  for (const item of items) {
+    if (!groups.has(item.role)) groups.set(item.role, []);
+    groups.get(item.role).push(item);
+  }
+  return [...groups.entries()];
+}
+
+function renderSidebar() {
+  const sidebar = document.getElementById('sidebar');
+  const groups = groupedCatalog(catalog);
+  sidebar.innerHTML = groups.map(([role, items]) => `
+    <section class="role-group">
+      <h2>${role.replaceAll('_', ' ')}</h2>
+      <div class="scenario-list">
+        ${items.map(item => `
+          <button class="scenario-button ${item.id === selectedScenario ? 'active' : ''}" data-scenario="${item.id}">
+            <div class="scenario-title">${item.title}</div>
+            <div class="scenario-desc">${item.description}</div>
+          </button>
+        `).join('')}
+      </div>
+    </section>
+  `).join('');
+  sidebar.querySelectorAll('.scenario-button').forEach(button => {
+    button.addEventListener('click', () => {
+      selectedScenario = button.dataset.scenario || '';
+      renderSidebar();
+      loadScenario(selectedScenario).catch(renderError);
+    });
+  });
+}
+
+function renderError(error) {
+  document.getElementById('content').innerHTML = `<div class="error">${error.message}</div>`;
+}
+
+function renderScenario(data) {
+  const { scenario, sections, prompt, request, fragment_ids: fragmentIds = [] } = data;
+  document.getElementById('content').innerHTML = `
+    <div class="hero">
+      <h2>${scenario.title}</h2>
+      <p>${scenario.description}</p>
+      <div class="meta">
+        <div class="pill">role: ${scenario.role}</div>
+        <div class="pill">project: ${data.project || currentProject}</div>
+        <div class="pill">fragments: ${fragmentIds.length}</div>
+      </div>
+    </div>
+    <section class="prompt-box">
+      <h3>Complete Prompt</h3>
+      <pre class="prompt-full">${escapeHtml(prompt)}</pre>
+    </section>
+    <section class="request-box">
+      <h3>Kernel Request Payload</h3>
+      <pre>${escapeHtml(JSON.stringify(request, null, 2))}</pre>
+    </section>
+    ${sections.map(section => `
+      <section class="section">
+        <div class="section-head">
+          <div class="fragment-id">${escapeHtml(section.fragment_id)}</div>
+          <div class="source-path">${escapeHtml(section.source_path)}</div>
+        </div>
+        <pre>${escapeHtml(section.text)}</pre>
+      </section>
+    `).join('')}
+  `;
+}
+
+function escapeHtml(text) {
+  return String(text)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
+}
+
+async function loadProjects() {
+  const payload = await fetchJson(`${API_BASE}/projects.json`);
+  const select = document.getElementById('project-select');
+  currentProject = queryProject() || payload.default_project || '';
+  select.innerHTML = payload.projects.map(project => `
+    <option value="${project.slug}" ${project.slug === currentProject ? 'selected' : ''}>${project.slug}</option>
+  `).join('');
+  select.addEventListener('change', async () => {
+    currentProject = select.value;
+    setProjectQuery(currentProject);
+    await loadCatalog();
+  });
+}
+
+async function loadCatalog() {
+  document.getElementById('sidebar').innerHTML = '<div class="loading">Loading scenarios...</div>';
+  document.getElementById('content').innerHTML = '<div class="loading">Loading prompt browser...</div>';
+  const payload = await fetchJson(`${API_BASE}/catalog.json?project=${encodeURIComponent(currentProject)}`);
+  catalog = payload.scenarios || [];
+  if (!selectedScenario || !catalog.some(item => item.id === selectedScenario)) {
+    selectedScenario = catalog.length ? catalog[0].id : '';
+  }
+  renderSidebar();
+  if (selectedScenario) {
+    await loadScenario(selectedScenario);
+  } else {
+    document.getElementById('content').innerHTML = '<div class="loading">No scenarios available.</div>';
+  }
+}
+
+async function loadScenario(id) {
+  document.getElementById('content').innerHTML = '<div class="loading">Rendering prompt...</div>';
+  const payload = await fetchJson(`${API_BASE}/render/${encodeURIComponent(id)}?project=${encodeURIComponent(currentProject)}`);
+  renderScenario(payload);
+}
+
+async function main() {
+  try {
+    await loadProjects();
+    setProjectQuery(currentProject);
+    await loadCatalog();
+  } catch (error) {
+    renderError(error);
+  }
+}
+
+main();
+</script>
+</body>
+</html>

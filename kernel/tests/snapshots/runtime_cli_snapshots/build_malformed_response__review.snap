@@ -1,0 +1,47 @@
+---
+source: tests/runtime_cli_snapshots.rs
+assertion_line: 197
+expression: response
+---
+{
+  "output": {
+    "allow_new_obligations": true,
+    "authorized_nodes": [],
+    "cleanup_dismiss_tasks": [],
+    "cleanup_next_task": null,
+    "cleanup_request_reaudit": false,
+    "clear_human_input": false,
+    "comments": "",
+    "confirm_protected_semantic_change_scope": false,
+    "consume_global_repair_grant": false,
+    "cycle": 8,
+    "decision": "Continue",
+    "difficulty_updates": {},
+    "dismiss_audit_plan": false,
+    "dismissed_tasks": [],
+    "global_repair_request": null,
+    "kind": "review",
+    "must_close_active": false,
+    "next_active": null,
+    "next_active_coarse": null,
+    "next_mode": "Global",
+    "next_worker_context_mode": "resume",
+    "paper_focus_ranges": [],
+    "paper_grounding": {
+      "basis_summary": "",
+      "consulted_cited_ranges": false
+    },
+    "protected_semantic_change_nodes": [],
+    "reason": "",
+    "request_id": 12,
+    "request_sound_verifier_nodes": [],
+    "reset": "None",
+    "reset_blockers": [],
+    "reset_node": null,
+    "status": "Malformed",
+    "stuck_math_audit": null,
+    "task_blockers": [],
+    "work_style_hint": "none"
+  },
+  "status": "build_malformed_response_ok"
+}

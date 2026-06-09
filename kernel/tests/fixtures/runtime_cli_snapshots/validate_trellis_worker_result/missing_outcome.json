@@ -1,0 +1,10 @@
+{
+  "action": "validate_trellis_worker_result",
+  "raw_payload": {
+    "summary": "should have outcome",
+    "comments": "",
+    "semantic_dep_updates": {},
+    "target_claim_updates": {},
+    "difficulty_updates": {}
+  }
+}

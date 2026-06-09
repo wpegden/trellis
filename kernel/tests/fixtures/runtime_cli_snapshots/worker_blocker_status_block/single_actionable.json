@@ -1,0 +1,20 @@
+{
+  "action": "worker_blocker_status_block",
+  "request": {
+    "id": 2,
+    "kind": "worker",
+    "cycle": 2,
+    "phase": "proof_formalization",
+    "mode": "local",
+    "active_node": "ActiveProof",
+    "held_target": null,
+    "blockers": [
+      {
+        "kind": "NodeCorr",
+        "object": {"otype": "node", "node": "ActiveProof"},
+        "fingerprint": "fp-active"
+      }
+    ],
+    "current_present_nodes": ["ActiveProof"]
+  }
+}

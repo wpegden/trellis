@@ -1,0 +1,22 @@
+{
+  "request": {
+    "action": "validate_trellis_worker_result",
+    "raw_payload": {
+      "comments": "",
+      "difficulty_updates": {},
+      "semantic_dep_updates": {},
+      "summary": "should have outcome",
+      "target_claim_updates": {}
+    }
+  },
+  "response": {
+    "output": {
+      "data": null,
+      "errors": [
+        "outcome must be non-empty"
+      ],
+      "ok": false
+    },
+    "status": "validate_trellis_worker_result_ok"
+  }
+}

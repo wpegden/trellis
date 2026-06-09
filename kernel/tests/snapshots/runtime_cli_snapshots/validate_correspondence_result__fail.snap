@@ -1,0 +1,26 @@
+---
+source: tests/runtime_cli_snapshots.rs
+expression: response
+---
+{
+  "output": {
+    "data": {
+      "comments": "Need a better excerpt.",
+      "correspondence": {
+        "decision": "FAIL",
+        "verdicts": [
+          {
+            "comment": "Still mismatched.",
+            "node": "main_node",
+            "verdict": "Fail"
+          }
+        ]
+      },
+      "overall": "REJECT",
+      "summary": "Paper mismatch remains"
+    },
+    "errors": [],
+    "ok": true
+  },
+  "status": "validate_correspondence_result_ok"
+}

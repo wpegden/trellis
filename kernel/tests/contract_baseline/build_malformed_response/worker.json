@@ -1,0 +1,48 @@
+{
+  "request": {
+    "action": "build_malformed_response",
+    "cycle": 7,
+    "kind": "worker",
+    "request_id": 11
+  },
+  "response": {
+    "output": {
+      "comments": "",
+      "cycle": 7,
+      "dep_updates": {},
+      "deterministic_rejection_reasons": [],
+      "deviation_deletions": [],
+      "deviation_requests": {},
+      "difficulty_updates": {},
+      "kind": "worker",
+      "local_closure_results": {},
+      "local_closure_revalidation": null,
+      "needs_restructure_suggested_nodes": [],
+      "node_deviation_claims": {},
+      "node_kind_updates": {},
+      "outcome": "Invalid",
+      "proof_node_updates": {},
+      "protected_semantic_change_nodes": [],
+      "request_id": 11,
+      "snapshot": {
+        "corr_current_fingerprints": {},
+        "coverage": {},
+        "deviation_current_fingerprints": {},
+        "open_nodes": [],
+        "paper_current_fingerprints": {},
+        "present_nodes": [],
+        "protected_closure_nodes_per_target": {},
+        "sketch_proof_nodes": [],
+        "sound_current_fingerprint_parts": {},
+        "sound_current_fingerprints": {},
+        "substantiveness_current_fingerprints": {},
+        "target_fingerprints": {}
+      },
+      "status": "Malformed",
+      "summary": "",
+      "target_claim_updates": {},
+      "transport_failure": false
+    },
+    "status": "build_malformed_response_ok"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "action": "validate_trellis_worker_result",
+  "raw_payload": {
+    "outcome": "VaLiD",
+    "summary": " Applied a small theorem repair. ",
+    "comments": "",
+    "semantic_dep_updates": {
+      "main_node": ["dep_a", "dep_a", " dep_b "]
+    },
+    "target_claim_updates": {
+      "main_node": ["target_1"]
+    },
+    "difficulty_updates": {
+      "main_node": "hard"
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "request": {
+    "action": "normalize_human_gate",
+    "cycle": 15,
+    "raw_payload_text": "{\"choice\":\"feedback\",\"comment\":\"Please proceed with care.\"}",
+    "request_id": 22
+  },
+  "response": {
+    "output": {
+      "choice": "Feedback",
+      "cycle": 15,
+      "kind": "human_gate",
+      "request_id": 22,
+      "status": "Ok"
+    },
+    "status": "normalize_human_gate_ok"
+  }
+}

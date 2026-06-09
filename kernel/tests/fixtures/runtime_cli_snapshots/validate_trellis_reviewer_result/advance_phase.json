@@ -1,0 +1,16 @@
+{
+  "action": "validate_trellis_reviewer_result",
+  "raw_payload": {
+    "allow_new_obligations": false,
+    "clear_human_input": false,
+    "decision": "ADVANCE_PHASE",
+    "difficulty_updates": {},
+    "must_close_active": true,
+    "next_active": "main_node",
+    "next_mode": "TARGETED",
+    "reason": "All theorems stated; ready for ProofFormalization.",
+    "reset": "NONE",
+    "reset_blocker_ids": [],
+    "task_blocker_ids": []
+  }
+}

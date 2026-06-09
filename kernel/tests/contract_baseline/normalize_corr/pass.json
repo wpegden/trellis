@@ -1,0 +1,69 @@
+{
+  "request": {
+    "action": "normalize_corr",
+    "input": {
+      "cycle": 4,
+      "members": [
+        {
+          "error": "",
+          "lane_id": "v1",
+          "ok": true,
+          "payload": {
+            "comments": "",
+            "correspondence": {
+              "decision": "PASS",
+              "issues": [],
+              "verdicts": [
+                {
+                  "node": "FooLemma",
+                  "verdict": "Pass"
+                }
+              ]
+            },
+            "overall": "APPROVE",
+            "summary": "Lane v1 found correspondence holds."
+          }
+        }
+      ],
+      "request_id": 50,
+      "verify_lanes": [
+        "v1"
+      ],
+      "verify_nodes": [
+        "FooLemma"
+      ],
+      "verify_targets": []
+    }
+  },
+  "response": {
+    "output": {
+      "response": {
+        "cycle": 4,
+        "node_lane_updates": {
+          "v1": {
+            "FooLemma": {
+              "Set": "Pass"
+            }
+          }
+        },
+        "request_id": 50,
+        "reviewer_evidence": {
+          "v1": {
+            "comments": "",
+            "correspondence": {
+              "decision": "PASS",
+              "issues": []
+            },
+            "overall": "APPROVE",
+            "summary": "Lane v1 found correspondence holds."
+          }
+        },
+        "status": "Ok",
+        "target_lane_updates": {
+          "v1": {}
+        }
+      }
+    },
+    "status": "normalize_corr_ok"
+  }
+}

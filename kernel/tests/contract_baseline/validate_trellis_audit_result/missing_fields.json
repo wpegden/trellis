@@ -1,0 +1,18 @@
+{
+  "request": {
+    "action": "validate_trellis_audit_result",
+    "raw_payload": {
+      "outcome": "bogus_outcome"
+    }
+  },
+  "response": {
+    "output": {
+      "data": null,
+      "errors": [
+        "outcome must be one of ['audit_done', 'need_to_continue']"
+      ],
+      "ok": false
+    },
+    "status": "validate_trellis_audit_result_ok"
+  }
+}

@@ -1,0 +1,134 @@
+---
+source: tests/runtime_cli_snapshots.rs
+expression: response
+---
+{
+  "output": {
+    "md": "10 blocker choices total. Counts by kind: Soundness=10\n\nLive blocker count (10) exceeds the inline limit (8); full structured blocker list is moved to a sidecar so the actionable subset stays visible inline.\n\nActionable subset (1 of 10): active node + direct-dep neighborhood\n\nIndex | Kind             | otype:body                       | id\n------|------------------|----------------------------------|----------------------------------------\n    0 | Soundness        | node:ActiveProof                 | id=soundness:node:ActiveProof:fp-a\n\nFull blocker list sidecar: `{sidecar_path}`\n\nThe sidecar JSON has the shape `{\"blocker_choices\": [{\"id\": ..., \"blocker\": ...}, ...]}`. Use blocker `id`s for task/override/reset lists; use node ids for `request_sound_verifier_node_ids`.\n\nList every blocker `id` from the sidecar:\n\n  jq -r '.blocker_choices[].id' {sidecar_path}\n\nRead one full blocker by index:\n\n  jq '.blocker_choices[N]' {sidecar_path}\n\nThe original kernel context.json also has the same data under `.review_blocker_choices`, mirrored at {context_json_path}.",
+    "sidecar_payload": {
+      "blocker_choices": [
+        {
+          "blocker": {
+            "deferred": false,
+            "fingerprint": "fp-a",
+            "kind": "Soundness",
+            "object": {
+              "node": "ActiveProof",
+              "otype": "node"
+            }
+          },
+          "id": "soundness:node:ActiveProof:fp-a"
+        },
+        {
+          "blocker": {
+            "deferred": false,
+            "fingerprint": "fp-1",
+            "kind": "Soundness",
+            "object": {
+              "node": "Node1",
+              "otype": "node"
+            }
+          },
+          "id": "soundness:node:Node1:fp-1"
+        },
+        {
+          "blocker": {
+            "deferred": false,
+            "fingerprint": "fp-2",
+            "kind": "Soundness",
+            "object": {
+              "node": "Node2",
+              "otype": "node"
+            }
+          },
+          "id": "soundness:node:Node2:fp-2"
+        },
+        {
+          "blocker": {
+            "deferred": false,
+            "fingerprint": "fp-3",
+            "kind": "Soundness",
+            "object": {
+              "node": "Node3",
+              "otype": "node"
+            }
+          },
+          "id": "soundness:node:Node3:fp-3"
+        },
+        {
+          "blocker": {
+            "deferred": false,
+            "fingerprint": "fp-4",
+            "kind": "Soundness",
+            "object": {
+              "node": "Node4",
+              "otype": "node"
+            }
+          },
+          "id": "soundness:node:Node4:fp-4"
+        },
+        {
+          "blocker": {
+            "deferred": false,
+            "fingerprint": "fp-5",
+            "kind": "Soundness",
+            "object": {
+              "node": "Node5",
+              "otype": "node"
+            }
+          },
+          "id": "soundness:node:Node5:fp-5"
+        },
+        {
+          "blocker": {
+            "deferred": false,
+            "fingerprint": "fp-6",
+            "kind": "Soundness",
+            "object": {
+              "node": "Node6",
+              "otype": "node"
+            }
+          },
+          "id": "soundness:node:Node6:fp-6"
+        },
+        {
+          "blocker": {
+            "deferred": false,
+            "fingerprint": "fp-7",
+            "kind": "Soundness",
+            "object": {
+              "node": "Node7",
+              "otype": "node"
+            }
+          },
+          "id": "soundness:node:Node7:fp-7"
+        },
+        {
+          "blocker": {
+            "deferred": false,
+            "fingerprint": "fp-8",
+            "kind": "Soundness",
+            "object": {
+              "node": "Node8",
+              "otype": "node"
+            }
+          },
+          "id": "soundness:node:Node8:fp-8"
+        },
+        {
+          "blocker": {
+            "deferred": false,
+            "fingerprint": "fp-9",
+            "kind": "Soundness",
+            "object": {
+              "node": "Node9",
+              "otype": "node"
+            }
+          },
+          "id": "soundness:node:Node9:fp-9"
+        }
+      ]
+    }
+  },
+  "status": "review_blocker_choices_block_ok"
+}

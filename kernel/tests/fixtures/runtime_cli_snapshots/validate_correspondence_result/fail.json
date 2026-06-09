@@ -1,0 +1,14 @@
+{
+  "action": "validate_correspondence_result",
+  "raw_payload": {
+    "correspondence": {
+      "decision": "FAIL",
+      "verdicts": [
+        {"node": "main_node", "verdict": "Fail", "comment": "Still mismatched."}
+      ]
+    },
+    "overall": "REJECT",
+    "summary": "Paper mismatch remains",
+    "comments": "Need a better excerpt."
+  }
+}

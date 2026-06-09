@@ -1,0 +1,5 @@
+This review follows an NL soundness blocker. See `SOUNDNESS.md` (inlined elsewhere in this prompt) for the canonical rubric.
+
+If the soundness status is `SketchAutoFail`, this is a kernel fact, not a verifier result. Do not request a Sound verifier for that node. The only mathematical action is to assign a worker to replace the sketch with a complete non-sketch proof, and only when the node is listed as sound-repair-ready in the review contract.
+
+Use current verifier evidence when deciding whether worker repair is warranted. Comments should identify the unsupported proof step or missing dependency only when that diagnosis is actually supported. For stale pass, split evidence, or reviewer-accepted Sound, request a real Sound verifier when it is needed now; otherwise leave the obligation live so reverification can be coalesced after known-fail work is exhausted. Note that soundness is waived for nodes that are Lean-closed, so a closeable soundness blocker can be routed as a Lean closure attempt rather than NL proof repair as a precursor.

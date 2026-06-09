@@ -1,0 +1,17 @@
+---
+source: tests/runtime_cli_snapshots.rs
+expression: response
+---
+{
+  "output": {
+    "cycle": 12,
+    "kind": "audit",
+    "new_tasks": [],
+    "outcome": "AuditDone",
+    "request_id": 16,
+    "scratchpad_replace": "",
+    "status": "Malformed",
+    "task_modifications": []
+  },
+  "status": "build_malformed_response_ok"
+}

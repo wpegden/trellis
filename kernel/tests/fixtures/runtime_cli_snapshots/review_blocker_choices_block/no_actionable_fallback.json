@@ -1,0 +1,33 @@
+{
+  "action": "review_blocker_choices_block",
+  "request": {
+    "id": 4,
+    "kind": "review",
+    "cycle": 4,
+    "phase": "proof_formalization",
+    "mode": "local",
+    "active_node": "ActiveProof",
+    "held_target": null,
+    "blockers": [
+      {
+        "kind": "Soundness",
+        "object": {"otype": "node", "node": "FarNode1"},
+        "fingerprint": "fp-1"
+      },
+      {
+        "kind": "Soundness",
+        "object": {"otype": "node", "node": "FarNode2"},
+        "fingerprint": "fp-2"
+      },
+      {
+        "kind": "Soundness",
+        "object": {"otype": "node", "node": "FarNode3"},
+        "fingerprint": "fp-3"
+      }
+    ],
+    "current_present_nodes": ["ActiveProof"],
+    "current_deps": {
+      "ActiveProof": []
+    }
+  }
+}

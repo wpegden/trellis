@@ -1,0 +1,9 @@
+{
+  "action": "validate_trellis_stuck_math_audit_result",
+  "raw_payload": {
+    "confirm_need_input": true,
+    "report": "After examining the probe, the auditor confirms that operator input is needed: the lemma cannot be closed without a new hypothesis, and the appropriate hypothesis is mathematically subtle enough that the worker should not invent one without guidance. Forwarding to NeedInput.",
+    "tasks": [],
+    "probe_paths": []
+  }
+}

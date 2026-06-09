@@ -1,0 +1,35 @@
+---
+source: tests/runtime_cli_snapshots.rs
+expression: response
+---
+{
+  "output": {
+    "response": {
+      "cycle": 4,
+      "node_lane_updates": {
+        "v1": {
+          "FooLemma": {
+            "Set": "Pass"
+          }
+        }
+      },
+      "request_id": 50,
+      "reviewer_evidence": {
+        "v1": {
+          "comments": "",
+          "correspondence": {
+            "decision": "PASS",
+            "issues": []
+          },
+          "overall": "APPROVE",
+          "summary": "Lane v1 found correspondence holds."
+        }
+      },
+      "status": "Ok",
+      "target_lane_updates": {
+        "v1": {}
+      }
+    }
+  },
+  "status": "normalize_corr_ok"
+}

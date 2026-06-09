@@ -1,0 +1,32 @@
+{
+  "request": {
+    "action": "validate_trellis_worker_result",
+    "raw_payload": {
+      "comments": "Sorry, dep cycle.",
+      "difficulty_updates": {},
+      "outcome": "invalid",
+      "semantic_dep_updates": {},
+      "summary": "Made invalid edits, need to revert.",
+      "target_claim_updates": {}
+    }
+  },
+  "response": {
+    "output": {
+      "data": {
+        "comments": "Sorry, dep cycle.",
+        "deviation_deletions": [],
+        "deviation_requests": {},
+        "difficulty_updates": {},
+        "needs_restructure_suggested_nodes": [],
+        "node_deviation_claims": {},
+        "outcome": "invalid",
+        "semantic_dep_updates": {},
+        "summary": "Made invalid edits, need to revert.",
+        "target_claim_updates": {}
+      },
+      "errors": [],
+      "ok": true
+    },
+    "status": "validate_trellis_worker_result_ok"
+  }
+}

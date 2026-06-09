@@ -1,0 +1,53 @@
+{
+  "action": "normalize_review",
+  "input": {
+    "raw_payload": {
+      "allow_new_obligations": true,
+      "clear_human_input": false,
+      "comments": "",
+      "decision": "advance_phase",
+      "difficulty_updates": {},
+      "must_close_active": false,
+      "next_active": "main_node",
+      "next_mode": "targeted",
+      "reason": "Theorem statements are settled.",
+      "reset": "none",
+      "reset_blocker_ids": [],
+      "task_blocker_ids": []
+    },
+    "request": {
+      "allow_targeted_without_next_active": false,
+      "allowed_decisions": [
+        "continue",
+        "advance_phase",
+        "need_input"
+      ],
+      "allowed_difficulty_update_nodes": [],
+      "allowed_next_modes": [
+        "global",
+        "targeted"
+      ],
+      "allowed_resets": [
+        "none"
+      ],
+      "blockers": [],
+      "current_present_nodes": [
+        "main_node",
+        "Preamble"
+      ],
+      "cycle": 7,
+      "gate_kind": "none",
+      "human_input_outstanding": false,
+      "id": 11,
+      "kernel_hinted_next_active_nodes": [
+        "main_node"
+      ],
+      "kind": "review",
+      "mode": "global",
+      "phase": "theorem_stating",
+      "targeted_next_active_nodes": [
+        "main_node"
+      ]
+    }
+  }
+}

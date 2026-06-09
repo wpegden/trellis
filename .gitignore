@@ -1,0 +1,30 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Generated on-demand by scripts/validate_prompt_trims.py
+trellis/runtime/_bridge_prompts_baseline.py
+
+kernel/target/
+spec/states/
+
+.trellis/
+.trellis-smoke/
+.viewer/
+viewer/node_modules/
+
+*.raw.json
+*.done
+
+# Dev-only scratch, agent state, and working logs — never ship / never commit
+.claude/
+scratch/
+toedit/
+cleanup_agent/
+.baseline_*
+CLAUDES_NOTES*.md
+
+# Emacs artifacts (backups, autosaves, lockfiles)
+*~
+\#*\#
+.\#*

@@ -1,0 +1,44 @@
+---
+source: tests/runtime_cli_snapshots.rs
+expression: response
+---
+{
+  "output": {
+    "response": {
+      "cycle": 5,
+      "deviation_lane_updates": {
+        "v1": {}
+      },
+      "node_lane_updates": {
+        "v1": {}
+      },
+      "node_reviewer_evidence": {},
+      "request_id": 61,
+      "reviewer_evidence": {
+        "v1": {
+          "comments": "",
+          "overall": "REJECT",
+          "paper_faithfulness": {
+            "decision": "FAIL",
+            "issues": [
+              {
+                "description": "Statement claims a stronger conclusion than the paper.",
+                "node": ""
+              }
+            ]
+          },
+          "summary": "Target mismatch with paper."
+        }
+      },
+      "status": "Ok",
+      "target_lane_updates": {
+        "v1": {
+          "t.main": {
+            "Set": "Pass"
+          }
+        }
+      }
+    }
+  },
+  "status": "normalize_paper_ok"
+}

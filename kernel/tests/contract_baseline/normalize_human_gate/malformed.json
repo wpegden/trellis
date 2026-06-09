@@ -1,0 +1,18 @@
+{
+  "request": {
+    "action": "normalize_human_gate",
+    "cycle": 16,
+    "raw_payload_text": "{\"choice\":\"maybe\"}",
+    "request_id": 23
+  },
+  "response": {
+    "output": {
+      "choice": "Approve",
+      "cycle": 16,
+      "kind": "human_gate",
+      "request_id": 23,
+      "status": "Malformed"
+    },
+    "status": "normalize_human_gate_ok"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "action": "validate_deviation_authorization_result",
+  "raw_payload": {
+    "deviation_authorization": {
+      "id": "dev-002",
+      "decision": "FAIL",
+      "comment": "Deviation goes beyond what the paper authorizes."
+    },
+    "overall": "REJECT",
+    "summary": "Rejected.",
+    "comments": "Tighten scope."
+  }
+}

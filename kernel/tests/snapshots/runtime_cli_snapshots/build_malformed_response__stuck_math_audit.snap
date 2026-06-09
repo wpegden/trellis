@@ -1,0 +1,22 @@
+---
+source: tests/runtime_cli_snapshots.rs
+assertion_line: 207
+expression: response
+---
+{
+  "output": {
+    "cone_clean_node": null,
+    "confirm_need_input": false,
+    "cycle": 13,
+    "global_repair_approve": false,
+    "global_repair_approved_extension_node_ids": [],
+    "global_repair_auditor_reason": "",
+    "kind": "stuck_math_audit",
+    "probe_paths": [],
+    "report": "",
+    "request_id": 17,
+    "status": "Malformed",
+    "tasks": []
+  },
+  "status": "build_malformed_response_ok"
+}

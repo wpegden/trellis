@@ -1,0 +1,46 @@
+{
+  "request": {
+    "action": "validate_trellis_stuck_math_audit_result",
+    "raw_payload": {
+      "probe_paths": [
+        ".trellis/stuck-math-audit/cycle-1-request-2/probe.lean"
+      ],
+      "report": "The active statement appears blocked by a missing hypothesis. The cited probe shows that the inductive step assumes monotonicity, but the underlying inductive predicate was not strengthened to carry it. The next worker should add a strengthened hypothesis or refactor the lemma signature.",
+      "tasks": [
+        {
+          "body": "Read the cited scratch probe and decide whether the active statement needs a strengthened hypothesis.",
+          "id": "task-1",
+          "title": "Check obstruction"
+        }
+      ]
+    }
+  },
+  "response": {
+    "output": {
+      "data": {
+        "cone_clean_node": "",
+        "confirm_need_input": false,
+        "global_repair_approve": false,
+        "global_repair_approved_extension_node_ids": [],
+        "global_repair_auditor_reason": "",
+        "probe_paths": [
+          ".trellis/stuck-math-audit/cycle-1-request-2/probe.lean"
+        ],
+        "report": "The active statement appears blocked by a missing hypothesis. The cited probe shows that the inductive step assumes monotonicity, but the underlying inductive predicate was not strengthened to carry it. The next worker should add a strengthened hypothesis or refactor the lemma signature.",
+        "tasks": [
+          {
+            "body": "Read the cited scratch probe and decide whether the active statement needs a strengthened hypothesis.",
+            "dismissed": false,
+            "dismissed_at_cycle": null,
+            "dismissed_reason": "",
+            "id": "task-1",
+            "title": "Check obstruction"
+          }
+        ]
+      },
+      "errors": [],
+      "ok": true
+    },
+    "status": "validate_trellis_stuck_math_audit_result_ok"
+  }
+}

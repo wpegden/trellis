@@ -1,0 +1,11 @@
+---
+source: tests/runtime_cli_snapshots.rs
+expression: response
+---
+{
+  "output": {
+    "md": "1 blocker choices total. Counts by kind: NodeCorr=1\n\nIndex | Kind             | Object\n------|------------------|--------------------------------\n    0 | NodeCorr         | node:ActiveProof\n\nActionable subset (1 of 1): active node + direct-dep neighborhood\n\nIndex | Kind             | otype:body                       | id\n------|------------------|----------------------------------|----------------------------------------\n    0 | NodeCorr         | node:ActiveProof                 | id=nodecorr:node:ActiveProof:fp-active\n\nFull structured blocker data (with the fingerprint-encoded `id`\nfield that you must echo back verbatim if you select a blocker)\nlives at: {context_json_path}\n\nList every blocker `id`:\n\n  jq -r '.review_blocker_choices[].id' {context_json_path}\n\nRead one full blocker by index:\n\n  jq '.review_blocker_choices[N]' {context_json_path}",
+    "sidecar_payload": null
+  },
+  "status": "review_blocker_choices_block_ok"
+}

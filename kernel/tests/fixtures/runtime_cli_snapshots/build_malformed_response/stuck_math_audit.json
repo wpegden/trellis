@@ -1,0 +1,6 @@
+{
+  "action": "build_malformed_response",
+  "kind": "stuck_math_audit",
+  "request_id": 17,
+  "cycle": 13
+}

@@ -1,0 +1,14 @@
+{
+  "action": "validate_soundness_result",
+  "node_name": "MainResult",
+  "raw_payload": {
+    "node": "MainResult",
+    "soundness": {
+      "decision": "UNSOUND",
+      "explanation": "The induction skips the base case."
+    },
+    "overall": "REJECT",
+    "summary": "Missing base case.",
+    "comments": "Add the base case."
+  }
+}

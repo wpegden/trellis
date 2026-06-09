@@ -1,0 +1,39 @@
+{
+  "action": "normalize_paper",
+  "input": {
+    "request_id": 61,
+    "cycle": 5,
+    "verify_lanes": ["v1"],
+    "verify_targets": ["t.main"],
+    "verify_nodes": [],
+    "verify_deviations": [],
+    "members": [
+      {
+        "lane_id": "v1",
+        "ok": true,
+        "error": "",
+        "payload": {
+          "paper_faithfulness": {
+            "decision": "FAIL",
+            "verdicts": [],
+            "issues": [
+              {"target": "t.main", "description": "Statement claims a stronger conclusion than the paper."}
+            ]
+          },
+          "substantiveness": {
+            "decision": "PASS",
+            "verdicts": []
+          },
+          "deviation_authorization": {
+            "id": "",
+            "decision": "",
+            "comment": ""
+          },
+          "overall": "REJECT",
+          "summary": "Target mismatch with paper.",
+          "comments": ""
+        }
+      }
+    ]
+  }
+}

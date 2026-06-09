@@ -1,0 +1,11 @@
+## Target orientation (proof-formalization)
+
+The supervisor's goal is proving the configured paper target. Every present non-orphan proof node contributes to that goal, so pivoting away from a failing node to work on a different one does not reduce total work — the failing node still has to close before the target can, and the work done on the pivoted-to node may need to be undone if the failing node's eventual signature or helper set forces the surrounding DAG to reshape.
+
+On repeated failure of a proof node, prefer, in this order:
+
+1. Finer decomposition — keep the same active node but ask the worker to introduce helper nodes and split the proof. Use the narrowest `next_mode` that admits the edits you have in mind: `Local` for proof-body work plus new helpers in the active support cone, `Restructure` to also edit existing helpers or change the active node's signature when allowed, and `CoarseRestructure` if the support DAG itself needs to change. Independently set `allow_new_obligations=false` when helpers must be Lean-closed, or `true` when helper obligations with `sorry` and complete NL proofs are acceptable. After cycle 1, new proof-bearing helper nodes with `SKETCH:` NL proofs are rejected.
+2. Revert (`reset: LastCommit` or `LastClean`) if the current live state is actively making the failing node harder.
+3. Eventually, if the node seems genuinely intractable under every decomposition and proof strategy the worker has tried, consider whether the target can be proved without it — refactor the support to remove the failing node from the target's dependency cone entirely. Choose the mode that matches the scope of the refactor (`Local` if the consuming node's proof body — possibly with new helpers in its support cone — suffices, `Restructure` if an existing helper or the consuming node's signature needs to change, `CoarseRestructure` if the support DAG itself needs to be reshaped). This is distinct from pivoting to work on an unrelated node: it is a structural change to the proof strategy that eliminates the dependency, not an avoidance of it.
+
+Pivoting to an unrelated node whose failure is not what's blocking the current node is almost never the right move. Those nodes will still be there later, and will often be easier once the hard node's final shape is settled.

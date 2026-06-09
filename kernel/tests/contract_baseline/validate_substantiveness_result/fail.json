@@ -1,0 +1,42 @@
+{
+  "request": {
+    "action": "validate_substantiveness_result",
+    "raw_payload": {
+      "comments": "Add the missing hypothesis.",
+      "overall": "REJECT",
+      "substantiveness": {
+        "decision": "FAIL",
+        "verdicts": [
+          {
+            "comment": "Statement is too weak.",
+            "node": "FooLemma",
+            "verdict": "Fail"
+          }
+        ]
+      },
+      "summary": "needs strengthening"
+    }
+  },
+  "response": {
+    "output": {
+      "data": {
+        "comments": "Add the missing hypothesis.",
+        "overall": "REJECT",
+        "substantiveness": {
+          "decision": "FAIL",
+          "verdicts": [
+            {
+              "comment": "Statement is too weak.",
+              "node": "FooLemma",
+              "verdict": "Fail"
+            }
+          ]
+        },
+        "summary": "needs strengthening"
+      },
+      "errors": [],
+      "ok": true
+    },
+    "status": "validate_substantiveness_result_ok"
+  }
+}

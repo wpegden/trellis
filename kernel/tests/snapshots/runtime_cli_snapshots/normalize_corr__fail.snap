@@ -1,0 +1,40 @@
+---
+source: tests/runtime_cli_snapshots.rs
+expression: response
+---
+{
+  "output": {
+    "response": {
+      "cycle": 5,
+      "node_lane_updates": {
+        "v1": {
+          "FooLemma": {
+            "Set": "Fail"
+          }
+        }
+      },
+      "request_id": 51,
+      "reviewer_evidence": {
+        "v1": {
+          "comments": "Statement is missing the bounded-degree hypothesis.",
+          "correspondence": {
+            "decision": "FAIL",
+            "issues": [
+              {
+                "description": "Statement does not match the paper.",
+                "node": "FooLemma"
+              }
+            ]
+          },
+          "overall": "REJECT",
+          "summary": "Mismatch with paper text."
+        }
+      },
+      "status": "Ok",
+      "target_lane_updates": {
+        "v1": {}
+      }
+    }
+  },
+  "status": "normalize_corr_ok"
+}

@@ -1,0 +1,60 @@
+{
+  "request": {
+    "action": "validate_trellis_reviewer_result",
+    "raw_payload": {
+      "allow_new_obligations": false,
+      "clear_human_input": false,
+      "decision": "NEED_INPUT",
+      "difficulty_updates": {},
+      "must_close_active": false,
+      "next_active": "main_node",
+      "next_mode": "GLOBAL",
+      "reason": "Reviewer wants operator guidance on this step.",
+      "reset": "NONE",
+      "reset_blocker_ids": [],
+      "task_blocker_ids": []
+    }
+  },
+  "response": {
+    "output": {
+      "data": {
+        "allow_new_obligations": false,
+        "authorized_node_ids": null,
+        "cleanup_dismiss_tasks": [],
+        "cleanup_next_task": null,
+        "cleanup_request_reaudit": false,
+        "clear_human_input": false,
+        "comments": "",
+        "confirm_protected_semantic_change_scope": false,
+        "consume_global_repair_grant": false,
+        "decision": "need_input",
+        "difficulty_updates": {},
+        "dismiss_audit_plan": false,
+        "dismissed_tasks": [],
+        "global_repair_request": null,
+        "must_close_active": false,
+        "next_active": "main_node",
+        "next_active_coarse": "",
+        "next_mode": "global",
+        "next_worker_context_mode": "resume",
+        "paper_focus_ranges": [],
+        "paper_grounding": {
+          "basis_summary": "",
+          "consulted_cited_ranges": false
+        },
+        "protected_semantic_change_node_ids": [],
+        "reason": "Reviewer wants operator guidance on this step.",
+        "request_sound_verifier_node_ids": [],
+        "reset": "none",
+        "reset_blocker_ids": [],
+        "reset_node": "",
+        "stuck_math_audit": null,
+        "task_blocker_ids": [],
+        "work_style_hint": "none"
+      },
+      "errors": [],
+      "ok": true
+    },
+    "status": "validate_trellis_reviewer_result_ok"
+  }
+}

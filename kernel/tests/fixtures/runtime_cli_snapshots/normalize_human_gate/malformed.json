@@ -1,0 +1,6 @@
+{
+  "action": "normalize_human_gate",
+  "request_id": 23,
+  "cycle": 16,
+  "raw_payload_text": "{\"choice\":\"maybe\"}"
+}

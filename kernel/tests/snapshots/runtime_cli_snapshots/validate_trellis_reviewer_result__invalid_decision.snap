@@ -1,0 +1,14 @@
+---
+source: tests/runtime_cli_snapshots.rs
+expression: response
+---
+{
+  "output": {
+    "data": null,
+    "errors": [
+      "decision must be one of ['continue', 'advance_phase', 'need_input', 'done']"
+    ],
+    "ok": false
+  },
+  "status": "validate_trellis_reviewer_result_ok"
+}

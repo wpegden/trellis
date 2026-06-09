@@ -1,0 +1,34 @@
+---
+source: tests/runtime_cli_snapshots.rs
+expression: response
+---
+{
+  "output": {
+    "data": {
+      "comments": "",
+      "deviation_deletions": [],
+      "deviation_requests": {},
+      "difficulty_updates": {
+        "main_node": "hard"
+      },
+      "needs_restructure_suggested_nodes": [],
+      "node_deviation_claims": {},
+      "outcome": "valid",
+      "semantic_dep_updates": {
+        "main_node": [
+          "dep_a",
+          "dep_b"
+        ]
+      },
+      "summary": "Applied a small theorem repair.",
+      "target_claim_updates": {
+        "main_node": [
+          "target_1"
+        ]
+      }
+    },
+    "errors": [],
+    "ok": true
+  },
+  "status": "validate_trellis_worker_result_ok"
+}

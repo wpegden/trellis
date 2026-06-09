@@ -1,0 +1,17 @@
+---
+source: tests/runtime_cli_snapshots.rs
+expression: response
+---
+{
+  "output": {
+    "data": {
+      "new_tasks": [],
+      "outcome": "audit_done",
+      "scratchpad_replace": "Audit pass complete. No follow-up tasks required.",
+      "task_modifications": []
+    },
+    "errors": [],
+    "ok": true
+  },
+  "status": "validate_trellis_audit_result_ok"
+}

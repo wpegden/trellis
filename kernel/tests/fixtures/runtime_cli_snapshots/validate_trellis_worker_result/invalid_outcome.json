@@ -1,0 +1,11 @@
+{
+  "action": "validate_trellis_worker_result",
+  "raw_payload": {
+    "outcome": "invalid",
+    "summary": "Made invalid edits, need to revert.",
+    "comments": "Sorry, dep cycle.",
+    "semantic_dep_updates": {},
+    "target_claim_updates": {},
+    "difficulty_updates": {}
+  }
+}

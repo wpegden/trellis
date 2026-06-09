@@ -1,0 +1,6 @@
+{
+  "action": "normalize_human_gate",
+  "request_id": 21,
+  "cycle": 14,
+  "raw_payload_text": "{\"choice\":\"approve\"}"
+}

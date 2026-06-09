@@ -1,0 +1,17 @@
+{
+  "name": "viewer",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "Wesley Pegden",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "private": true,
+  "dependencies": {
+    "compression": "^1.8.1",
+    "express": "^5.2.1"
+  }
+}

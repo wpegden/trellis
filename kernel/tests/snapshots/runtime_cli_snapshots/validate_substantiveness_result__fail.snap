@@ -1,0 +1,26 @@
+---
+source: tests/runtime_cli_snapshots.rs
+expression: response
+---
+{
+  "output": {
+    "data": {
+      "comments": "Add the missing hypothesis.",
+      "overall": "REJECT",
+      "substantiveness": {
+        "decision": "FAIL",
+        "verdicts": [
+          {
+            "comment": "Statement is too weak.",
+            "node": "FooLemma",
+            "verdict": "Fail"
+          }
+        ]
+      },
+      "summary": "needs strengthening"
+    },
+    "errors": [],
+    "ok": true
+  },
+  "status": "validate_substantiveness_result_ok"
+}

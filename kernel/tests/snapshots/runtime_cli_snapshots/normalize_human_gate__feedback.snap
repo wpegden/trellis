@@ -1,0 +1,14 @@
+---
+source: tests/runtime_cli_snapshots.rs
+expression: response
+---
+{
+  "output": {
+    "choice": "Feedback",
+    "cycle": 15,
+    "kind": "human_gate",
+    "request_id": 22,
+    "status": "Ok"
+  },
+  "status": "normalize_human_gate_ok"
+}

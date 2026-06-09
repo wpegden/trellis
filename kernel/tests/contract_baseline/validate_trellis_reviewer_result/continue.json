@@ -1,0 +1,69 @@
+{
+  "request": {
+    "action": "validate_trellis_reviewer_result",
+    "raw_payload": {
+      "allow_new_obligations": true,
+      "clear_human_input": true,
+      "decision": "CONTINUE",
+      "difficulty_updates": {
+        "main_node": "hard"
+      },
+      "must_close_active": false,
+      "next_active": "main_node",
+      "next_mode": "TARGETED",
+      "reason": "Need to keep working.",
+      "reset": "NONE",
+      "reset_blocker_ids": [],
+      "task_blocker_ids": [
+        "b1",
+        "b1"
+      ]
+    }
+  },
+  "response": {
+    "output": {
+      "data": {
+        "allow_new_obligations": true,
+        "authorized_node_ids": null,
+        "cleanup_dismiss_tasks": [],
+        "cleanup_next_task": null,
+        "cleanup_request_reaudit": false,
+        "clear_human_input": true,
+        "comments": "",
+        "confirm_protected_semantic_change_scope": false,
+        "consume_global_repair_grant": false,
+        "decision": "continue",
+        "difficulty_updates": {
+          "main_node": "hard"
+        },
+        "dismiss_audit_plan": false,
+        "dismissed_tasks": [],
+        "global_repair_request": null,
+        "must_close_active": false,
+        "next_active": "main_node",
+        "next_active_coarse": "",
+        "next_mode": "targeted",
+        "next_worker_context_mode": "resume",
+        "paper_focus_ranges": [],
+        "paper_grounding": {
+          "basis_summary": "",
+          "consulted_cited_ranges": false
+        },
+        "protected_semantic_change_node_ids": [],
+        "reason": "Need to keep working.",
+        "request_sound_verifier_node_ids": [],
+        "reset": "none",
+        "reset_blocker_ids": [],
+        "reset_node": "",
+        "stuck_math_audit": null,
+        "task_blocker_ids": [
+          "b1"
+        ],
+        "work_style_hint": "none"
+      },
+      "errors": [],
+      "ok": true
+    },
+    "status": "validate_trellis_reviewer_result_ok"
+  }
+}

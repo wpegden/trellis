@@ -1,0 +1,6 @@
+{
+  "action": "build_malformed_response",
+  "kind": "worker",
+  "request_id": 11,
+  "cycle": 7
+}

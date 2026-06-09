@@ -1,0 +1,1 @@
+`scope_contract.allow_new_obligations=true`: new helper nodes may remain open with `sorry` and matching NL proof if they are otherwise in scope, though Lean-closed helpers are preferred whenever feasible.

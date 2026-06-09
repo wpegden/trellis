@@ -1,0 +1,75 @@
+{
+  "request": {
+    "action": "normalize_corr",
+    "input": {
+      "cycle": 5,
+      "members": [
+        {
+          "error": "",
+          "lane_id": "v1",
+          "ok": true,
+          "payload": {
+            "comments": "Statement is missing the bounded-degree hypothesis.",
+            "correspondence": {
+              "decision": "FAIL",
+              "issues": [],
+              "verdicts": [
+                {
+                  "comment": "Statement does not match the paper.",
+                  "node": "FooLemma",
+                  "verdict": "Fail"
+                }
+              ]
+            },
+            "overall": "REJECT",
+            "summary": "Mismatch with paper text."
+          }
+        }
+      ],
+      "request_id": 51,
+      "verify_lanes": [
+        "v1"
+      ],
+      "verify_nodes": [
+        "FooLemma"
+      ],
+      "verify_targets": []
+    }
+  },
+  "response": {
+    "output": {
+      "response": {
+        "cycle": 5,
+        "node_lane_updates": {
+          "v1": {
+            "FooLemma": {
+              "Set": "Fail"
+            }
+          }
+        },
+        "request_id": 51,
+        "reviewer_evidence": {
+          "v1": {
+            "comments": "Statement is missing the bounded-degree hypothesis.",
+            "correspondence": {
+              "decision": "FAIL",
+              "issues": [
+                {
+                  "description": "Statement does not match the paper.",
+                  "node": "FooLemma"
+                }
+              ]
+            },
+            "overall": "REJECT",
+            "summary": "Mismatch with paper text."
+          }
+        },
+        "status": "Ok",
+        "target_lane_updates": {
+          "v1": {}
+        }
+      }
+    },
+    "status": "normalize_corr_ok"
+  }
+}
