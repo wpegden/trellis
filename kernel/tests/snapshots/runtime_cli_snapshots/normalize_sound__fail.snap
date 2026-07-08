@@ -1,0 +1,33 @@
+---
+source: tests/runtime_cli_snapshots.rs
+expression: response
+---
+{
+  "output": {
+    "response": {
+      "cycle": 5,
+      "lane_updates": {
+        "v1": {
+          "MainResult": {
+            "Set": "Fail"
+          }
+        }
+      },
+      "request_id": 71,
+      "reviewer_evidence": {
+        "v1": {
+          "comments": "Treat n=0 explicitly.",
+          "node": "MainResult",
+          "overall": "REJECT",
+          "soundness": {
+            "decision": "UNSOUND",
+            "explanation": "The base case of the induction is missing."
+          },
+          "summary": "Missing base case."
+        }
+      },
+      "status": "Ok"
+    }
+  },
+  "status": "normalize_sound_ok"
+}

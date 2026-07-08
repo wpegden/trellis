@@ -1,0 +1,15 @@
+## `authorized_node_ids`: existing nodes the worker may edit
+
+`next_active` and `next_mode` define the **scope envelope** — the broadest set of existing nodes you as the reviewer can authorize edits on. For proof-formalization `Restructure` and `CoarseRestructure`, the envelope is the bidirectional dependency closure of `next_active`: every present node it transitively depends on, plus every present node that transitively depends on it. Your choice of `authorized_node_ids` specifies the list of existing Tablet nodes the worker is permitted to modify on this dispatch.
+
+Rules:
+
+- For `next_mode ∈ {Restructure, CoarseRestructure}` in proof formalization: you must choose `next_active` and `authorized_node_ids` so that `authorized_node_ids` is a non-empty subset of the scope envelope.
+- For proof `Restructure`/`CoarseRestructure`, `next_active` must be one of `kernel_hinted_next_active_nodes` (already narrowed to the active coarse-anchor cone; widened in `coarse_repair_mode`). To anchor outside the current cone, switch via `next_active_coarse` in the same response. On retry reviews, or whenever the needed non-protected edit is outside the current cone and no legal anchor switch is available, use `global_repair_request`.
+- For `next_mode = Local`: `authorized_node_ids` must be empty. Local does not authorize cross-node edits; the worker may only edit the active node's proof body and add new helpers in its support cone.
+- Every node-bound `task_blocker_id` you assign must cover a node listed in `authorized_node_ids` (or, for target-bound paper-faithfulness blockers, intersect the support cone of the target's covering nodes).
+- `next_active` is a scope anchor only. Include it in `authorized_node_ids` only if you mean to permit the worker to actually edit that node — `next_active=X, next_mode=CoarseRestructure, authorized_node_ids=[Y]` is the standard shape when `X` is the natural anchor for routing-hint purposes but the actual repair lives on `Y`.
+- New helper nodes the worker introduces are NOT pre-listed here; they remain governed by `allow_new_obligations` and the new-helper validation path.
+- When `consume_global_repair_grant=true` is set, `authorized_nodes` MAY include nodes from `pending_global_repair_grant.approved_extension_nodes` in addition to nodes in the cone / envelope. The grant is the audit-gated way to authorize an out-of-cone non-protected node. Protected semantic-change approval uses the protected semantic-change confirmation path.
+
+You should usually prefer the narrowest list that covers the assigned blockers. If two blockers can be repaired independently in a single dispatch, list both nodes with a scope that allows it; otherwise restrict to the single node and let a subsequent reviewer cycle widen the scope if needed. However, note that in the presence of persistent difficulties (e.g., in the presence of an audit report), there is a danger that granting workers narrow scope will lead them to cycle locally and avoid making necessary but deeper repairs. In these situations, err on the side of including nodes in the authorized list, if you suspect changes to them could be appropriate.
