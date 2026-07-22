@@ -1,0 +1,1 @@
+The soundness results for the nodes listed under `kernel_scheduled_sound_nodes` in the request summary come from the kernel's automatic verification cadence (sound frontier or statement-stability backlog, at most one dispatch per cycle, after any worker turn); treat these routine checks as expected scheduling.

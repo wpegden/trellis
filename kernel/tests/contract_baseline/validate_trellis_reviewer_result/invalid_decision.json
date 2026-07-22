@@ -1,0 +1,28 @@
+{
+  "request": {
+    "action": "validate_trellis_reviewer_result",
+    "raw_payload": {
+      "allow_new_obligations": false,
+      "clear_human_input": false,
+      "decision": "maybe",
+      "difficulty_updates": {},
+      "must_close_active": false,
+      "next_active": "main_node",
+      "next_mode": "TARGETED",
+      "reason": "no",
+      "reset": "NONE",
+      "reset_blocker_ids": [],
+      "task_blocker_ids": []
+    }
+  },
+  "response": {
+    "output": {
+      "data": null,
+      "errors": [
+        "decision must be one of ['continue', 'advance_phase', 'need_input', 'done']"
+      ],
+      "ok": false
+    },
+    "status": "validate_trellis_reviewer_result_ok"
+  }
+}

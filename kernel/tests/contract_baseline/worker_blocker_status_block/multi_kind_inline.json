@@ -1,0 +1,67 @@
+{
+  "request": {
+    "action": "worker_blocker_status_block",
+    "request": {
+      "active_node": "ActiveProof",
+      "blockers": [
+        {
+          "fingerprint": "fp-corr",
+          "kind": "NodeCorr",
+          "object": {
+            "node": "ActiveProof",
+            "otype": "node"
+          }
+        },
+        {
+          "fingerprint": "fp-sound",
+          "kind": "Soundness",
+          "object": {
+            "node": "OtherNode",
+            "otype": "node"
+          }
+        },
+        {
+          "fingerprint": "fp-paper",
+          "kind": "PaperFaithfulness",
+          "object": {
+            "otype": "target",
+            "target": "Target1"
+          }
+        },
+        {
+          "fingerprint": "fp-subst",
+          "kind": "Substantiveness",
+          "object": {
+            "node": "DepNode",
+            "otype": "node"
+          }
+        }
+      ],
+      "current_deps": {
+        "ActiveProof": [
+          "DepNode"
+        ],
+        "DepNode": [],
+        "OtherNode": []
+      },
+      "current_present_nodes": [
+        "ActiveProof",
+        "OtherNode",
+        "DepNode"
+      ],
+      "cycle": 3,
+      "held_target": "Target1",
+      "id": 3,
+      "kind": "worker",
+      "mode": "local",
+      "phase": "proof_formalization"
+    }
+  },
+  "response": {
+    "output": {
+      "md": "4 live blocker(s). Counts by kind: NodeCorr=1, PaperFaithfulness=1, Soundness=1, Substantiveness=1. Reviewer comments above describe what to repair; this list shows the live verifier blockers for situational awareness.\n\nIndex | Kind             | Object\n------|------------------|--------------------------------\n    0 | PaperFaithfulness | target:Target1\n    1 | NodeCorr         | node:ActiveProof\n    2 | Soundness        | node:OtherNode\n    3 | Substantiveness  | node:DepNode\n\nActionable subset (3 of 4): active node + direct-dep neighborhood\n\nIndex | Kind             | Object\n------|------------------|--------------------------------\n    0 | PaperFaithfulness | target:Target1\n    1 | NodeCorr         | node:ActiveProof\n    3 | Substantiveness  | node:DepNode",
+      "sidecar_payload": null
+    },
+    "status": "worker_blocker_status_block_ok"
+  }
+}

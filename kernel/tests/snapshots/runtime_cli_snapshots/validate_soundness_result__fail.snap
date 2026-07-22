@@ -1,0 +1,21 @@
+---
+source: tests/runtime_cli_snapshots.rs
+expression: response
+---
+{
+  "output": {
+    "data": {
+      "comments": "Add the base case.",
+      "node": "MainResult",
+      "overall": "REJECT",
+      "soundness": {
+        "decision": "UNSOUND",
+        "explanation": "The induction skips the base case."
+      },
+      "summary": "Missing base case."
+    },
+    "errors": [],
+    "ok": true
+  },
+  "status": "validate_soundness_result_ok"
+}
