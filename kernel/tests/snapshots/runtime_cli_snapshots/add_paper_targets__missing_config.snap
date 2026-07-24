@@ -1,0 +1,8 @@
+---
+source: tests/runtime_cli_snapshots.rs
+expression: response
+---
+{
+  "message": "failed to resolve config path /nonexistent/trellis-add-targets/trellis.config.json: No such file or directory (os error 2)",
+  "status": "error"
+}

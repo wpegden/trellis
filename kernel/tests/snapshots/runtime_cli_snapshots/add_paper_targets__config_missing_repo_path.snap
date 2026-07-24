@@ -1,0 +1,8 @@
+---
+source: tests/runtime_cli_snapshots.rs
+expression: response
+---
+{
+  "message": "config.repo_path must be a non-empty string in [KERNEL]/tests/fixtures/add_targets/bad_config.json",
+  "status": "error"
+}

@@ -1,0 +1,20 @@
+{
+  "action": "review_blocker_choices_block",
+  "request": {
+    "id": 2,
+    "kind": "review",
+    "cycle": 2,
+    "phase": "proof_formalization",
+    "mode": "local",
+    "active_node": "ActiveProof",
+    "held_target": null,
+    "blockers": [
+      {
+        "kind": "NodeCorr",
+        "object": {"otype": "node", "node": "ActiveProof"},
+        "fingerprint": "fp-active"
+      }
+    ],
+    "current_present_nodes": ["ActiveProof"]
+  }
+}

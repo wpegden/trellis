@@ -1,0 +1,33 @@
+{
+  "request": {
+    "action": "validate_soundness_result",
+    "node_name": "MainResult",
+    "raw_payload": {
+      "comments": "",
+      "node": "MainResult",
+      "overall": "APPROVE",
+      "soundness": {
+        "decision": "SOUND",
+        "explanation": "Prose proof is rigorous; no logical gaps detected."
+      },
+      "summary": "Sound."
+    }
+  },
+  "response": {
+    "output": {
+      "data": {
+        "comments": "",
+        "node": "MainResult",
+        "overall": "APPROVE",
+        "soundness": {
+          "decision": "SOUND",
+          "explanation": "Prose proof is rigorous; no logical gaps detected."
+        },
+        "summary": "Sound."
+      },
+      "errors": [],
+      "ok": true
+    },
+    "status": "validate_soundness_result_ok"
+  }
+}

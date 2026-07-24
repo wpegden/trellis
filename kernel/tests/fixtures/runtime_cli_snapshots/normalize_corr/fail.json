@@ -1,0 +1,29 @@
+{
+  "action": "normalize_corr",
+  "input": {
+    "request_id": 51,
+    "cycle": 5,
+    "verify_lanes": ["v1"],
+    "verify_nodes": ["FooLemma"],
+    "verify_targets": [],
+    "members": [
+      {
+        "lane_id": "v1",
+        "ok": true,
+        "error": "",
+        "payload": {
+          "correspondence": {
+            "decision": "FAIL",
+            "verdicts": [
+              {"node": "FooLemma", "verdict": "Fail", "comment": "Statement does not match the paper."}
+            ],
+            "issues": []
+          },
+          "overall": "REJECT",
+          "summary": "Mismatch with paper text.",
+          "comments": "Statement is missing the bounded-degree hypothesis."
+        }
+      }
+    ]
+  }
+}

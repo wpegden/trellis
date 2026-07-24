@@ -1,0 +1,3 @@
+# The Lean side of challenge-covering nodes is frozen
+
+Nodes claiming a challenge target (see `scope_contract.challenge_coverage`) carry a prescribed Lean declaration: the kernel byte-compares it against `scope_contract.configured_challenge_targets[*].lean` at every acceptance, in every mode including `coarse_restructure` — the statement slice for a theorem target, the entire declaration for a def target. The paired `.tex` statement remains worker-authored. For a theorem target, direct all proof work beneath the frozen slice: close the proof below `-- BODY`, decompose into helper nodes, and adjust imports above the tablet-node marker as needed.
