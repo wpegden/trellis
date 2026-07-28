@@ -1,0 +1,60 @@
+del:       (fun x : ℝ => 2 * ((x / 2) * Real.exp (- (x / 2)))) := by
+del:     ext x
+del:     ring_nf
+del:   rw [this]
+del:   have h1 : Tendsto (fun x : ℝ => x / 2) atTop atTop := tendsto_id.atTop_div_const zero_lt_two
+del:   have h2 : Tendsto (fun y : ℝ => y * Real.exp (-y)) atTop (nhds 0) := by
+del:     have h := Real.tendsto_pow_mul_exp_neg_atTop_nhds_zero 1
+del:     simp at h
+del:     exact h
+del:   have h3 := h2.comp h1
+del:   have h4 := Tendsto.const_mul 2 h3
+del:   simp at h4
+del:   exact h4
+add:   have tendsto_np_atTop : Tendsto (fun n : ℕ => (n : ℝ) * p n) atTop atTop := by
+add:     rcases halpha with ⟨C, hC⟩
+add:     have h1 : Tendsto (fun n : ℕ => Real.log (n : ℝ) + C) atTop atTop := by
+add:       exact tendsto_atTop_add_const_right atTop C tendsto_log_natCast_atTop
+add:     apply tendsto_atTop_mono' atTop _ h1
+add:     filter_upwards [hC] with n hn
+add:     linarith
+context:
+del: lemma tendsto_n_div_log_sq_atTop : Tendsto (fun (n : ℕ) => (n : ℝ) / (Real.log (n : ℝ)) ^ 2) atTop atTop := by
+del:   sorry
+add:   have tendsto_x_mul_exp_neg_half_x : Tendsto (fun x : ℝ => x * Real.exp (-x / 2)) atTop (nhds 0) := by
+add:     have h_eq : (fun x : ℝ => x * Real.exp (-x / 2)) = (fun x : ℝ => 2 * ((x / 2) * Real.exp (- (x / 2)))) := by
+add:       ext x
+add:       ring_nf
+add:     rw [h_eq]
+add:     have h1 : Tendsto (fun x : ℝ => x / 2) atTop atTop := tendsto_id.atTop_div_const zero_lt_two
+add:     have h2 : Tendsto (fun y : ℝ => y * Real.exp (-y)) atTop (nhds 0) := by
+add:       have h := Real.tendsto_pow_mul_exp_neg_atTop_nhds_zero 1
+add:       simp at h
+add:       exact h
+add:     have h3 := h2.comp h1
+add:     have h4 := Tendsto.const_mul 2 h3
+add:     simp at h4
+add:     exact h4
+context:
+del: -- [TABLET NODE: LargeComponentsSumBoundAsymptotics]
+del:
+del: theorem LargeComponentsSumBoundAsymptotics (p : ℕ → ℝ)
+del:     (halpha : ∃ C : ℝ, ∀ᶠ (n : ℕ) in atTop, C ≤ ↑n * p n - Real.log ↑n) :
+del:     Tendsto (fun n : ℕ => Real.exp 1 * ((n : ℝ) * p n) * Real.exp (- ((n : ℝ) * p n) / 2)) atTop (nhds 0) := by
+del:   have h1 := tendsto_np_atTop p halpha
+add:   have h1 := tendsto_np_atTop
+context:   have h2 := tendsto_x_mul_exp_neg_half_x
+context:   have h3 := h2.comp h1
+context:   have h4 := Tendsto.const_mul (Real.exp 1) h3
+workspace (/directory)
+${TRELLIS_ROOT:-/path/to/trellis}/src/trellis/.trellis-smoke/connectivity-gnp-opusmax-theorem-geminipro-later branch
+master sandbox
+no sandbox /model
+gemini-3.1-pro-preview quota
+29% used
+? Shell   rm -f Tablet/Test.lean Tablet/Test.tex Tablet/Test2.lean Tablet/Test2.tex
+rm -f Tablet/Test.lean Tablet/Test.tex Tablet/Test2.lean Tablet/Test2.tex
+Allow execution of [rm]?
+(checked) 1. Allow once
+2. Allow for this session
+3. No, suggest changes (esc)

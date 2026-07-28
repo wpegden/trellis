@@ -1,0 +1,3 @@
+## Helper-node policy
+
+Helper nodes should generally not be used to resolve soundness problems in theorem stating mode. The important exception is when they isolate statements that are likely to be needed as imports by multiple nodes in the current tablet. It *is* natural to use new nodes for statements that are canonical or context-independent enough that it is conceivable they would be re-used by a different formalization project, if they were available to it (named inequalities certainly fall into this latter category, for example), but these should generally be lemma (or theorem) nodes, instead of helpers.

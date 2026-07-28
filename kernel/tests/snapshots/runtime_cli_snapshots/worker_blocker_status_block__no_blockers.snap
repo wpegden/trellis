@@ -1,0 +1,11 @@
+---
+source: tests/runtime_cli_snapshots.rs
+expression: response
+---
+{
+  "output": {
+    "md": "No live blockers.",
+    "sidecar_payload": null
+  },
+  "status": "worker_blocker_status_block_ok"
+}

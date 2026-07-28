@@ -1,0 +1,26 @@
+{
+  "timing": {
+    "sleep_seconds": 1.0,
+    "agent_retry_delays_seconds": [
+      3600.0,
+      7200.0,
+      10800.0
+    ],
+    "budget_error_max_retries": 20,
+    "subprocess_timeout_seconds": 120.0,
+    "burst_timeout_seconds": 14400.0,
+    "stall_threshold_seconds": 900.0,
+    "max_stall_recoveries_per_burst": 3
+  },
+  "verification": {
+    "correspondence_agent_selectors": [
+      "codex-xhigh"
+    ],
+    "soundness_agent_selectors": [
+      "codex-xhigh"
+    ],
+    "substantiveness_agent_selectors": [
+      "codex-xhigh"
+    ]
+  }
+}

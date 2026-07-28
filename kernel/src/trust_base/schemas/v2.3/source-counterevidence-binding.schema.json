@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trellis://schemas/source-counterevidence-binding/v1",
+  "title": "Binding from formal refutation to one exact source-validation tuple",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "formal_refutation_sha256",
+    "target_id",
+    "model_target_statement_sha256",
+    "rust_target_statement_sha256",
+    "witness_term_sha256",
+    "formal_predicate_sha256",
+    "validation_contract_id",
+    "validation_contract_sha256",
+    "source_claim_lineage_id",
+    "source_claim_lineage_sha256",
+    "full_tuple_sha256",
+    "precondition_receipts_sha256",
+    "encoded_input_or_descriptor_sha256",
+    "concretization_receipt_sha256",
+    "erasure_receipt_sha256",
+    "negative_evidence_soundness_proof_sha256",
+    "binding_sha256"
+  ],
+  "properties": {
+    "schema": { "const": "trellis-source-counterevidence-binding/v1" },
+    "formal_refutation_sha256": { "$ref": "#/$defs/hash" },
+    "target_id": { "$ref": "#/$defs/id" },
+    "model_target_statement_sha256": { "$ref": "#/$defs/hash" },
+    "rust_target_statement_sha256": { "$ref": "#/$defs/hash" },
+    "witness_term_sha256": { "$ref": "#/$defs/hash" },
+    "formal_predicate_sha256": { "$ref": "#/$defs/hash" },
+    "validation_contract_id": { "$ref": "#/$defs/id" },
+    "validation_contract_sha256": { "$ref": "#/$defs/hash" },
+    "source_claim_lineage_id": { "$ref": "#/$defs/id" },
+    "source_claim_lineage_sha256": { "$ref": "#/$defs/hash" },
+    "full_tuple_sha256": { "$ref": "#/$defs/hash" },
+    "precondition_receipts_sha256": { "$ref": "#/$defs/hash" },
+    "encoded_input_or_descriptor_sha256": { "$ref": "#/$defs/hash" },
+    "concretization_receipt_sha256": { "$ref": "#/$defs/hash" },
+    "erasure_receipt_sha256": { "$ref": "#/$defs/hash" },
+    "source_validation_outcome_sha256": { "$ref": "#/$defs/hash" },
+    "negative_evidence_soundness_proof_sha256": { "$ref": "#/$defs/hash" },
+    "binding_sha256": { "$ref": "#/$defs/hash" }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 256 }
+  }
+}

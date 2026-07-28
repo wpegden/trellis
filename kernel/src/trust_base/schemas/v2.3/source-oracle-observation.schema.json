@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trellis://schemas/source-oracle-observation/v1",
+  "title": "Narrow observation returned by an approved source oracle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "attempt_sha256",
+    "classification"
+  ],
+  "properties": {
+    "schema": { "const": "trellis-source-oracle-observation/v1" },
+    "attempt_sha256": { "$ref": "#/$defs/hash" },
+    "classification": {
+      "enum": [
+        "exact_falsifying_observation_matched",
+        "exact_observation_did_not_match",
+        "language_inadmissible",
+        "independent_scope_limit",
+        "validation_budget_exceeded",
+        "harness_policy_refusal",
+        "validation_inconclusive",
+        "positive_control_passed",
+        "positive_control_failed",
+        "corroborating_proxy_executed",
+        "invalid_validation_evidence"
+      ]
+    },
+    "raw_observation_sha256": { "$ref": "#/$defs/hash" },
+    "independent_basis_id": { "$ref": "#/$defs/id" },
+    "independent_basis_sha256": { "$ref": "#/$defs/hash" },
+    "witness_resource_demand_sha256": { "$ref": "#/$defs/hash" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "classification": { "const": "exact_falsifying_observation_matched" }
+        },
+        "required": ["classification"]
+      },
+      "then": { "required": ["raw_observation_sha256"] }
+    },
+    {
+      "if": {
+        "properties": {
+          "classification": { "const": "independent_scope_limit" }
+        },
+        "required": ["classification"]
+      },
+      "then": {
+        "required": [
+          "independent_basis_id",
+          "independent_basis_sha256",
+          "witness_resource_demand_sha256"
+        ]
+      }
+    }
+  ],
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 256 }
+  }
+}

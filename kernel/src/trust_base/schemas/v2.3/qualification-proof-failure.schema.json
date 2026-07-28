@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trellis://schemas/qualification-proof-failure/v1",
+  "title": "Checked conditional-proof attempt that established no theorem",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "target_id",
+    "generated_conditional_statement_sha256",
+    "reason"
+  ],
+  "properties": {
+    "schema": { "const": "trellis-qualification-proof-failure/v1" },
+    "target_id": { "$ref": "#/$defs/id" },
+    "generated_conditional_statement_sha256": { "$ref": "#/$defs/hash" },
+    "reason": {
+      "enum": [
+        "proof_not_established",
+        "checker_rejected_candidate",
+        "attempt_budget_exhausted"
+      ]
+    }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 256 }
+  }
+}

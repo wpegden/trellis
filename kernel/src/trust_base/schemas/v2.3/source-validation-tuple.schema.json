@@ -1,0 +1,101 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trellis://schemas/source-validation-tuple/v1",
+  "title": "Canonical attempt/cohort tuple below one persistent source-claim lineage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "role",
+    "target_id",
+    "target_statement_sha256",
+    "source_claim_lineage_id",
+    "source_claim_lineage_sha256",
+    "validation_contract_id",
+    "validation_contract_sha256",
+    "source_tree_sha256",
+    "source_scope",
+    "toolchain_build_basis_sha256",
+    "precondition_manifest_sha256",
+    "public_entry_point",
+    "entry_point_type_sha256",
+    "environment_contract_sha256",
+    "actual_environment_sha256",
+    "harness_cohort_sha256",
+    "runner_sha256",
+    "concretization_schema_sha256",
+    "erasure_relation_sha256",
+    "raw_observation_schema_sha256",
+    "source_validator_sha256",
+    "tuple_sha256"
+  ],
+  "properties": {
+    "schema": { "const": "trellis-source-validation-tuple/v1" },
+    "role": { "enum": ["exact_witness", "positive_control", "corroborating_proxy"] },
+    "target_id": { "$ref": "#/$defs/id" },
+    "target_statement_sha256": { "$ref": "#/$defs/hash" },
+    "source_claim_lineage_id": { "$ref": "#/$defs/id" },
+    "source_claim_lineage_sha256": { "$ref": "#/$defs/hash" },
+    "validation_contract_id": { "$ref": "#/$defs/id" },
+    "validation_contract_sha256": { "$ref": "#/$defs/hash" },
+    "source_tree_sha256": { "$ref": "#/$defs/hash" },
+    "source_scope": { "enum": ["adapted_source", "upstream_source_equivalent"] },
+    "toolchain_build_basis_sha256": { "$ref": "#/$defs/hash" },
+    "precondition_manifest_sha256": { "$ref": "#/$defs/hash" },
+    "public_entry_point": { "$ref": "#/$defs/id" },
+    "entry_point_type_sha256": { "$ref": "#/$defs/hash" },
+    "environment_contract_sha256": { "$ref": "#/$defs/hash" },
+    "actual_environment_sha256": { "$ref": "#/$defs/hash" },
+    "harness_cohort_sha256": { "$ref": "#/$defs/hash" },
+    "runner_sha256": { "$ref": "#/$defs/hash" },
+    "concretization_schema_sha256": { "$ref": "#/$defs/hash" },
+    "erasure_relation_sha256": { "$ref": "#/$defs/hash" },
+    "raw_observation_schema_sha256": { "$ref": "#/$defs/hash" },
+    "source_validator_sha256": { "$ref": "#/$defs/hash" },
+    "formal_witness_certificate_sha256": { "$ref": "#/$defs/hash" },
+    "witness_term_sha256": { "$ref": "#/$defs/hash" },
+    "formal_predicate_sha256": { "$ref": "#/$defs/hash" },
+    "encoded_input_or_descriptor_sha256": { "$ref": "#/$defs/hash" },
+    "observation_oracle_sha256": { "$ref": "#/$defs/hash" },
+    "supporting_exact_case_id": { "$ref": "#/$defs/id" },
+    "control_input_sha256": { "$ref": "#/$defs/hash" },
+    "control_expectation_schema_sha256": { "$ref": "#/$defs/hash" },
+    "proxy_input_sha256": { "$ref": "#/$defs/hash" },
+    "proxy_relation_sha256": { "$ref": "#/$defs/hash" },
+    "tuple_sha256": { "$ref": "#/$defs/hash" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "role": { "const": "exact_witness" } }, "required": ["role"] },
+      "then": {
+        "required": [
+          "formal_witness_certificate_sha256",
+          "witness_term_sha256",
+          "formal_predicate_sha256",
+          "encoded_input_or_descriptor_sha256",
+          "observation_oracle_sha256"
+        ]
+      }
+    },
+    {
+      "if": { "properties": { "role": { "const": "positive_control" } }, "required": ["role"] },
+      "then": {
+        "required": [
+          "supporting_exact_case_id",
+          "control_input_sha256",
+          "control_expectation_schema_sha256"
+        ]
+      }
+    },
+    {
+      "if": { "properties": { "role": { "const": "corroborating_proxy" } }, "required": ["role"] },
+      "then": {
+        "required": ["supporting_exact_case_id", "proxy_input_sha256", "proxy_relation_sha256"]
+      }
+    }
+  ],
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 256 }
+  }
+}

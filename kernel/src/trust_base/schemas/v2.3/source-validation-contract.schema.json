@@ -1,0 +1,274 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trellis://schemas/source-validation-contract/v1",
+  "title": "Gate-approved source-counterevidence validation contract",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "contract_id",
+    "target_id",
+    "target_statement_sha256",
+    "source_claim_lineage_id",
+    "source_claim_lineage_sha256",
+    "rust_target_statement_sha256",
+    "source_claim_interpretation_sha256",
+    "claim_shape",
+    "normalized_claim_schema_id",
+    "normalized_claim_sha256",
+    "negative_certificate_class",
+    "formal_refutation_certificate_schema_id",
+    "source_counterevidence_class",
+    "validation_method",
+    "adequacy",
+    "contract_generator_id",
+    "contract_generator_sha256",
+    "classification_proof_artifact_sha256",
+    "source_scope",
+    "source_tree_sha256",
+    "refinement_closure_sha256",
+    "build_tool_closure_sha256",
+    "nondeterminism_environment_policy",
+    "qualification_permission",
+    "registration_epoch",
+    "registration_predecessor_head_sha256",
+    "contract_definition_sha256"
+  ],
+  "properties": {
+    "schema": { "const": "trellis-source-validation-contract/v1" },
+    "contract_id": { "$ref": "#/$defs/id" },
+    "target_id": { "$ref": "#/$defs/id" },
+    "target_statement_sha256": { "$ref": "#/$defs/hash" },
+    "source_claim_lineage_id": { "$ref": "#/$defs/id" },
+    "source_claim_lineage_sha256": { "$ref": "#/$defs/hash" },
+    "rust_target_statement_sha256": { "$ref": "#/$defs/hash" },
+    "source_claim_interpretation_sha256": { "$ref": "#/$defs/hash" },
+    "claim_shape": {
+      "enum": [
+        "universal",
+        "existential",
+        "implication",
+        "termination_or_liveness",
+        "trace_property",
+        "relational_or_hyperproperty",
+        "higher_order_or_abstract_domain",
+        "other"
+      ]
+    },
+    "normalized_claim_schema_id": { "$ref": "#/$defs/id" },
+    "normalized_claim_sha256": { "$ref": "#/$defs/hash" },
+    "negative_certificate_class": {
+      "enum": [
+        "forall_executable_input_postcondition_v1",
+        "checked_source_reflection_v1",
+        "unsupported_negative_certificate_v1"
+      ]
+    },
+    "formal_refutation_certificate_schema_id": { "$ref": "#/$defs/id" },
+    "source_counterevidence_class": {
+      "enum": [
+        "finite_executable_counterexample",
+        "finite_trace_certificate",
+        "concrete_artifact_certificate",
+        "source_semantics_certificate",
+        "non_finitely_observable",
+        "no_approved_source_oracle",
+        "unclassified"
+      ]
+    },
+    "validation_method": {
+      "enum": [
+        "checked_refutation_reflection_v1",
+        "exact_rust_execution_v1",
+        "not_defined_for_claim_shape_v1"
+      ]
+    },
+    "adequacy": { "enum": ["decisive", "undefined"] },
+    "contract_generator_id": { "$ref": "#/$defs/id" },
+    "contract_generator_sha256": { "$ref": "#/$defs/hash" },
+    "classification_proof_artifact_sha256": { "$ref": "#/$defs/hash" },
+    "source_scope": { "enum": ["adapted_source", "upstream_source_equivalent"] },
+    "source_tree_sha256": { "$ref": "#/$defs/hash" },
+    "upstream_source_tree_sha256": { "$ref": "#/$defs/hash" },
+    "entrypoint_observation_equivalence_sha256": { "$ref": "#/$defs/hash" },
+    "binder_domain_schema_sha256": { "$ref": "#/$defs/hash" },
+    "preconditions": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/precondition" }
+    },
+    "public_entry_point": { "$ref": "#/$defs/id" },
+    "entry_point_type_sha256": { "$ref": "#/$defs/hash" },
+    "toolchain_build_basis_sha256": { "$ref": "#/$defs/hash" },
+    "runner_sha256": { "$ref": "#/$defs/hash" },
+    "environment_contract_sha256": { "$ref": "#/$defs/hash" },
+    "determinism_audit_sha256": { "$ref": "#/$defs/hash" },
+    "concretization_schema_sha256": { "$ref": "#/$defs/hash" },
+    "erasure_relation_sha256": { "$ref": "#/$defs/hash" },
+    "concretization_validator_sha256": { "$ref": "#/$defs/hash" },
+    "raw_observation_schema_sha256": { "$ref": "#/$defs/hash" },
+    "observation_oracle_generator_sha256": { "$ref": "#/$defs/hash" },
+    "observation_oracle_sha256": { "$ref": "#/$defs/hash" },
+    "source_validator_sha256": { "$ref": "#/$defs/hash" },
+    "formal_predicate_generator_sha256": { "$ref": "#/$defs/hash" },
+    "negative_evidence_soundness_statement_sha256": { "$ref": "#/$defs/hash" },
+    "negative_evidence_soundness_proof_sha256": { "$ref": "#/$defs/hash" },
+    "reflection_theorem_sha256": { "$ref": "#/$defs/hash" },
+    "reflection_proof_artifact_sha256": { "$ref": "#/$defs/hash" },
+    "reflection_checker_sha256": { "$ref": "#/$defs/hash" },
+    "reflection_result_schema_id": { "$ref": "#/$defs/id" },
+    "refinement_closure_sha256": { "$ref": "#/$defs/hash" },
+    "build_tool_closure_sha256": { "$ref": "#/$defs/hash" },
+    "nondeterminism_environment_policy": {
+      "enum": ["closed_deterministic_v1", "captured_by_reflection", "unsupported_in_v1"]
+    },
+    "qualification_permission": {
+      "enum": ["resource_profiles_if_independent_scope_limit", "prohibited"]
+    },
+    "registration_epoch": { "const": "seed" },
+    "registration_predecessor_head_sha256": { "$ref": "#/$defs/hash" },
+    "contract_definition_sha256": { "$ref": "#/$defs/hash" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "source_scope": { "const": "upstream_source_equivalent" } },
+        "required": ["source_scope"]
+      },
+      "then": {
+        "required": [
+          "upstream_source_tree_sha256",
+          "entrypoint_observation_equivalence_sha256"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": { "validation_method": { "const": "checked_refutation_reflection_v1" } },
+        "required": ["validation_method"]
+      },
+      "then": {
+        "required": [
+          "reflection_theorem_sha256",
+          "reflection_proof_artifact_sha256",
+          "reflection_checker_sha256",
+          "reflection_result_schema_id"
+        ],
+        "properties": {
+          "negative_certificate_class": { "const": "checked_source_reflection_v1" },
+          "source_counterevidence_class": { "const": "source_semantics_certificate" },
+          "adequacy": { "const": "decisive" },
+          "formal_refutation_certificate_schema_id": { "const": "checked-refutation-reflection/v1" },
+          "nondeterminism_environment_policy": { "const": "captured_by_reflection" },
+          "qualification_permission": { "const": "prohibited" }
+        },
+        "not": { "$ref": "#/$defs/hasExecutionFields" }
+      }
+    },
+    {
+      "if": {
+        "properties": { "validation_method": { "const": "exact_rust_execution_v1" } },
+        "required": ["validation_method"]
+      },
+      "then": {
+        "required": [
+          "binder_domain_schema_sha256",
+          "preconditions",
+          "public_entry_point",
+          "entry_point_type_sha256",
+          "toolchain_build_basis_sha256",
+          "runner_sha256",
+          "environment_contract_sha256",
+          "determinism_audit_sha256",
+          "concretization_schema_sha256",
+          "erasure_relation_sha256",
+          "concretization_validator_sha256",
+          "raw_observation_schema_sha256",
+          "observation_oracle_generator_sha256",
+          "observation_oracle_sha256",
+          "source_validator_sha256",
+          "formal_predicate_generator_sha256",
+          "negative_evidence_soundness_statement_sha256",
+          "negative_evidence_soundness_proof_sha256"
+        ],
+        "properties": {
+          "negative_certificate_class": { "const": "forall_executable_input_postcondition_v1" },
+          "source_counterevidence_class": { "const": "finite_executable_counterexample" },
+          "adequacy": { "const": "decisive" },
+          "formal_refutation_certificate_schema_id": { "const": "finite-input-counterexample/v1" },
+          "nondeterminism_environment_policy": { "const": "closed_deterministic_v1" }
+        },
+        "not": {
+          "anyOf": [
+            { "required": ["reflection_theorem_sha256"] },
+            { "required": ["reflection_proof_artifact_sha256"] },
+            { "required": ["reflection_checker_sha256"] },
+            { "required": ["reflection_result_schema_id"] }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "validation_method": { "const": "not_defined_for_claim_shape_v1" } },
+        "required": ["validation_method"]
+      },
+      "then": {
+        "properties": {
+          "negative_certificate_class": { "const": "unsupported_negative_certificate_v1" },
+          "source_counterevidence_class": {
+            "enum": ["non_finitely_observable", "no_approved_source_oracle", "unclassified"]
+          },
+          "adequacy": { "const": "undefined" },
+          "qualification_permission": { "const": "prohibited" },
+          "nondeterminism_environment_policy": { "const": "unsupported_in_v1" }
+        },
+        "not": {
+          "anyOf": [
+            { "$ref": "#/$defs/hasExecutionFields" },
+            { "required": ["reflection_theorem_sha256"] },
+            { "required": ["reflection_proof_artifact_sha256"] },
+            { "required": ["reflection_checker_sha256"] },
+            { "required": ["reflection_result_schema_id"] }
+          ]
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "precondition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["precondition_id", "normalized_statement_sha256", "checker_sha256"],
+      "properties": {
+        "precondition_id": { "$ref": "#/$defs/id" },
+        "normalized_statement_sha256": { "$ref": "#/$defs/hash" },
+        "checker_sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "hasExecutionFields": {
+      "anyOf": [
+        { "required": ["binder_domain_schema_sha256"] },
+        { "required": ["preconditions"] },
+        { "required": ["public_entry_point"] },
+        { "required": ["entry_point_type_sha256"] },
+        { "required": ["toolchain_build_basis_sha256"] },
+        { "required": ["runner_sha256"] },
+        { "required": ["environment_contract_sha256"] },
+        { "required": ["determinism_audit_sha256"] },
+        { "required": ["concretization_schema_sha256"] },
+        { "required": ["erasure_relation_sha256"] },
+        { "required": ["concretization_validator_sha256"] },
+        { "required": ["raw_observation_schema_sha256"] },
+        { "required": ["observation_oracle_generator_sha256"] },
+        { "required": ["observation_oracle_sha256"] },
+        { "required": ["source_validator_sha256"] },
+        { "required": ["formal_predicate_generator_sha256"] },
+        { "required": ["negative_evidence_soundness_statement_sha256"] },
+        { "required": ["negative_evidence_soundness_proof_sha256"] }
+      ]
+    }
+  }
+}

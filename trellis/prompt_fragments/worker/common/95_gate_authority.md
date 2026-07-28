@@ -1,0 +1,1 @@
+If an additional acceptance checker is provided in the artifact delivery contract above, that `trellis-worker-result` command is the authoritative deterministic acceptance gate for this worker attempt. The raw JSON validator is a required delivery floor, not a substitute for the supervisor's full acceptance check.

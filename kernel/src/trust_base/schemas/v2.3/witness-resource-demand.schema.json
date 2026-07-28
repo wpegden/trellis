@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trellis://schemas/witness-resource-demand/v1",
+  "title": "Checked structural resource demand of one formal witness",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "formal_witness_certificate_sha256",
+    "validation_contract_sha256",
+    "witness_term_sha256",
+    "encoded_input_or_descriptor_sha256",
+    "measure_id",
+    "measure_definition_sha256",
+    "units",
+    "value",
+    "checked_derivation_sha256",
+    "checker_execution_receipt",
+    "checker_execution_receipt_sha256",
+    "demand_certificate_sha256"
+  ],
+  "properties": {
+    "schema": { "const": "trellis-witness-resource-demand/v1" },
+    "formal_witness_certificate_sha256": { "$ref": "#/$defs/hash" },
+    "validation_contract_sha256": { "$ref": "#/$defs/hash" },
+    "witness_term_sha256": { "$ref": "#/$defs/hash" },
+    "encoded_input_or_descriptor_sha256": { "$ref": "#/$defs/hash" },
+    "measure_id": { "$ref": "#/$defs/id" },
+    "measure_definition_sha256": { "$ref": "#/$defs/hash" },
+    "units": { "enum": ["bytes", "elements"] },
+    "value": { "type": "string", "pattern": "^(0|[1-9][0-9]*)$" },
+    "checked_derivation_sha256": { "$ref": "#/$defs/hash" },
+    "checker_execution_receipt": { "type": "object" },
+    "checker_execution_receipt_sha256": { "$ref": "#/$defs/hash" },
+    "demand_certificate_sha256": { "$ref": "#/$defs/hash" }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 256 }
+  }
+}

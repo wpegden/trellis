@@ -1,0 +1,150 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trellis://schemas/source-witness-admissibility/v1",
+  "title": "Replay-independent witness-specific Rust admissibility certificate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "certificate_id",
+    "evidence_class",
+    "formal_refutation_sha256",
+    "formal_witness_certificate_sha256",
+    "witness_term_sha256",
+    "formal_predicate_sha256",
+    "model_target_statement_sha256",
+    "rust_target_statement_sha256",
+    "source_claim_lineage_sha256",
+    "validation_contract_sha256",
+    "source_scope",
+    "source_tree_sha256",
+    "binder_domain_schema_sha256",
+    "precondition_manifest_sha256",
+    "precondition_closure_sha256",
+    "entry_point_type_sha256",
+    "carrier_refinement_closure_sha256",
+    "build_semantics_sha256",
+    "encoded_input_or_descriptor_sha256",
+    "independent_basis_sha256",
+    "witness_resource_demand_sha256",
+    "generated_admissibility_statement_sha256",
+    "checked_admissibility_proof_sha256",
+    "checker_and_axiom_closure_sha256",
+    "derivation_receipt_sha256",
+    "checker_execution_receipt",
+    "checker_execution_receipt_sha256",
+    "admissibility_status",
+    "certificate_sha256"
+  ],
+  "properties": {
+    "schema": { "const": "trellis-source-witness-admissibility/v1" },
+    "certificate_id": { "$ref": "#/$defs/id" },
+    "evidence_class": {
+      "enum": ["safe_construction_v1", "conditional_descriptor_realizability_v1"]
+    },
+    "formal_refutation_sha256": { "$ref": "#/$defs/hash" },
+    "formal_witness_certificate_sha256": { "$ref": "#/$defs/hash" },
+    "witness_term_sha256": { "$ref": "#/$defs/hash" },
+    "formal_predicate_sha256": { "$ref": "#/$defs/hash" },
+    "model_target_statement_sha256": { "$ref": "#/$defs/hash" },
+    "rust_target_statement_sha256": { "$ref": "#/$defs/hash" },
+    "source_claim_lineage_sha256": { "$ref": "#/$defs/hash" },
+    "validation_contract_sha256": { "$ref": "#/$defs/hash" },
+    "source_scope": { "enum": ["adapted_source", "upstream_source_equivalent"] },
+    "source_tree_sha256": { "$ref": "#/$defs/hash" },
+    "binder_domain_schema_sha256": { "$ref": "#/$defs/hash" },
+    "precondition_manifest_sha256": { "$ref": "#/$defs/hash" },
+    "precondition_closure_sha256": { "$ref": "#/$defs/hash" },
+    "entry_point_type_sha256": { "$ref": "#/$defs/hash" },
+    "carrier_refinement_closure_sha256": { "$ref": "#/$defs/hash" },
+    "build_semantics_sha256": { "$ref": "#/$defs/hash" },
+    "encoded_input_or_descriptor_sha256": { "$ref": "#/$defs/hash" },
+    "concretization_receipt_sha256": { "$ref": "#/$defs/hash" },
+    "erasure_receipt_sha256": { "$ref": "#/$defs/hash" },
+    "safe_construction_receipt_sha256": { "$ref": "#/$defs/hash" },
+    "generated_safe_construction_statement_sha256": { "$ref": "#/$defs/hash" },
+    "descriptor_language_membership_proof_sha256": { "$ref": "#/$defs/hash" },
+    "descriptor_carrier_membership_proof_sha256": { "$ref": "#/$defs/hash" },
+    "descriptor_domain_membership_proof_sha256": { "$ref": "#/$defs/hash" },
+    "descriptor_exactness_statement_sha256": { "$ref": "#/$defs/hash" },
+    "checked_descriptor_exactness_proof_sha256": { "$ref": "#/$defs/hash" },
+    "resource_envelope_predicate_sha256": { "$ref": "#/$defs/hash" },
+    "generated_formula_schema_id": {
+      "const": "source-witness-conditional-admissibility-conjunction/v1"
+    },
+    "conditional_reverse_realizability_statement_sha256": { "$ref": "#/$defs/hash" },
+    "checked_conditional_reverse_realizability_proof_sha256": { "$ref": "#/$defs/hash" },
+    "independent_basis_sha256": { "$ref": "#/$defs/hash" },
+    "witness_resource_demand_sha256": { "$ref": "#/$defs/hash" },
+    "generated_admissibility_statement_sha256": { "$ref": "#/$defs/hash" },
+    "checked_admissibility_proof_sha256": { "$ref": "#/$defs/hash" },
+    "checker_and_axiom_closure_sha256": { "$ref": "#/$defs/hash" },
+    "derivation_receipt_sha256": { "$ref": "#/$defs/hash" },
+    "checker_execution_receipt": { "type": "object" },
+    "checker_execution_receipt_sha256": { "$ref": "#/$defs/hash" },
+    "admissibility_status": {
+      "enum": [
+        "exact_source_state_safely_constructed",
+        "unconditional_language_carrier_domain_and_preconditions_with_resource_conditional_realizability"
+      ]
+    },
+    "certificate_sha256": { "$ref": "#/$defs/hash" }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "evidence_class": { "const": "safe_construction_v1" } } },
+      "then": {
+        "required": [
+          "concretization_receipt_sha256",
+          "erasure_receipt_sha256",
+          "safe_construction_receipt_sha256",
+          "generated_safe_construction_statement_sha256"
+        ],
+        "properties": { "admissibility_status": { "const": "exact_source_state_safely_constructed" } },
+        "not": {
+          "anyOf": [
+            { "required": ["descriptor_domain_membership_proof_sha256"] },
+            { "required": ["descriptor_language_membership_proof_sha256"] },
+            { "required": ["descriptor_carrier_membership_proof_sha256"] },
+            { "required": ["descriptor_exactness_statement_sha256"] },
+            { "required": ["checked_descriptor_exactness_proof_sha256"] },
+            { "required": ["resource_envelope_predicate_sha256"] },
+            { "required": ["generated_formula_schema_id"] },
+            { "required": ["conditional_reverse_realizability_statement_sha256"] },
+            { "required": ["checked_conditional_reverse_realizability_proof_sha256"] }
+          ]
+        }
+      },
+      "else": {
+        "required": [
+          "descriptor_domain_membership_proof_sha256",
+          "descriptor_language_membership_proof_sha256",
+          "descriptor_carrier_membership_proof_sha256",
+          "descriptor_exactness_statement_sha256",
+          "checked_descriptor_exactness_proof_sha256",
+          "resource_envelope_predicate_sha256",
+          "generated_formula_schema_id",
+          "conditional_reverse_realizability_statement_sha256",
+          "checked_conditional_reverse_realizability_proof_sha256"
+        ],
+        "properties": {
+          "admissibility_status": {
+            "const": "unconditional_language_carrier_domain_and_preconditions_with_resource_conditional_realizability"
+          }
+        },
+        "not": {
+          "anyOf": [
+            { "required": ["concretization_receipt_sha256"] },
+            { "required": ["erasure_receipt_sha256"] },
+            { "required": ["safe_construction_receipt_sha256"] },
+            { "required": ["generated_safe_construction_statement_sha256"] }
+          ]
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 256 }
+  }
+}

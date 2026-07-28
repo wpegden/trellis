@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trellis://schemas/qualification-profile-catalog/v1",
+  "title": "Gate-approved qualification profile catalog",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "profiles", "catalog_definition_sha256"],
+  "properties": {
+    "schema": { "const": "trellis-qualification-profile-catalog/v1" },
+    "catalog_definition_sha256": { "$ref": "#/$defs/hash" },
+    "profiles": {
+      "type": "array",
+      "minItems": 0,
+      "items": { "$ref": "trellis://schemas/qualification-profile/v1" }
+    }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "atom": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "binder",
+        "binder_type",
+        "measure_id",
+        "units",
+          "comparison",
+          "bound",
+          "scope",
+          "enforcement",
+        "independent_basis_id",
+        "independent_basis_sha256"
+      ],
+      "properties": {
+        "kind": { "const": "atom" },
+        "binder": { "type": "string", "minLength": 1 },
+        "binder_type": { "type": "string", "minLength": 1 },
+        "measure_id": { "type": "string", "minLength": 1 },
+        "units": { "enum": ["bytes", "elements"] },
+        "comparison": { "enum": ["strictly_less_than", "less_than_or_equal"] },
+          "bound": { "type": "string", "pattern": "^[1-9][0-9]*$" },
+          "scope": { "enum": ["source", "configuration", "deployment", "host"] },
+        "enforcement": {
+          "enum": ["source_enforced", "configuration_enforced", "deployment_enforced", "observed"]
+        },
+        "independent_basis_id": { "type": "string", "minLength": 1 },
+        "independent_basis_sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "condition": { "$ref": "#/$defs/atom" },
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "profile_id",
+        "target_id",
+        "target_statement_sha256",
+        "source_claim_lineage_id",
+        "source_claim_lineage_sha256",
+        "validation_contract_id",
+        "validation_contract_sha256",
+        "conditionalization_schema_id",
+        "registration_epoch",
+        "condition",
+        "measure_closure_sha256",
+        "independent_basis_id",
+        "independent_basis_sha256",
+        "permitted_applicability",
+        "attempt_order",
+        "attempt_budget",
+        "witness_demand_checker_sha256",
+        "source_admissibility_checker_sha256",
+        "conditional_statement_generator_sha256",
+        "conditional_proof_checker_sha256",
+        "applicability_validator_sha256",
+        "profile_definition_sha256"
+      ],
+      "properties": {
+        "profile_id": { "type": "string", "minLength": 1 },
+        "target_id": { "type": "string", "minLength": 1 },
+        "target_statement_sha256": { "$ref": "#/$defs/hash" },
+        "source_claim_lineage_id": { "type": "string", "minLength": 1 },
+        "source_claim_lineage_sha256": { "$ref": "#/$defs/hash" },
+        "validation_contract_id": { "type": "string", "minLength": 1 },
+        "validation_contract_sha256": { "$ref": "#/$defs/hash" },
+        "conditionalization_schema_id": { "type": "string", "minLength": 1 },
+        "registration_epoch": { "const": "seed" },
+        "condition": { "$ref": "#/$defs/condition" },
+        "measure_closure_sha256": { "$ref": "#/$defs/hash" },
+        "independent_basis_id": { "type": "string", "minLength": 1 },
+        "independent_basis_sha256": { "$ref": "#/$defs/hash" },
+        "permitted_applicability": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["formally_derived", "mechanically_enforced", "externally_attested", "unestablished"]
+          }
+        },
+        "attempt_order": { "type": "integer", "const": 0 },
+        "attempt_budget": { "type": "integer", "const": 1 },
+        "witness_demand_checker_sha256": { "$ref": "#/$defs/hash" },
+        "source_admissibility_checker_sha256": { "$ref": "#/$defs/hash" },
+        "conditional_statement_generator_sha256": { "$ref": "#/$defs/hash" },
+        "conditional_proof_checker_sha256": { "$ref": "#/$defs/hash" },
+        "applicability_validator_sha256": { "$ref": "#/$defs/hash" },
+        "profile_definition_sha256": { "$ref": "#/$defs/hash" }
+      }
+    }
+  }
+}
