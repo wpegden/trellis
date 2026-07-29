@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trellis://schemas/actor-authentication-key-manifest/v1",
+  "title": "Seed-pinned immutable reviewer and audit authentication-key history",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "protocol_id",
+    "key_history_policy",
+    "manifest_authority_id",
+    "keys",
+    "authorization_signing_digest_sha256",
+    "authorization_signature_ed25519_hex",
+    "manifest_sha256"
+  ],
+  "properties": {
+    "schema": { "const": "trellis-actor-authentication-key-manifest/v1" },
+    "protocol_id": { "const": "trellis-trust-v1" },
+    "key_history_policy": { "const": "seed_pinned_immutable_all_epochs_v1" },
+    "manifest_authority_id": { "$ref": "#/$defs/id" },
+    "keys": {
+      "type": "array",
+      "minItems": 3,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/key" }
+    },
+    "authorization_signing_digest_sha256": { "$ref": "#/$defs/hash" },
+    "authorization_signature_ed25519_hex": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{128}$"
+    },
+    "manifest_sha256": { "$ref": "#/$defs/hash" }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "key": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key_id",
+        "actor_role",
+        "actor_identity",
+        "purpose",
+        "algorithm",
+        "public_key_ed25519_hex",
+        "valid_from_sequence"
+      ],
+      "properties": {
+        "key_id": { "$ref": "#/$defs/id" },
+        "actor_role": { "enum": ["reviewer", "audit_authority", "journal_authority"] },
+        "actor_identity": { "$ref": "#/$defs/id" },
+        "purpose": { "enum": ["gate_review", "audit_authorization", "journal_commit"] },
+        "algorithm": { "const": "Ed25519" },
+        "public_key_ed25519_hex": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "valid_from_sequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "valid_through_sequence": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "actor_role": { "const": "reviewer" } } },
+          "then": { "properties": { "purpose": { "const": "gate_review" } } },
+          "else": {
+            "if": { "properties": { "actor_role": { "const": "audit_authority" } } },
+            "then": { "properties": { "purpose": { "const": "audit_authorization" } } },
+            "else": { "properties": { "purpose": { "const": "journal_commit" } } }
+          }
+        }
+      ]
+    }
+  }
+}

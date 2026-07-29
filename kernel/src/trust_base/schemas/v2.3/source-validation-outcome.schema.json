@@ -1,0 +1,326 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trellis://schemas/source-validation-outcome/v1",
+  "title": "Authoritative centrally derived source-validation outcome",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "result_id",
+    "target_id",
+    "validation_contract_id",
+    "validation_contract_sha256",
+    "source_claim_lineage_id",
+    "source_claim_lineage_sha256",
+    "validation_method",
+    "status",
+    "realizability",
+    "observability",
+    "reproducibility",
+    "decisiveness",
+    "derivation_receipt_sha256",
+    "journal_predecessor_sha256",
+    "result_sha256"
+  ],
+  "properties": {
+    "schema": { "const": "trellis-source-validation-outcome/v1" },
+    "result_id": { "$ref": "#/$defs/id" },
+    "attempt_sha256": { "$ref": "#/$defs/hash" },
+    "role": { "enum": ["exact_witness", "positive_control", "corroborating_proxy"] },
+    "harness_cohort_sha256": { "$ref": "#/$defs/hash" },
+    "target_id": { "$ref": "#/$defs/id" },
+    "validation_contract_id": { "$ref": "#/$defs/id" },
+    "validation_contract_sha256": { "$ref": "#/$defs/hash" },
+    "source_claim_lineage_id": { "$ref": "#/$defs/id" },
+    "source_claim_lineage_sha256": { "$ref": "#/$defs/hash" },
+    "validation_method": {
+      "enum": [
+        "checked_refutation_reflection_v1",
+        "exact_rust_execution_v1",
+        "not_defined_for_claim_shape_v1"
+      ]
+    },
+    "full_tuple_sha256": { "$ref": "#/$defs/hash" },
+    "source_validator_sha256": { "$ref": "#/$defs/hash" },
+    "raw_observation_sha256": { "$ref": "#/$defs/hash" },
+    "oracle_invocation_receipt_sha256": { "$ref": "#/$defs/hash" },
+    "oracle_invocation_receipt": { "type": "object" },
+    "oracle_observation": { "$ref": "trellis://schemas/source-oracle-observation/v1" },
+    "reflection_evidence_sha256": { "$ref": "#/$defs/hash" },
+    "independent_basis_id": { "$ref": "#/$defs/id" },
+    "independent_basis_sha256": { "$ref": "#/$defs/hash" },
+    "witness_resource_demand_sha256": { "$ref": "#/$defs/hash" },
+    "status": {
+      "enum": [
+        "exact_counterexample_observed",
+        "reproduced",
+        "source_model_mismatch",
+        "language_inadmissible",
+        "independent_scope_limit",
+        "validation_budget_exceeded",
+        "harness_policy_refusal",
+        "control_passed",
+        "control_failed",
+        "proxy_executed",
+        "validation_inconclusive",
+        "not_defined_for_claim_shape",
+        "invalid_validation_evidence"
+      ]
+    },
+    "realizability": {
+      "enum": ["exact_source_state_safely_constructed", "unestablished", "contradicted", "invalid"]
+    },
+    "observability": {
+      "enum": [
+        "exact_falsifying_source_observation_matched",
+        "exact_observation_did_not_match",
+        "not_observed",
+        "unmappable"
+      ]
+    },
+    "reproducibility": {
+      "enum": ["hermetically_reproduced", "recorded_once", "not_reproduced", "not_attempted"]
+    },
+    "decisiveness": {
+      "enum": ["decisive", "corroborative", "inconclusive", "invalid", "unsupported_claim_class"]
+    },
+    "derivation_receipt_sha256": { "$ref": "#/$defs/hash" },
+    "journal_predecessor_sha256": { "$ref": "#/$defs/hash" },
+    "result_sha256": { "$ref": "#/$defs/hash" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "validation_method": { "const": "exact_rust_execution_v1" } },
+        "required": ["validation_method"]
+      },
+      "then": {
+        "required": ["oracle_invocation_receipt", "oracle_invocation_receipt_sha256", "oracle_observation"]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "exact_counterexample_observed",
+              "reproduced",
+              "source_model_mismatch",
+              "language_inadmissible",
+              "independent_scope_limit",
+              "validation_budget_exceeded",
+              "harness_policy_refusal",
+              "control_passed",
+              "control_failed",
+              "proxy_executed",
+              "validation_inconclusive"
+            ]
+          }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "required": ["attempt_sha256", "role", "harness_cohort_sha256", "full_tuple_sha256", "source_validator_sha256"],
+        "properties": { "validation_method": { "const": "exact_rust_execution_v1" } }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "enum": [
+              "exact_counterexample_observed",
+              "reproduced",
+              "source_model_mismatch",
+              "language_inadmissible",
+              "independent_scope_limit",
+              "validation_budget_exceeded"
+            ]
+          }
+        },
+        "required": ["status"]
+      },
+      "then": { "properties": { "role": { "const": "exact_witness" } } }
+    },
+    {
+      "if": {
+        "properties": { "status": { "enum": ["control_passed", "control_failed"] } },
+        "required": ["status"]
+      },
+      "then": { "properties": { "role": { "const": "positive_control" } } }
+    },
+    {
+      "if": {
+        "properties": { "status": { "const": "proxy_executed" } },
+        "required": ["status"]
+      },
+      "then": { "properties": { "role": { "const": "corroborating_proxy" } } }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": { "enum": ["exact_counterexample_observed", "reproduced"] }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "required": [
+          "attempt_sha256",
+          "raw_observation_sha256",
+          "oracle_invocation_receipt_sha256"
+        ],
+        "properties": {
+          "realizability": { "const": "exact_source_state_safely_constructed" },
+          "observability": { "const": "exact_falsifying_source_observation_matched" },
+          "decisiveness": { "const": "decisive" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "status": { "const": "exact_counterexample_observed" } },
+        "required": ["status"]
+      },
+      "then": { "properties": { "reproducibility": { "const": "recorded_once" } } }
+    },
+    {
+      "if": {
+        "properties": { "status": { "const": "reproduced" } },
+        "required": ["status"]
+      },
+      "then": { "properties": { "reproducibility": { "const": "hermetically_reproduced" } } }
+    },
+    {
+      "if": {
+        "properties": { "status": { "const": "not_defined_for_claim_shape" } },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "validation_method": { "const": "not_defined_for_claim_shape_v1" },
+          "realizability": { "const": "unestablished" },
+          "observability": { "const": "unmappable" },
+          "decisiveness": { "const": "unsupported_claim_class" },
+          "reproducibility": { "const": "not_attempted" }
+        },
+        "not": { "required": ["attempt_sha256"] }
+      }
+    },
+    {
+      "if": {
+        "properties": { "status": { "const": "invalid_validation_evidence" } },
+        "required": ["status"]
+      },
+      "then": { "properties": { "decisiveness": { "const": "invalid" } } }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": { "const": "invalid_validation_evidence" },
+          "validation_method": { "const": "exact_rust_execution_v1" }
+        },
+        "required": ["status", "validation_method"]
+      },
+      "then": {
+        "required": ["attempt_sha256", "role", "harness_cohort_sha256", "full_tuple_sha256"]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": { "const": "invalid_validation_evidence" },
+          "validation_method": { "const": "checked_refutation_reflection_v1" }
+        },
+        "required": ["status", "validation_method"]
+      },
+      "then": {
+        "required": ["reflection_evidence_sha256"],
+        "not": { "required": ["attempt_sha256"] }
+      }
+    },
+    {
+      "if": {
+        "properties": { "status": { "const": "source_model_mismatch" } },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "observability": { "const": "exact_observation_did_not_match" },
+          "decisiveness": { "const": "invalid" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "status": { "enum": ["control_passed", "proxy_executed"] } },
+        "required": ["status"]
+      },
+      "then": { "properties": { "decisiveness": { "const": "corroborative" } } }
+    },
+    {
+      "if": {
+        "properties": { "status": { "const": "control_failed" } },
+        "required": ["status"]
+      },
+      "then": { "properties": { "decisiveness": { "const": "invalid" } } }
+    },
+    {
+      "if": {
+        "properties": { "status": { "const": "language_inadmissible" } },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "realizability": { "const": "contradicted" },
+          "observability": { "const": "not_observed" },
+          "reproducibility": { "const": "not_attempted" },
+          "decisiveness": { "const": "invalid" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "status": { "const": "independent_scope_limit" } },
+        "required": ["status"]
+      },
+      "then": {
+        "required": [
+          "independent_basis_id",
+          "independent_basis_sha256",
+          "witness_resource_demand_sha256"
+        ],
+        "properties": {
+          "realizability": { "const": "unestablished" },
+          "observability": { "const": "not_observed" },
+          "reproducibility": { "const": "not_attempted" },
+          "decisiveness": { "const": "inconclusive" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": { "enum": ["validation_budget_exceeded", "harness_policy_refusal"] }
+        },
+        "required": ["status"]
+      },
+      "then": {
+        "properties": {
+          "observability": { "const": "not_observed" },
+          "decisiveness": { "const": "inconclusive" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "status": { "const": "validation_inconclusive" } },
+        "required": ["status"]
+      },
+      "then": { "properties": { "decisiveness": { "const": "inconclusive" } } }
+    }
+  ],
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 256 }
+  }
+}

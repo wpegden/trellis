@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trellis://schemas/approval-and-package/v1",
+  "title": "Human approval or deterministic package authorization payload",
+  "oneOf": [
+    { "$ref": "#/$defs/humanApproval" },
+    { "$ref": "#/$defs/packageAuthorization" },
+    { "$ref": "#/$defs/auditAuthorization" }
+  ],
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "head": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["journal_id", "sequence_number", "event_hash"],
+      "properties": {
+        "journal_id": { "$ref": "#/$defs/id" },
+        "sequence_number": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "event_hash": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "humanApproval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "authored_semantic_root",
+        "approved_evidence_tool_input_root",
+        "gate_presentation_sha256",
+        "reviewer_identity",
+        "approved_journal_head"
+      ],
+      "properties": {
+        "schema": { "const": "trellis-human-approval/v1" },
+        "authored_semantic_root": { "$ref": "#/$defs/hash" },
+        "approved_evidence_tool_input_root": { "$ref": "#/$defs/hash" },
+        "gate_presentation_sha256": { "$ref": "#/$defs/hash" },
+        "reviewer_identity": { "$ref": "#/$defs/id" },
+        "approved_journal_head": { "$ref": "#/$defs/head" }
+      }
+    },
+    "packageAuthorization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "human_approval_event_hash",
+        "derived_result_closure_root",
+        "package_presentation_sha256",
+        "generator_and_validator_closure_root",
+        "pre_authorization_journal_head"
+      ],
+      "properties": {
+        "schema": { "const": "trellis-package-authorization/v1" },
+        "human_approval_event_hash": { "$ref": "#/$defs/hash" },
+        "derived_result_closure_root": { "$ref": "#/$defs/hash" },
+        "package_presentation_sha256": { "$ref": "#/$defs/hash" },
+        "generator_and_validator_closure_root": { "$ref": "#/$defs/hash" },
+        "pre_authorization_journal_head": { "$ref": "#/$defs/head" }
+      }
+    },
+    "auditAuthorization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "authorization_id",
+        "audit_identity",
+        "current_human_approval_event_hash",
+        "authorized_from_journal_head",
+        "authorized_revision_lane_id",
+        "permitted_changes",
+        "maximum_semantic_scope_sha256",
+        "reason_sha256",
+        "one_shot",
+        "authorization_artifact_sha256"
+      ],
+      "properties": {
+        "schema": { "const": "trellis-audit-authorization/v1" },
+        "authorization_id": { "$ref": "#/$defs/id" },
+        "audit_identity": { "$ref": "#/$defs/id" },
+        "current_human_approval_event_hash": { "$ref": "#/$defs/hash" },
+        "authorized_from_journal_head": { "$ref": "#/$defs/head" },
+        "authorized_revision_lane_id": { "$ref": "#/$defs/id" },
+        "permitted_changes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/permittedChange" }
+        },
+        "maximum_semantic_scope_sha256": { "$ref": "#/$defs/hash" },
+        "reason_sha256": { "$ref": "#/$defs/hash" },
+        "one_shot": { "const": true },
+        "authorization_artifact_sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "permittedChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["item_id", "change_kind"],
+      "properties": {
+        "item_id": { "$ref": "#/$defs/id" },
+        "change_kind": {
+          "enum": [
+            "carrier_or_boundary",
+            "logical_assumption",
+            "target_statement",
+            "source_claim_lineage",
+            "source_validation_contract",
+            "source_claim_interpretation",
+            "observation_oracle",
+            "measure_or_condition",
+            "qualification_profile",
+            "conditional_theorem_candidate",
+            "applicability_basis",
+            "load_bearing_tool",
+            "schema",
+            "generator",
+            "validator_policy",
+            "external_claim_policy"
+          ]
+        }
+      }
+    }
+  }
+}

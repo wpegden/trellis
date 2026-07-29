@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trellis://schemas/formal-refutation/v1",
+  "title": "Runtime-independent formal witness refutation and unrestricted derivation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "target_id",
+    "target_statement_sha256",
+    "witness_term_sha256",
+    "formal_predicate_sha256",
+    "generated_witness_refutation_sha256",
+    "witness_generator_schema_id",
+    "witness_certificate_sha256",
+    "checked_witness_proof_sha256",
+    "unrestricted_generator_schema_id",
+    "generated_not_t_statement_sha256",
+    "checked_not_t_proof_sha256",
+    "checker_toolchain_sha256",
+    "approved_axiom_closure_sha256",
+    "witness_certificate",
+    "formal_proof_receipt",
+    "formal_bundle_sha256"
+  ],
+  "properties": {
+    "schema": { "const": "trellis-formal-refutation/v1" },
+    "target_id": { "$ref": "#/$defs/id" },
+    "target_statement_sha256": { "$ref": "#/$defs/hash" },
+    "witness_term_sha256": { "$ref": "#/$defs/hash" },
+    "formal_predicate_sha256": { "$ref": "#/$defs/hash" },
+    "generated_witness_refutation_sha256": { "$ref": "#/$defs/hash" },
+    "witness_generator_schema_id": { "const": "witness-refutation/v1" },
+    "witness_certificate_sha256": { "$ref": "#/$defs/hash" },
+    "checked_witness_proof_sha256": { "$ref": "#/$defs/hash" },
+    "unrestricted_generator_schema_id": { "const": "forall-counterexample/v1" },
+    "generated_not_t_statement_sha256": { "$ref": "#/$defs/hash" },
+    "checked_not_t_proof_sha256": { "$ref": "#/$defs/hash" },
+    "checker_toolchain_sha256": { "$ref": "#/$defs/hash" },
+    "approved_axiom_closure_sha256": { "$ref": "#/$defs/hash" },
+    "witness_certificate": { "$ref": "trellis://schemas/formal-witness-sidecar/v1" },
+    "formal_proof_receipt": { "type": "object" },
+    "formal_bundle_sha256": { "$ref": "#/$defs/hash" }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 256 }
+  }
+}

@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trellis://schemas/measure-catalog/v1",
+  "title": "Seed-frozen catalog of restricted structural resource measures",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "catalog_id",
+    "measures",
+    "registration_epoch",
+    "registration_predecessor_head_sha256",
+    "catalog_sha256"
+  ],
+  "properties": {
+    "schema": { "const": "trellis-measure-catalog/v1" },
+    "catalog_id": { "$ref": "#/$defs/id" },
+    "measures": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/measure" }
+    },
+    "registration_epoch": { "const": "seed" },
+    "registration_predecessor_head_sha256": { "$ref": "#/$defs/hash" },
+    "catalog_sha256": { "$ref": "#/$defs/hash" }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "measure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "measure_id",
+        "binder",
+        "binder_type",
+        "units",
+        "expression_ast",
+        "measure_definition_sha256"
+      ],
+      "properties": {
+        "measure_id": { "$ref": "#/$defs/id" },
+        "binder": { "$ref": "#/$defs/id" },
+        "binder_type": { "$ref": "#/$defs/id" },
+        "units": { "enum": ["bytes", "elements"] },
+        "expression_ast": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "binder"],
+          "properties": {
+            "kind": { "const": "structural_input_byte_length_v1" },
+            "binder": { "$ref": "#/$defs/id" }
+          }
+        },
+        "measure_definition_sha256": { "$ref": "#/$defs/hash" }
+      }
+    }
+  }
+}

@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trellis://schemas/applicability-result/v1",
+  "title": "Deployment/applicability claim separate from conditional truth",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "target_id",
+    "target_statement_sha256",
+    "source_claim_lineage_id",
+    "source_claim_lineage_sha256",
+    "qualification_bundle_sha256",
+    "condition_sha256",
+    "status",
+    "validator_id",
+    "validator_sha256",
+    "journal_predecessor_sha256",
+    "result_sha256"
+  ],
+  "properties": {
+    "schema": { "const": "trellis-applicability-result/v1" },
+    "target_id": { "$ref": "#/$defs/id" },
+    "target_statement_sha256": { "$ref": "#/$defs/hash" },
+    "source_claim_lineage_id": { "$ref": "#/$defs/id" },
+    "source_claim_lineage_sha256": { "$ref": "#/$defs/hash" },
+    "qualification_bundle_sha256": { "$ref": "#/$defs/hash" },
+    "condition_sha256": { "$ref": "#/$defs/hash" },
+    "status": {
+      "enum": ["formally_derived", "mechanically_enforced", "externally_attested", "unestablished"]
+    },
+    "evidence_sha256": { "$ref": "#/$defs/hash" },
+    "validator_id": { "$ref": "#/$defs/id" },
+    "validator_sha256": { "$ref": "#/$defs/hash" },
+    "journal_predecessor_sha256": { "$ref": "#/$defs/hash" },
+    "result_sha256": { "$ref": "#/$defs/hash" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "status": { "const": "unestablished" } },
+        "required": ["status"]
+      },
+      "then": { "not": { "required": ["evidence_sha256"] } },
+      "else": { "required": ["evidence_sha256"] }
+    }
+  ],
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 256 }
+  }
+}

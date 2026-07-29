@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trellis://schemas/conditional-theorem-candidate/v1",
+  "title": "Seed-frozen conditional theorem candidate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "candidate_id",
+    "profile_id",
+    "profile_definition_sha256",
+    "target_id",
+    "target_statement_sha256",
+    "conditionalization_schema_id",
+    "condition_sha256",
+    "node_id",
+    "statement_normalization",
+    "statement_utf8",
+    "conditional_statement_sha256",
+    "active_statement_sha256",
+    "registration_epoch",
+    "candidate_definition_sha256"
+  ],
+  "properties": {
+    "schema": { "const": "trellis-conditional-theorem-candidate/v1" },
+    "candidate_id": { "$ref": "#/$defs/id" },
+    "profile_id": { "$ref": "#/$defs/id" },
+    "profile_definition_sha256": { "$ref": "#/$defs/hash" },
+    "target_id": { "$ref": "#/$defs/id" },
+    "target_statement_sha256": { "$ref": "#/$defs/hash" },
+    "conditionalization_schema_id": { "$ref": "#/$defs/id" },
+    "condition_sha256": { "$ref": "#/$defs/hash" },
+    "node_id": { "$ref": "#/$defs/id" },
+    "statement_normalization": { "const": "trellis-find-declaration-v1" },
+    "statement_utf8": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1048576
+    },
+    "conditional_statement_sha256": { "$ref": "#/$defs/hash" },
+    "active_statement_sha256": { "$ref": "#/$defs/hash" },
+    "registration_epoch": { "const": "seed" },
+    "candidate_definition_sha256": { "$ref": "#/$defs/hash" }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 256 }
+  }
+}

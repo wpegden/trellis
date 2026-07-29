@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trellis://schemas/basis-fact-class-registry/v1",
+  "title": "Seed-frozen registry of independent-basis fact classes and authorities",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "registry_id",
+    "entries",
+    "registration_epoch",
+    "registration_predecessor_head_sha256",
+    "registry_sha256"
+  ],
+  "properties": {
+    "schema": { "const": "trellis-basis-fact-class-registry/v1" },
+    "registry_id": { "$ref": "#/$defs/id" },
+    "entries": {
+      "type": "array",
+      "minItems": 5,
+      "maxItems": 5,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/entry" }
+    },
+    "registration_epoch": { "const": "seed" },
+    "registration_predecessor_head_sha256": { "$ref": "#/$defs/hash" },
+    "registry_sha256": { "$ref": "#/$defs/hash" }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fact_class",
+        "fact_schema_id",
+        "fact_schema_sha256",
+        "validator_id",
+        "validator_sha256",
+        "allowed_scopes",
+        "allowed_enforcements",
+        "entry_sha256"
+      ],
+      "properties": {
+        "fact_class": {
+          "enum": [
+            "source_limit",
+            "configuration_limit",
+            "deployment_limit",
+            "host_capability_limit",
+            "external_attestation_limit"
+          ]
+        },
+        "fact_schema_id": { "$ref": "#/$defs/id" },
+        "fact_schema_sha256": { "$ref": "#/$defs/hash" },
+        "validator_id": { "$ref": "#/$defs/id" },
+        "validator_sha256": { "$ref": "#/$defs/hash" },
+        "allowed_scopes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["source", "configuration", "deployment", "host"] }
+        },
+        "allowed_enforcements": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["source_enforced", "configuration_enforced", "deployment_enforced", "observed"]
+          }
+        },
+        "attestation_authority_manifest_sha256": { "$ref": "#/$defs/hash" },
+        "attestation_authorization_policy_sha256": { "$ref": "#/$defs/hash" },
+        "entry_sha256": { "$ref": "#/$defs/hash" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "fact_class": { "const": "external_attestation_limit" } }, "required": ["fact_class"] },
+          "then": { "required": ["attestation_authority_manifest_sha256", "attestation_authorization_policy_sha256"] },
+          "else": {
+            "not": {
+              "anyOf": [
+                { "required": ["attestation_authority_manifest_sha256"] },
+                { "required": ["attestation_authorization_policy_sha256"] }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

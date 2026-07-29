@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trellis://schemas/seed-authored-definition-manifest/v1",
+  "title": "Acyclic seed manifest of authored definitions",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "protocol_id",
+    "journal_id",
+    "run_id",
+    "seed_plan_id",
+    "canonical_genesis_sha256",
+    "definitions",
+    "authored_semantic_root",
+    "approved_evidence_tool_input_root",
+    "journal_event_policy_sha256",
+    "actor_key_manifest_sha256",
+    "manifest_sha256"
+  ],
+  "properties": {
+    "schema": { "const": "trellis-seed-authored-definition-manifest/v1" },
+    "protocol_id": { "const": "trellis-trust-v1" },
+    "journal_id": { "$ref": "#/$defs/id" },
+    "run_id": { "$ref": "#/$defs/id" },
+    "seed_plan_id": { "$ref": "#/$defs/id" },
+    "canonical_genesis_sha256": { "$ref": "#/$defs/hash" },
+    "definitions": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/definition" }
+    },
+    "authored_semantic_root": { "$ref": "#/$defs/hash" },
+    "approved_evidence_tool_input_root": { "$ref": "#/$defs/hash" },
+    "journal_event_policy_sha256": { "$ref": "#/$defs/hash" },
+    "actor_key_manifest_sha256": { "$ref": "#/$defs/hash" },
+    "manifest_sha256": { "$ref": "#/$defs/hash" }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "definition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["record_kind", "record_id", "record_schema_id", "record_sha256", "domain_tag"],
+      "properties": {
+        "record_kind": {
+          "enum": [
+            "source_claim_lineage",
+            "source_validation_contract",
+            "measure_catalog",
+            "independent_basis_derivation",
+            "independent_basis",
+            "qualification_profile",
+            "conditional_theorem_candidate",
+            "qualification_profile_catalog",
+            "conditionalization_schema",
+            "target_definition",
+            "source_interpretation_definition",
+            "precondition_definition",
+            "carrier_refinement_definition",
+            "build_definition",
+            "basis_fact_class_registry",
+            "semantic_validator",
+            "evidence_tool_input"
+          ]
+        },
+        "record_id": { "$ref": "#/$defs/id" },
+        "record_schema_id": { "$ref": "#/$defs/id" },
+        "record_sha256": { "$ref": "#/$defs/hash" },
+        "domain_tag": { "$ref": "#/$defs/id" }
+      }
+    }
+  }
+}

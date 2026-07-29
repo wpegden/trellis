@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trellis://schemas/journal-commit-receipt/v1",
+  "title": "Post-durable-commit authenticated journal HEAD receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "authentication_method",
+    "journal_id",
+    "run_id",
+    "package_transaction_id",
+    "package_event_hash",
+    "package_event_payload_sha256",
+    "predecessor_head",
+    "committed_head",
+    "package_presentation_sha256",
+    "journal_authority_identity",
+    "key_id",
+    "commit_stage",
+    "signing_digest_sha256",
+    "signature_ed25519_hex",
+    "receipt_sha256"
+  ],
+  "properties": {
+    "schema": { "const": "trellis-journal-commit-receipt/v1" },
+    "authentication_method": { "const": "journal_commit_signature_v1" },
+    "journal_id": { "$ref": "#/$defs/id" },
+    "run_id": { "$ref": "#/$defs/id" },
+    "package_transaction_id": { "$ref": "#/$defs/id" },
+    "package_event_hash": { "$ref": "#/$defs/hash" },
+    "package_event_payload_sha256": { "$ref": "#/$defs/hash" },
+    "predecessor_head": { "$ref": "#/$defs/head" },
+    "committed_head": { "$ref": "#/$defs/head" },
+    "package_presentation_sha256": { "$ref": "#/$defs/hash" },
+    "journal_authority_identity": { "$ref": "#/$defs/id" },
+    "key_id": { "$ref": "#/$defs/id" },
+    "commit_stage": { "const": "after_durable_head_install_v1" },
+    "signing_digest_sha256": { "$ref": "#/$defs/hash" },
+    "signature_ed25519_hex": { "type": "string", "pattern": "^[0-9a-f]{128}$" },
+    "receipt_sha256": { "$ref": "#/$defs/hash" }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "head": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["journal_id", "sequence_number", "event_hash"],
+      "properties": {
+        "journal_id": { "$ref": "#/$defs/id" },
+        "sequence_number": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+        "event_hash": { "$ref": "#/$defs/hash" }
+      }
+    }
+  }
+}

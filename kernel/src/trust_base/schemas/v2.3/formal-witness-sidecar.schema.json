@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trellis://schemas/formal-witness-sidecar/v1",
+  "title": "Machine-readable witness exported alongside a checked refutation theorem",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "target_id",
+    "target_statement_sha256",
+    "formal_predicate_sha256",
+    "witness_term",
+    "witness_term_sha256",
+    "witness_refutation_node_id",
+    "generated_witness_refutation_sha256",
+    "source_encoding_descriptor",
+    "sidecar_sha256"
+  ],
+  "properties": {
+    "schema": { "const": "trellis-formal-witness-sidecar/v1" },
+    "target_id": { "$ref": "#/$defs/id" },
+    "target_statement_sha256": { "$ref": "#/$defs/hash" },
+    "formal_predicate_sha256": { "$ref": "#/$defs/hash" },
+    "witness_term": {},
+    "witness_term_sha256": { "$ref": "#/$defs/hash" },
+    "witness_refutation_node_id": { "$ref": "#/$defs/id" },
+    "generated_witness_refutation_sha256": { "$ref": "#/$defs/hash" },
+    "source_encoding_descriptor": { "type": "object" },
+    "sidecar_sha256": { "$ref": "#/$defs/hash" }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 256 }
+  }
+}

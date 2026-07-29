@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trellis://schemas/independent-basis-derivation/v1",
+  "title": "Typed recursively validated provenance of one independent numeric basis",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "derivation_id",
+    "binder",
+    "binder_type",
+    "measure_id",
+    "measure_definition_sha256",
+    "fact_class_registry_id",
+    "fact_class_registry_sha256",
+    "units",
+    "comparison",
+    "scope",
+    "enforcement",
+    "derived_limit",
+    "root_node_id",
+    "nodes",
+    "registration_epoch",
+    "registration_predecessor_head_sha256",
+    "derivation_sha256"
+  ],
+  "properties": {
+    "schema": { "const": "trellis-independent-basis-derivation/v1" },
+    "derivation_id": { "$ref": "#/$defs/id" },
+    "binder": { "$ref": "#/$defs/id" },
+    "binder_type": { "$ref": "#/$defs/id" },
+    "measure_id": { "$ref": "#/$defs/id" },
+    "measure_definition_sha256": { "$ref": "#/$defs/hash" },
+    "fact_class_registry_id": { "$ref": "#/$defs/id" },
+    "fact_class_registry_sha256": { "$ref": "#/$defs/hash" },
+    "units": { "enum": ["bytes", "elements"] },
+    "comparison": { "enum": ["strictly_less_than", "less_than_or_equal"] },
+    "scope": { "enum": ["source", "configuration", "deployment", "host"] },
+    "enforcement": {
+      "enum": ["source_enforced", "configuration_enforced", "deployment_enforced", "observed"]
+    },
+    "derived_limit": { "$ref": "#/$defs/positiveNatural" },
+    "root_node_id": { "$ref": "#/$defs/id" },
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "oneOf": [
+          { "$ref": "#/$defs/factNode" },
+          { "$ref": "#/$defs/derivedNode" }
+        ]
+      }
+    },
+    "registration_epoch": { "const": "seed" },
+    "registration_predecessor_head_sha256": { "$ref": "#/$defs/hash" },
+    "derivation_sha256": { "$ref": "#/$defs/hash" }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "positiveNatural": { "type": "string", "pattern": "^[1-9][0-9]*$" },
+    "dependencyIds": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/id" }
+    },
+    "factNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "node_id",
+        "node_kind",
+        "dependency_node_ids",
+        "fact_class",
+        "fact_schema_id",
+        "fact_schema_sha256",
+        "fact_class_registry_entry_sha256",
+        "fact_content_sha256",
+        "fact_value",
+        "units",
+        "comparison",
+        "scope",
+        "enforcement",
+        "producer_identity",
+        "evidence_artifact_sha256",
+        "validity_interval_sha256",
+        "registration_epoch",
+        "node_sha256"
+      ],
+      "properties": {
+        "node_id": { "$ref": "#/$defs/id" },
+        "node_kind": { "const": "registered_fact" },
+        "dependency_node_ids": { "allOf": [{ "$ref": "#/$defs/dependencyIds" }, { "maxItems": 0 }] },
+        "fact_class": {
+          "enum": [
+            "source_limit",
+            "configuration_limit",
+            "deployment_limit",
+            "host_capability_limit",
+            "external_attestation_limit"
+          ]
+        },
+        "fact_schema_id": { "$ref": "#/$defs/id" },
+        "fact_schema_sha256": { "$ref": "#/$defs/hash" },
+        "fact_class_registry_entry_sha256": { "$ref": "#/$defs/hash" },
+        "fact_content_sha256": { "$ref": "#/$defs/hash" },
+        "fact_value": { "$ref": "#/$defs/positiveNatural" },
+        "units": { "enum": ["bytes", "elements"] },
+        "comparison": { "enum": ["strictly_less_than", "less_than_or_equal"] },
+        "scope": { "enum": ["source", "configuration", "deployment", "host"] },
+        "enforcement": {
+          "enum": ["source_enforced", "configuration_enforced", "deployment_enforced", "observed"]
+        },
+        "producer_identity": { "$ref": "#/$defs/id" },
+        "evidence_artifact_sha256": { "$ref": "#/$defs/hash" },
+        "fact_validator_sha256": { "$ref": "#/$defs/hash" },
+        "external_attestation_receipt_sha256": { "$ref": "#/$defs/hash" },
+        "external_attestation_authority_id": { "$ref": "#/$defs/id" },
+        "external_attestation_key_id": { "$ref": "#/$defs/id" },
+        "external_attestation_authorization_policy_sha256": { "$ref": "#/$defs/hash" },
+        "external_attestation_signing_digest_sha256": { "$ref": "#/$defs/hash" },
+        "external_attestation_signature_ed25519_hex": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{128}$"
+        },
+        "validity_interval_sha256": { "$ref": "#/$defs/hash" },
+        "registration_epoch": { "const": "seed" },
+        "node_sha256": { "$ref": "#/$defs/hash" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "fact_class": { "const": "external_attestation_limit" } } },
+          "then": {
+            "required": [
+              "external_attestation_receipt_sha256",
+              "external_attestation_authority_id",
+              "external_attestation_key_id",
+              "external_attestation_authorization_policy_sha256",
+              "external_attestation_signing_digest_sha256",
+              "external_attestation_signature_ed25519_hex"
+            ]
+          },
+          "else": { "required": ["fact_validator_sha256"] }
+        }
+      ]
+    },
+    "derivedNode": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "node_id",
+        "node_kind",
+        "dependency_node_ids",
+        "primitive",
+        "derived_value",
+        "units",
+        "comparison",
+        "scope",
+        "enforcement",
+        "derivation_validator_sha256",
+        "derivation_receipt_sha256",
+        "node_sha256"
+      ],
+      "properties": {
+        "node_id": { "$ref": "#/$defs/id" },
+        "node_kind": { "const": "derived" },
+        "dependency_node_ids": { "allOf": [{ "$ref": "#/$defs/dependencyIds" }, { "minItems": 1 }] },
+        "primitive": { "enum": ["identity_v1", "minimum_v1"] },
+        "derived_value": { "$ref": "#/$defs/positiveNatural" },
+        "units": { "enum": ["bytes", "elements"] },
+        "comparison": { "enum": ["strictly_less_than", "less_than_or_equal"] },
+        "scope": { "enum": ["source", "configuration", "deployment", "host"] },
+        "enforcement": {
+          "enum": ["source_enforced", "configuration_enforced", "deployment_enforced", "observed"]
+        },
+        "derivation_validator_sha256": { "$ref": "#/$defs/hash" },
+        "derivation_receipt_sha256": { "$ref": "#/$defs/hash" },
+        "node_sha256": { "$ref": "#/$defs/hash" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "primitive": { "const": "identity_v1" } }, "required": ["primitive"] },
+          "then": { "properties": { "dependency_node_ids": { "minItems": 1, "maxItems": 1 } } },
+          "else": { "properties": { "dependency_node_ids": { "minItems": 2 } } }
+        }
+      ]
+    }
+  }
+}

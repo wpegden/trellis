@@ -1,0 +1,39 @@
+---
+source: tests/runtime_cli_snapshots.rs
+expression: response
+---
+{
+  "output": {
+    "response": {
+      "cycle": 4,
+      "deviation_lane_updates": {
+        "v1": {}
+      },
+      "node_lane_updates": {
+        "v1": {}
+      },
+      "node_reviewer_evidence": {},
+      "request_id": 60,
+      "reviewer_evidence": {
+        "v1": {
+          "comments": "",
+          "overall": "APPROVE",
+          "paper_faithfulness": {
+            "decision": "PASS",
+            "issues": []
+          },
+          "summary": "Targets are faithful."
+        }
+      },
+      "status": "Ok",
+      "target_lane_updates": {
+        "v1": {
+          "t.main": {
+            "Set": "Pass"
+          }
+        }
+      }
+    }
+  },
+  "status": "normalize_paper_ok"
+}

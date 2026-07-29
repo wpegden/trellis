@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trellis://schemas/reflection-validation-result/v1",
+  "title": "Checked source-refutation reflection result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "target_id",
+    "source_claim_lineage_id",
+    "source_claim_lineage_sha256",
+    "validation_contract_sha256",
+    "rust_target_statement_sha256",
+    "model_target_statement_sha256",
+    "generated_implication_statement_sha256",
+    "checked_model_refutation_sha256",
+    "checked_reflection_proof_sha256",
+    "checker_toolchain_sha256",
+    "approved_axiom_closure_sha256",
+    "generated_source_refutation_statement_sha256",
+    "checked_source_refutation_proof_sha256",
+    "checker_execution_receipt",
+    "checker_execution_receipt_sha256",
+    "approval_closure_sha256",
+    "journal_predecessor_sha256",
+    "result_sha256"
+  ],
+  "properties": {
+    "schema": { "const": "trellis-reflection-validation-result/v1" },
+    "target_id": { "$ref": "#/$defs/id" },
+    "source_claim_lineage_id": { "$ref": "#/$defs/id" },
+    "source_claim_lineage_sha256": { "$ref": "#/$defs/hash" },
+    "validation_contract_sha256": { "$ref": "#/$defs/hash" },
+    "rust_target_statement_sha256": { "$ref": "#/$defs/hash" },
+    "model_target_statement_sha256": { "$ref": "#/$defs/hash" },
+    "generated_implication_statement_sha256": { "$ref": "#/$defs/hash" },
+    "checked_model_refutation_sha256": { "$ref": "#/$defs/hash" },
+    "checked_reflection_proof_sha256": { "$ref": "#/$defs/hash" },
+    "checker_toolchain_sha256": { "$ref": "#/$defs/hash" },
+    "approved_axiom_closure_sha256": { "$ref": "#/$defs/hash" },
+    "generated_source_refutation_statement_sha256": { "$ref": "#/$defs/hash" },
+    "checked_source_refutation_proof_sha256": { "$ref": "#/$defs/hash" },
+    "checker_execution_receipt": { "type": "object" },
+    "checker_execution_receipt_sha256": { "$ref": "#/$defs/hash" },
+    "approval_closure_sha256": { "$ref": "#/$defs/hash" },
+    "journal_predecessor_sha256": { "$ref": "#/$defs/hash" },
+    "result_sha256": { "$ref": "#/$defs/hash" }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 256 }
+  }
+}

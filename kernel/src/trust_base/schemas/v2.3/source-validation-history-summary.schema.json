@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trellis://schemas/source-validation-history-summary/v1",
+  "title": "Journal-derived source-validation dominance and blocker summary",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "target_id",
+    "target_statement_sha256",
+    "validation_contract_id",
+    "validation_contract_sha256",
+    "source_claim_lineage_id",
+    "source_claim_lineage_sha256",
+    "latest_result_hashes",
+    "decisive_source_refutation_present",
+    "source_model_mismatch_unresolved",
+    "cohort_blockers",
+    "language_inadmissibility_unresolved",
+    "contract_invalid",
+    "summarizer_id",
+    "summarizer_sha256",
+    "covered_journal_id",
+    "lineage_registration_sequence",
+    "covered_from_sequence",
+    "covered_through_sequence",
+    "covered_through_event_hash",
+    "coverage_root_sha256",
+    "journal_head_sha256",
+    "summary_derivation_sha256",
+    "summary_sha256"
+  ],
+  "properties": {
+    "schema": { "const": "trellis-source-validation-history-summary/v1" },
+    "target_id": { "$ref": "#/$defs/id" },
+    "target_statement_sha256": { "$ref": "#/$defs/hash" },
+    "validation_contract_id": { "$ref": "#/$defs/id" },
+    "validation_contract_sha256": { "$ref": "#/$defs/hash" },
+    "source_claim_lineage_id": { "$ref": "#/$defs/id" },
+    "source_claim_lineage_sha256": { "$ref": "#/$defs/hash" },
+    "latest_result_hashes": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/hash" }
+    },
+    "decisive_source_refutation_present": { "type": "boolean" },
+    "source_model_mismatch_unresolved": { "type": "boolean" },
+    "cohort_blockers": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/cohortBlocker" }
+    },
+    "language_inadmissibility_unresolved": { "type": "boolean" },
+    "contract_invalid": { "type": "boolean" },
+    "summarizer_id": { "$ref": "#/$defs/id" },
+    "summarizer_sha256": { "$ref": "#/$defs/hash" },
+    "covered_journal_id": { "$ref": "#/$defs/id" },
+    "lineage_registration_sequence": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "covered_from_sequence": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "covered_through_sequence": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "covered_through_event_hash": { "$ref": "#/$defs/hash" },
+    "coverage_root_sha256": { "$ref": "#/$defs/hash" },
+    "journal_head_sha256": { "$ref": "#/$defs/hash" },
+    "summary_derivation_sha256": { "$ref": "#/$defs/hash" },
+    "summary_sha256": { "$ref": "#/$defs/hash" }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "cohortBlocker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "harness_cohort_sha256",
+        "control_failed",
+        "harness_invalid",
+        "latest_blocking_result_sha256"
+      ],
+      "properties": {
+        "harness_cohort_sha256": { "$ref": "#/$defs/hash" },
+        "control_failed": { "type": "boolean" },
+        "harness_invalid": { "type": "boolean" },
+        "latest_blocking_result_sha256": { "$ref": "#/$defs/hash" }
+      }
+    }
+  }
+}

@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trellis://schemas/independent-basis/v1",
+  "title": "Canonical qualification and resource-scope basis",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "basis_id",
+    "target_id",
+    "target_statement_sha256",
+    "source_claim_lineage_id",
+    "source_claim_lineage_sha256",
+    "validation_contract_id",
+    "validation_contract_sha256",
+    "binder",
+    "binder_type",
+    "measure_id",
+    "measure_definition_sha256",
+    "units",
+    "comparison",
+    "limit",
+    "scope",
+    "enforcement",
+    "basis_derivation_id",
+    "basis_derivation_sha256",
+    "validity_interval_sha256",
+    "registration_epoch",
+    "registration_predecessor_head_sha256",
+    "basis_definition_sha256"
+  ],
+  "properties": {
+    "schema": { "const": "trellis-independent-basis/v1" },
+    "basis_id": { "$ref": "#/$defs/id" },
+    "target_id": { "$ref": "#/$defs/id" },
+    "target_statement_sha256": { "$ref": "#/$defs/hash" },
+    "source_claim_lineage_id": { "$ref": "#/$defs/id" },
+    "source_claim_lineage_sha256": { "$ref": "#/$defs/hash" },
+    "validation_contract_id": { "$ref": "#/$defs/id" },
+    "validation_contract_sha256": { "$ref": "#/$defs/hash" },
+    "binder": { "$ref": "#/$defs/id" },
+    "binder_type": { "$ref": "#/$defs/id" },
+    "measure_id": { "$ref": "#/$defs/id" },
+    "measure_definition_sha256": { "$ref": "#/$defs/hash" },
+    "units": { "enum": ["bytes", "elements"] },
+    "comparison": { "enum": ["strictly_less_than", "less_than_or_equal"] },
+    "limit": { "type": "string", "pattern": "^[1-9][0-9]*$" },
+    "scope": { "enum": ["source", "configuration", "deployment", "host"] },
+    "enforcement": {
+      "enum": ["source_enforced", "configuration_enforced", "deployment_enforced", "observed"]
+    },
+    "basis_derivation_id": { "$ref": "#/$defs/id" },
+    "basis_derivation_sha256": { "$ref": "#/$defs/hash" },
+    "validity_interval_sha256": { "$ref": "#/$defs/hash" },
+    "registration_epoch": { "const": "seed" },
+    "registration_predecessor_head_sha256": { "$ref": "#/$defs/hash" },
+    "basis_definition_sha256": { "$ref": "#/$defs/hash" }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 256 }
+  }
+}

@@ -1,0 +1,104 @@
+{
+  "_comment": "Public default Trellis config (codex provider). setup_repo.sh uses this template by default and rewrites repo_path, paper_tex_path, main-result targets, tmux session, and chat metadata for your project. To use a different provider, change the 'provider' fields below to 'claude' or 'gemini' (gemini also requires GEMINI_OAUTH_CLIENT_ID / GEMINI_OAUTH_CLIENT_SECRET in the environment). Replace placeholder values marked with REPLACE_ME if you write a config by hand instead of running setup_repo.sh.",
+  "repo_path": "REPLACE_ME/path/to/formalization/repo",
+  "goal_file": "GOAL.md",
+  "state_dir": ".trellis",
+  "policy_path": "trellis.policy.json",
+  "worker": {
+    "provider": "codex",
+    "model": "gpt-5.5",
+    "effort": "xhigh",
+    "label": "codex-xhigh"
+  },
+  "easy_worker": {
+    "provider": "codex",
+    "model": "gpt-5.5",
+    "effort": "xhigh",
+    "label": "codex-xhigh"
+  },
+  "hard_worker": {
+    "provider": "codex",
+    "model": "gpt-5.5",
+    "effort": "xhigh",
+    "label": "codex-xhigh"
+  },
+  "reviewer": {
+    "provider": "codex",
+    "model": "gpt-5.5",
+    "effort": "xhigh",
+    "label": "codex-xhigh"
+  },
+  "verification": {
+    "provider": "codex",
+    "model": "gpt-5.5",
+    "thinking_budget": "high",
+    "max_context_tokens": 50000,
+    "correspondence_agents": [
+      {
+        "provider": "codex",
+        "model": "gpt-5.5",
+        "effort": "xhigh",
+        "label": "codex-xhigh"
+      }
+    ],
+    "soundness_agents": [
+      {
+        "provider": "codex",
+        "model": "gpt-5.5",
+        "effort": "xhigh",
+        "label": "codex-xhigh"
+      }
+    ],
+    "substantiveness_agents": [
+      {
+        "provider": "codex",
+        "model": "gpt-5.5",
+        "effort": "xhigh",
+        "label": "codex-xhigh"
+      }
+    ]
+  },
+  "tmux": {
+    "session_name": "trellis",
+    "dashboard_window_name": "dashboard",
+    "kill_windows_after_capture": true
+  },
+  "sandbox": {
+    "enabled": true,
+    "backend": "bwrap"
+  },
+  "loogle": {
+    "enabled": false
+  },
+  "workflow": {
+    "start_phase": "theorem_stating",
+    "paper_tex_path": "paper/REPLACE_ME.tex",
+    "approved_axioms_path": "APPROVED_AXIOMS.json",
+    "allowed_import_prefixes": [
+      "Mathlib"
+    ],
+    "forbidden_keyword_allowlist": [],
+    "human_input_path": "HUMAN_INPUT.md",
+    "input_request_path": "INPUT_REQUEST.md",
+    "main_result_labels": [],
+    "main_result_targets": [],
+    "phase_overrides": {}
+  },
+  "chat": {
+    "root_dir": ".trellis/chats",
+    "repo_name": "trellis",
+    "project_name": "Trellis Formalization",
+    "public_base_url": ""
+  },
+  "git": {
+    "remote_url": null,
+    "remote_name": "origin",
+    "branch": "master",
+    "author_name": ".trellis",
+    "author_email": "trellis@localhost"
+  },
+  "max_cycles": 0,
+  "sleep_seconds": 1.0,
+  "startup_timeout_seconds": 120.0,
+  "burst_timeout_seconds": 14400.0
+}

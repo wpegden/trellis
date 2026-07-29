@@ -1,0 +1,196 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trellis://schemas/source-claim-lineage/v1",
+  "title": "Persistent semantic/source claim lineage for dominance",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "lineage_id",
+    "target_id",
+    "model_target_statement_sha256",
+    "rust_target_statement_sha256",
+    "source_claim_interpretation_sha256",
+    "normalized_claim_sha256",
+    "source_scope",
+    "source_tree_sha256",
+    "entry_point_semantics_sha256",
+    "precondition_manifest_sha256",
+    "refinement_semantics_sha256",
+    "build_semantics_sha256",
+    "concretization_erasure_semantics_sha256",
+    "source_observation_semantics_sha256",
+    "lineage_change_kind",
+    "registration_authority",
+    "registration_epoch",
+    "lineage_generator_id",
+    "lineage_generator_sha256",
+    "registration_predecessor_head_sha256",
+    "lineage_definition_sha256"
+  ],
+  "properties": {
+    "schema": { "const": "trellis-source-claim-lineage/v1" },
+    "lineage_id": { "$ref": "#/$defs/id" },
+    "target_id": { "$ref": "#/$defs/id" },
+    "model_target_statement_sha256": { "$ref": "#/$defs/hash" },
+    "rust_target_statement_sha256": { "$ref": "#/$defs/hash" },
+    "source_claim_interpretation_sha256": { "$ref": "#/$defs/hash" },
+    "normalized_claim_sha256": { "$ref": "#/$defs/hash" },
+    "source_scope": { "enum": ["adapted_source", "upstream_source_equivalent"] },
+    "source_tree_sha256": { "$ref": "#/$defs/hash" },
+    "entry_point_semantics_sha256": { "$ref": "#/$defs/hash" },
+    "precondition_manifest_sha256": { "$ref": "#/$defs/hash" },
+    "refinement_semantics_sha256": { "$ref": "#/$defs/hash" },
+    "build_semantics_sha256": { "$ref": "#/$defs/hash" },
+    "concretization_erasure_semantics_sha256": { "$ref": "#/$defs/hash" },
+    "source_observation_semantics_sha256": { "$ref": "#/$defs/hash" },
+    "lineage_change_kind": { "enum": ["initial_seed", "checked_semantic_revision"] },
+    "registration_authority": { "enum": ["seed_contract_v1", "audit_authorized_revision_v1"] },
+    "registration_epoch": { "enum": ["seed", "audit_revision"] },
+    "predecessor_lineage_sha256": { "$ref": "#/$defs/hash" },
+    "semantic_resolution_schema_id": {
+      "enum": [
+        "trellis.lineage.semantic_equivalence_v1",
+        "trellis.lineage.explicit_semantic_delta_v1"
+      ]
+    },
+    "semantic_resolution_generator_sha256": { "$ref": "#/$defs/hash" },
+    "semantic_resolution_statement_sha256": { "$ref": "#/$defs/hash" },
+    "checked_semantic_resolution_proof_sha256": { "$ref": "#/$defs/hash" },
+    "resolution_checker_toolchain_sha256": { "$ref": "#/$defs/hash" },
+    "resolution_axiom_closure_sha256": { "$ref": "#/$defs/hash" },
+    "resolution_derivation_receipt_sha256": { "$ref": "#/$defs/hash" },
+    "predecessor_event_resolutions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/predecessorEventResolution" }
+    },
+    "lineage_generator_id": { "$ref": "#/$defs/id" },
+    "lineage_generator_sha256": { "$ref": "#/$defs/hash" },
+    "authorization_id": { "$ref": "#/$defs/id" },
+    "authorization_event_hash": { "$ref": "#/$defs/hash" },
+    "revision_lane_id": { "$ref": "#/$defs/id" },
+    "registration_predecessor_head_sha256": { "$ref": "#/$defs/hash" },
+    "lineage_definition_sha256": { "$ref": "#/$defs/hash" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "lineage_change_kind": { "const": "checked_semantic_revision" } },
+        "required": ["lineage_change_kind"]
+      },
+      "then": {
+        "required": [
+          "registration_authority",
+          "registration_epoch",
+          "predecessor_lineage_sha256",
+          "semantic_resolution_schema_id",
+          "semantic_resolution_generator_sha256",
+          "semantic_resolution_statement_sha256",
+          "checked_semantic_resolution_proof_sha256",
+          "resolution_checker_toolchain_sha256",
+          "resolution_axiom_closure_sha256",
+          "resolution_derivation_receipt_sha256",
+          "predecessor_event_resolutions",
+          "authorization_id",
+          "authorization_event_hash",
+          "revision_lane_id"
+        ],
+        "properties": {
+          "registration_authority": { "const": "audit_authorized_revision_v1" },
+          "registration_epoch": { "const": "audit_revision" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "lineage_change_kind": { "const": "initial_seed" } },
+        "required": ["lineage_change_kind"]
+      },
+      "then": {
+        "required": ["registration_epoch"],
+        "properties": {
+          "registration_authority": { "const": "seed_contract_v1" },
+          "registration_epoch": { "const": "seed" }
+        },
+        "not": {
+          "anyOf": [
+            { "required": ["predecessor_lineage_sha256"] },
+            { "required": ["semantic_resolution_schema_id"] },
+            { "required": ["semantic_resolution_generator_sha256"] },
+            { "required": ["semantic_resolution_statement_sha256"] },
+            { "required": ["checked_semantic_resolution_proof_sha256"] },
+            { "required": ["resolution_checker_toolchain_sha256"] },
+            { "required": ["resolution_axiom_closure_sha256"] },
+            { "required": ["resolution_derivation_receipt_sha256"] },
+            { "required": ["predecessor_event_resolutions"] },
+            { "required": ["authorization_id"] },
+            { "required": ["authorization_event_hash"] },
+            { "required": ["revision_lane_id"] }
+          ]
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "predecessorEventResolution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["predecessor_event_hash", "prior_effect", "disposition"],
+      "properties": {
+        "predecessor_event_hash": { "$ref": "#/$defs/hash" },
+        "prior_effect": {
+          "enum": [
+            "decisive_source_refutation",
+            "unresolved_source_model_mismatch",
+            "unresolved_language_inadmissibility",
+            "invalid_contract"
+          ]
+        },
+        "disposition": { "enum": ["carry_forward", "checked_discharge"] },
+        "discharge_statement_schema_id": {
+          "enum": [
+            "trellis.lineage.new_precondition_excludes_witness_v1",
+            "trellis.lineage.corrected_observation_resolves_mismatch_v1",
+            "trellis.lineage.new_claim_satisfies_prior_witness_v1",
+            "trellis.lineage.corrected_contract_discharges_invalidity_v1"
+          ]
+        },
+        "generated_discharge_statement_sha256": { "$ref": "#/$defs/hash" },
+        "checked_discharge_proof_sha256": { "$ref": "#/$defs/hash" },
+        "checker_toolchain_sha256": { "$ref": "#/$defs/hash" },
+        "approved_axiom_closure_sha256": { "$ref": "#/$defs/hash" },
+        "derivation_receipt_sha256": { "$ref": "#/$defs/hash" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "disposition": { "const": "checked_discharge" } } },
+          "then": {
+            "required": [
+              "discharge_statement_schema_id",
+              "generated_discharge_statement_sha256",
+              "checked_discharge_proof_sha256",
+              "checker_toolchain_sha256",
+              "approved_axiom_closure_sha256",
+              "derivation_receipt_sha256"
+            ]
+          },
+          "else": {
+            "not": {
+              "anyOf": [
+                { "required": ["discharge_statement_schema_id"] },
+                { "required": ["generated_discharge_statement_sha256"] },
+                { "required": ["checked_discharge_proof_sha256"] },
+                { "required": ["checker_toolchain_sha256"] },
+                { "required": ["approved_axiom_closure_sha256"] },
+                { "required": ["derivation_receipt_sha256"] }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,21804 @@
+#[path = "../runtime_cli_observations.rs"]
+mod runtime_cli_observations;
+
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+use serde_json::Value;
+use std::collections::{BTreeMap, BTreeSet};
+use std::fs;
+use std::io::{self, Read};
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::time::Duration;
+
+use runtime_cli_observations::{
+    cleanup_preserving_step_result, current_tablet_node_names,
+    ensure_worker_checker_support_available, evaluate_node_observation,
+    evaluate_tablet_observation, evaluate_tablet_observation_with_roles,
+    final_cleanup_preserving_step_result, find_declaration, load_approved_axioms,
+    observe_correspondence_fingerprints_with_under_model_assumptions,
+    observe_deviation_fingerprints, observe_node, observe_sketch_proof_nodes,
+    observe_soundness_fingerprint_parts, observe_soundness_fingerprints, observe_tablet,
+    observe_tablet_nodes, observe_tablet_nodes_with_roles, observe_tablet_with_roles,
+    proof_worker_delta_step_result_with_under_model_assumptions, relevant_new_errors,
+    revision_statement_edit_scope_step_result, run_local_closure_axioms,
+    scoped_tablet_step_result_with_roles,
+    theorem_target_edit_scope_step_result_with_assumption_authoring,
+    validate_probe_present_nodes, validate_probe_present_nodes_with_seed_support,
+};
+use trellis_kernel::{
+    accept_worker_response, accept_worker_response_excluding, blocker_choice_ids, blocker_choices, diff_node_sets,
+    direct_deps_from_repo, extract_tex_statement_items, normalize_audit_response,
+    normalize_corr_response, normalize_node_lean_imports_on_disk, normalize_paper_response,
+    normalize_review_response, normalize_sound_response, observe_paper_faithfulness_fingerprints,
+    resolve_main_result_targets, snapshot_tablet_dir, sync_tablet_render_support_from_repo,
+    validate_correspondence_result_data, validate_deviation_authorization_result_data,
+    validate_paper_faithfulness_result_data, validate_soundness_result_data,
+    validate_substantiveness_result_data, validate_trellis_audit_result_data,
+    validate_trellis_reviewer_result_data, validate_trellis_stuck_math_audit_result_data,
+    validate_trellis_worker_result_data, validate_trellis_worker_result_data_with_allowed_outcomes,
+    ArtifactValidationOutput, AuditNormalizationInput, AxcheckStatus, CheckpointHookPayload,
+    CheckpointSink, CorrNormalizationInput, CorrNormalizationOutput, CorrResponse, CorrStatus,
+    DeviationRequest, ErrorSummary, HumanChoice, HumanGateResponse, HydrateWorkerResponseInput,
+    LegacyImportSummary, LocalClosureProbeOutput, LocalClosureRecord, NodeDifficulty, NodeId,
+    NodeKind, NoopCheckpointSink, PaperNormalizationInput, PaperNormalizationOutput, PaperResponse,
+    ProtocolState, RawAuditRequest, RawReviewPayload, RequestKind, ResolvedMainResultTargetsOutput,
+    ResponseStatus, RetryOutcomeKind, RevalidationBatch, ReviewNormalizationInput,
+    ReviewNormalizationOutput, ReviewResponse, RevisionImportSummary, RuntimeCheckpoint,
+    RuntimeMetadata, RuntimePaths, RuntimeStepOutcome, SoundNormalizationInput,
+    SoundNormalizationOutput, SoundResponse, StuckMathAuditResponse, SupervisorRuntime,
+    TabletSupportSyncOutput, TargetId, Update, WorkerAcceptanceInput, WorkerAcceptanceOutput,
+    WorkerGateObservationInput, WorkerNormalizationInput, WorkerNormalizationOutput, WorkerOutcome,
+    WorkerResponse, WorkerValidationExecutionPlanStep, WorkerValidationKind,
+    WorkerValidationStepResult, WrapperAdapter, WrapperRequest, WrapperResponse,
+    WrapperResponseMeta,
+};
+
+#[cfg(test)]
+static KERNEL_CACHE_ENV_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(test)]
+fn kernel_cache_env_test_guard() -> std::sync::MutexGuard<'static, ()> {
+    KERNEL_CACHE_ENV_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|err| err.into_inner())
+}
+
+#[cfg(not(test))]
+fn kernel_cache_env_test_guard() {}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "action", rename_all = "snake_case")]
+enum RuntimeCliRequest {
+    Init {
+        root: PathBuf,
+        state: ProtocolState,
+        metadata: Option<RuntimeMetadata>,
+    },
+    InitFromConfig {
+        root: PathBuf,
+        config_path: PathBuf,
+    },
+    ImportLegacy {
+        root: PathBuf,
+        config_path: PathBuf,
+        state_path: Option<PathBuf>,
+        tablet_path: Option<PathBuf>,
+    },
+    /// Revision-mode import (`revision_plan.md` §5, §13). Builds the initial
+    /// `RevisionStating` `ProtocolState` from an existing tablet: hydrates the
+    /// prior run's full `ProtocolState` (the v1 `full_state` path — decision
+    /// 4), diffs old vs new paper, inherits prior corr/sound/paper approvals,
+    /// re-baselines substantiveness against the new paper, and computes the
+    /// frozen/editable node sets. `config_path` supplies `repo_path` and the
+    /// `workflow.paper_tex_path` invariant (which MUST equal `new_paper_tex_path`).
+    ImportRevisionProject {
+        root: PathBuf,
+        config_path: PathBuf,
+        full_state_path: PathBuf,
+        old_paper_tex_path: PathBuf,
+        new_paper_tex_path: PathBuf,
+        #[serde(default)]
+        old_source_id: String,
+        #[serde(default)]
+        new_source_id: String,
+        #[serde(default)]
+        target_map: Option<serde_json::Value>,
+    },
+    ResolveMainResultTargets {
+        paper_path: Option<PathBuf>,
+        raw_targets: Option<serde_json::Value>,
+        raw_labels: Option<serde_json::Value>,
+    },
+    /// Offline PV maintenance. (Re)writes the `extraction_provenance` section
+    /// of the run repo's `tcb_manifest.json` from the config's `pv_tablet`
+    /// block (toolchain pins + extractor stack + deduped model source
+    /// digests). Touches NO runtime state — no `root`, no event log, no
+    /// checkpoint — so it is safe against a live run. The same writer runs at
+    /// Init/InitFromConfig; this action exists to refresh a manifest generated
+    /// before the section existed (or after a config pin edit) without
+    /// re-initializing.
+    RefreshTcbExtractionProvenance { config_path: PathBuf },
+    /// Add-targets mode (offline). Appends NEW paper targets — tex labels
+    /// from the SAME paper, freshly appended by the operator to
+    /// `workflow.main_result_labels` in the run config — to a COMPLETED run
+    /// (`Phase::Complete` after Cleanup) and revives it into the existing
+    /// `RevisionStating` phase with the revision planner seeded, all prior
+    /// approvals byte-untouched and the cycle/event-log continuous. Also
+    /// re-resolves the union label list against the configured paper and
+    /// rewrites `workflow.main_result_targets` in the config (committing the
+    /// rewrite in the run repo's git when possible — checkpoint
+    /// `reset --hard` reverts uncommitted config edits). Operator flow +
+    /// preconditions: see `ADD_TARGETS.md`.
+    AddPaperTargets {
+        root: PathBuf,
+        config_path: PathBuf,
+    },
+    /// Reference-papers mode (offline). Syncs every `workflow.reference_papers`
+    /// config entry missing from the persisted state registry into
+    /// `ProtocolState.configured_reference_papers`. Preconditions: any
+    /// QUIESCENT state (no in-flight request, no pending worker task, no
+    /// active human gate) — deliberately NOT Complete-only, so it composes
+    /// with `add_paper_targets` in either order (e.g. against a revived
+    /// RevisionStating state). Duplicate id (config spec differs from the
+    /// state's) is rejected; a missing/empty reference file is rejected;
+    /// an identical re-add is an idempotent no-op. Asserts
+    /// state-registry ⊆ config-registry on invocation. Mutates ONLY
+    /// `configured_reference_papers`; persists. Operator flow:
+    /// `scripts/add_reference_paper.sh` + REFERENCE_PAPERS.md.
+    AddReferencePaper {
+        root: PathBuf,
+        config_path: PathBuf,
+    },
+    /// Reference-papers removal — REJECT-ONLY in v1. Rejects with the
+    /// claiming node list while any node claims the id, and rejects as
+    /// unsupported otherwise (there is no state-mutation removal path).
+    RemoveReferencePaper {
+        root: PathBuf,
+        id: String,
+    },
+    NormalizeWorker {
+        input: WorkerNormalizationInput,
+    },
+    ValidateTrellisWorkerResult {
+        raw_payload: serde_json::Value,
+        #[serde(default)]
+        acceptance_context: Option<serde_json::Value>,
+    },
+    ValidateTrellisReviewerResult {
+        raw_payload: serde_json::Value,
+    },
+    /// Cleanup-v2 (audit Finding 1): shape-validate a `cleanup_audit_result_v1`
+    /// artifact (the audit-burst JSON envelope).
+    ValidateTrellisAuditResult {
+        raw_payload: serde_json::Value,
+    },
+    ValidateTrellisStuckMathAuditResult {
+        raw_payload: serde_json::Value,
+    },
+    BuildMalformedResponse {
+        kind: RequestKind,
+        request_id: u32,
+        cycle: u32,
+    },
+    ValidatePaperFaithfulnessResult {
+        raw_payload: serde_json::Value,
+    },
+    ValidateDeviationAuthorizationResult {
+        raw_payload: serde_json::Value,
+    },
+    ValidateSubstantivenessResult {
+        raw_payload: serde_json::Value,
+    },
+    ValidateCorrespondenceResult {
+        raw_payload: serde_json::Value,
+    },
+    ValidateSoundnessResult {
+        raw_payload: serde_json::Value,
+        node_name: String,
+    },
+    CheckTrellisWorkerResult {
+        repo_path: PathBuf,
+        acceptance_context: serde_json::Value,
+        raw_payload: serde_json::Value,
+    },
+    HydrateWorkerResponse {
+        input: HydrateWorkerResponseInput,
+    },
+    CheckTrellisReviewerResult {
+        review_request: serde_json::Value,
+        raw_payload: serde_json::Value,
+    },
+    /// Cleanup-v2 (audit Finding 1): one-shot validate+normalize for the
+    /// audit-burst artifact, parallel to `CheckTrellisReviewerResult`.
+    CheckTrellisAuditResult {
+        audit_request: serde_json::Value,
+        raw_payload: serde_json::Value,
+    },
+    CheckTrellisStuckMathAuditResult {
+        audit_request: serde_json::Value,
+        raw_payload: serde_json::Value,
+        /// Process memory: repo worktree for the entry-existence/status
+        /// half of `memory_operations` validation. Optional for
+        /// back-compat; payloads carrying memory operations are rejected
+        /// when it is absent (fail closed).
+        #[serde(default)]
+        repo_path: Option<PathBuf>,
+    },
+    CheckNode {
+        repo_path: PathBuf,
+        node_name: String,
+        expected_hash: Option<String>,
+    },
+    CheckTablet {
+        repo_path: PathBuf,
+    },
+    SyncTabletSupport {
+        repo_path: PathBuf,
+    },
+    ObserveSoundnessFingerprints {
+        repo_path: PathBuf,
+        #[serde(default)]
+        nodes: BTreeSet<NodeId>,
+    },
+    CheckTabletScoped {
+        repo_path: PathBuf,
+        #[serde(default)]
+        baseline_errors: Vec<String>,
+        #[serde(default)]
+        allowed_nodes: BTreeSet<NodeId>,
+    },
+    PrepareWorkerGate {
+        repo_path: PathBuf,
+        request: WrapperRequest,
+        collect_observations: Option<bool>,
+        /// Path to the configured paper.tex (relative to repo_path or
+        /// absolute). Drives the substantiveness fingerprint's
+        /// `paper_source_sha` field. When unset, the lane remains active
+        /// via the own_tex + node_kind reopen triggers, but paper edits
+        /// will not reopen substantiveness on any node — i.e. the
+        /// paper-edit reopen defence is a no-op for that hydration cycle.
+        #[serde(default)]
+        paper_source_path: Option<PathBuf>,
+    },
+    ExecuteWorkerValidationPlan {
+        input: ExecuteWorkerValidationPlanInput,
+    },
+    NormalizeCorr {
+        input: CorrNormalizationInput,
+    },
+    NormalizePaper {
+        input: PaperNormalizationInput,
+    },
+    NormalizeSound {
+        input: SoundNormalizationInput,
+    },
+    NormalizeReview {
+        input: ReviewNormalizationInput,
+    },
+    NormalizeHumanGate {
+        request_id: u32,
+        cycle: u32,
+        raw_payload_text: String,
+    },
+    /// Pure-action snapshot probe for the kernel-rendered
+    /// `worker_blocker_status_block`. Echoes the rendered Markdown body and
+    /// the structured sidecar payload (when overflow) without writing the
+    /// sidecar to disk — see `request_contracts::worker_blocker_status_block`.
+    WorkerBlockerStatusBlock {
+        request: WrapperRequest,
+    },
+    /// Pure-action snapshot probe for the kernel-rendered
+    /// `review_blocker_choices_block`. Echoes the rendered Markdown body and
+    /// the structured sidecar payload (when overflow); bridge owns sidecar
+    /// IO and placeholder substitution — see
+    /// `request_contracts::review_blocker_choices_block`.
+    ReviewBlockerChoicesBlock {
+        request: WrapperRequest,
+    },
+    AcceptWorker {
+        input: WorkerAcceptanceInput,
+    },
+    CurrentRequest {
+        root: PathBuf,
+    },
+    Show {
+        root: PathBuf,
+    },
+    Step {
+        root: PathBuf,
+        response: Option<WrapperResponse>,
+    },
+    Run {
+        root: PathBuf,
+        max_steps: Option<u32>,
+    },
+    BridgeRequestPayload {
+        repo_path: PathBuf,
+        request: WrapperRequest,
+    },
+    ReplayToEventCount {
+        root: PathBuf,
+        stop_after_event_count: u64,
+        #[serde(default)]
+        dry_run_state_path: Option<PathBuf>,
+        #[serde(default)]
+        seed_checkpoint_path: Option<PathBuf>,
+    },
+    /// One-shot migration: split the legacy monolithic
+    /// `<runtime>/event_log.jsonl` into per-cycle files under
+    /// `<repo>/.trellis-history/event-log/`. Copies RAW line bytes (never
+    /// re-serializes) so byte identity is guaranteed, then verifies line
+    /// count, index density, cycle monotonicity/contiguity, byte-identity of
+    /// the in-order concatenation against the monolith, and total ==
+    /// supervisor_state event_count+1 (accepting == max_index+1 when a dirty
+    /// uncheckpointed tail is present). Idempotent: an existing dir that
+    /// verifies is a no-op; a mismatch fails loud and refuses to overwrite.
+    SegmentEventLog {
+        /// Runtime root holding the legacy `event_log.jsonl` monolith.
+        runtime: PathBuf,
+        /// Repo whose `.trellis-history/event-log/` receives the split files.
+        repo: PathBuf,
+        #[serde(default)]
+        dry_run: bool,
+    },
+    /// Audit followup #2 (Problem B): bridge-side relaunch after a
+    /// supervisor restart needs to restore the worker repo's `Tablet/`
+    /// to the captured `active_worker_base` snapshot before rebuilding
+    /// the acceptance context. The in-flight request determines whether
+    /// a worker is in flight; the snapshot directory determines whether
+    /// there's anything to restore. No-op when either is absent.
+    RestoreActiveWorkerBase {
+        root: PathBuf,
+    },
+    /// Audit M-3 — controlled clear path for the checker-disagreement
+    /// halt marker. Previously, the only way to clear was `rm` the JSON
+    /// file directly; this command adds an auditable workflow with three
+    /// modes:
+    ///   * No flags + no probe → refused; operator must supply a probe
+    ///     result or use --force.
+    ///   * Probe supplied with `axcheck.agreed=true` → cleared (the
+    ///     disagreement is resolved per re-observation).
+    ///   * `force=true` → cleared unconditionally (operator-asserted
+    ///     override; logged as such in the history file).
+    /// Every attempt is logged to `<runtime_root>/halt_history/ack_log.jsonl`
+    /// with timestamp + reason so an operator audit trail survives.
+    AckHaltMarker {
+        root: PathBuf,
+        /// Operator-supplied free-text reason for the ack attempt; written
+        /// verbatim to the history line.
+        reason: String,
+        /// Operator override flag; clears the marker unconditionally.
+        #[serde(default)]
+        force: bool,
+        /// Optional re-observed probe result. When supplied, the kernel
+        /// inspects `axcheck.agreed` + `status` + `errors` to decide
+        /// whether the disagreement is resolved.
+        #[serde(default)]
+        probe_result: Option<LocalClosureProbeOutput>,
+    },
+    /// Operator affordance — acknowledge a `system_feedback` FINGERPRINT so
+    /// its recurrences log-and-continue instead of hard-halting. Mirrors
+    /// `AckHaltMarker` but for the design-gap-class ack store rather than a
+    /// single marker file. Acks are strictly per-fingerprint; any novel
+    /// feedback still halts. The fingerprint is copied verbatim from the
+    /// `fingerprint` field of the `system_feedback_halt.json` marker.
+    AckSystemFeedback {
+        root: PathBuf,
+        /// The stable fingerprint to acknowledge (from the halt marker).
+        fingerprint: String,
+        /// Operator-supplied free-text reason, recorded in the ack store
+        /// and the halt-history audit log.
+        reason: String,
+        /// Optional verbatim sample of the feedback text, stored alongside
+        /// the fingerprint for later human review.
+        #[serde(default)]
+        sample_feedback: String,
+    },
+}
+
+#[derive(Debug, Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+enum RuntimeCliResponse {
+    Ok {
+        state: ProtocolState,
+        metadata: RuntimeMetadata,
+        outcome: Option<RuntimeStepOutcome>,
+        checkpoint: Option<RuntimeCheckpoint>,
+        event_count: u64,
+        steps_executed: u32,
+        import_summary: Option<LegacyImportSummary>,
+    },
+    ResolveMainResultTargetsOk {
+        output: ResolvedMainResultTargetsOutput,
+    },
+    /// Response for `RuntimeCliRequest::RefreshTcbExtractionProvenance`.
+    /// `updated=false` = the manifest already carried the identical section
+    /// (idempotent no-op).
+    RefreshTcbExtractionProvenanceOk {
+        manifest_path: PathBuf,
+        updated: bool,
+    },
+    /// Response for `RuntimeCliRequest::ImportRevisionProject`. Mirrors the
+    /// `Ok` shape (the freshly persisted runtime state) plus the revision
+    /// import summary (`revision_plan.md` §13).
+    ImportRevisionProjectOk {
+        state: ProtocolState,
+        metadata: RuntimeMetadata,
+        checkpoint: Option<RuntimeCheckpoint>,
+        event_count: u64,
+        summary: RevisionImportSummary,
+    },
+    /// Response for `RuntimeCliRequest::AddPaperTargets`: the persisted
+    /// revived state plus the add-targets summary and LOUD operator notes
+    /// (config git-commit outcome, A/B-template divergence warnings).
+    AddPaperTargetsOk {
+        state: ProtocolState,
+        metadata: RuntimeMetadata,
+        event_count: u64,
+        summary: trellis_kernel::add_targets::AddTargetsSummary,
+        notes: Vec<String>,
+    },
+    /// Response for `RuntimeCliRequest::AddReferencePaper`: the persisted
+    /// state plus the newly added ids and LOUD operator notes (A/B-template
+    /// divergence warning). `added` empty = idempotent no-op re-add.
+    AddReferencePaperOk {
+        state: ProtocolState,
+        metadata: RuntimeMetadata,
+        event_count: u64,
+        added: Vec<trellis_kernel::RefPaperId>,
+        notes: Vec<String>,
+    },
+    NormalizeWorkerOk {
+        output: WorkerNormalizationOutput,
+    },
+    ValidateTrellisWorkerResultOk {
+        output: ArtifactValidationOutput,
+    },
+    ValidateTrellisReviewerResultOk {
+        output: ArtifactValidationOutput,
+    },
+    /// Cleanup-v2 (audit Finding 1): response variant for
+    /// `ValidateTrellisAuditResult`.
+    ValidateTrellisAuditResultOk {
+        output: ArtifactValidationOutput,
+    },
+    ValidateTrellisStuckMathAuditResultOk {
+        output: ArtifactValidationOutput,
+    },
+    BuildMalformedResponseOk {
+        output: WrapperResponse,
+    },
+    ValidatePaperFaithfulnessResultOk {
+        output: ArtifactValidationOutput,
+    },
+    ValidateDeviationAuthorizationResultOk {
+        output: ArtifactValidationOutput,
+    },
+    ValidateSubstantivenessResultOk {
+        output: ArtifactValidationOutput,
+    },
+    ValidateCorrespondenceResultOk {
+        output: ArtifactValidationOutput,
+    },
+    ValidateSoundnessResultOk {
+        output: ArtifactValidationOutput,
+    },
+    CheckTrellisWorkerResultOk {
+        output: CheckedTrellisWorkerResultOutput,
+    },
+    HydrateWorkerResponseOk {
+        output: HydratedWorkerResponseOutput,
+    },
+    CheckTrellisReviewerResultOk {
+        output: CheckedTrellisReviewerResultOutput,
+    },
+    /// Cleanup-v2 (audit Finding 1): response variant for
+    /// `CheckTrellisAuditResult`.
+    CheckTrellisAuditResultOk {
+        output: CheckedTrellisAuditResultOutput,
+    },
+    CheckTrellisStuckMathAuditResultOk {
+        output: CheckedTrellisAuditResultOutput,
+    },
+    CheckNodeOk {
+        output: runtime_cli_observations::EvaluatedNode,
+    },
+    CheckTabletOk {
+        output: runtime_cli_observations::EvaluatedTablet,
+    },
+    SyncTabletSupportOk {
+        output: TabletSupportSyncOutput,
+    },
+    ObserveSoundnessFingerprintsOk {
+        output: BTreeMap<NodeId, String>,
+    },
+    CheckTabletScopedOk {
+        output: ScopedTabletCheckOutput,
+    },
+    PrepareWorkerGateOk {
+        output: PreparedWorkerGateOutput,
+    },
+    ExecuteWorkerValidationPlanOk {
+        output: ExecutedWorkerValidationPlanOutput,
+    },
+    NormalizeCorrOk {
+        output: CorrNormalizationOutput,
+    },
+    NormalizePaperOk {
+        output: PaperNormalizationOutput,
+    },
+    NormalizeSoundOk {
+        output: SoundNormalizationOutput,
+    },
+    NormalizeReviewOk {
+        output: ReviewNormalizationOutput,
+    },
+    NormalizeHumanGateOk {
+        output: WrapperResponse,
+        /// Gate-response freshness (Defect 1). `false` means the on-disk
+        /// `human_gate_response.json` carried no `cycle` stamp, or a stamp
+        /// that does not match the in-flight gate's cycle (a stale response
+        /// left over from an earlier gate). The bridge MUST treat a
+        /// non-fresh result as "no response yet" and keep blocking/polling,
+        /// and MUST NOT consume (delete) the file. A fresh result authorizes
+        /// the bridge to consume the file so it cannot be re-used.
+        fresh: bool,
+    },
+    /// Pure-action snapshot probe response for
+    /// `RuntimeCliRequest::WorkerBlockerStatusBlock`.
+    WorkerBlockerStatusBlockOk {
+        output: trellis_kernel::WorkerBlockerStatusBlock,
+    },
+    /// Pure-action snapshot probe response for
+    /// `RuntimeCliRequest::ReviewBlockerChoicesBlock`.
+    ReviewBlockerChoicesBlockOk {
+        output: trellis_kernel::ReviewBlockerChoicesBlock,
+    },
+    AcceptWorkerOk {
+        output: WorkerAcceptanceOutput,
+    },
+    BridgeRequestPayloadOk {
+        payload: serde_json::Value,
+    },
+    CurrentRequestOk {
+        request: serde_json::Value,
+        metadata: RuntimeMetadata,
+    },
+    ReplayToEventCountOk {
+        event_count_applied: u64,
+        cycle: u32,
+        stage: String,
+        in_flight_kind: Option<String>,
+        in_flight_id: Option<u32>,
+        state_path: PathBuf,
+        log_truncated: bool,
+        repo_reset_to_tag: Option<String>,
+        repo_reset_error: Option<String>,
+    },
+    SegmentEventLogOk {
+        output: SegmentEventLogOutput,
+    },
+    RestoreActiveWorkerBaseOk {
+        restored: bool,
+    },
+    /// Audit M-3 — response for `RuntimeCliRequest::AckHaltMarker`.
+    /// Surfaces the structured outcome so callers (operator CLIs,
+    /// supervisor scripts) can branch on whether the marker was cleared
+    /// or refused.
+    AckHaltMarkerOk {
+        outcome: trellis_kernel::runtime_cli_observations_halt::HaltMarkerAckOutcome,
+    },
+    /// Response for `RuntimeCliRequest::AckSystemFeedback`. Surfaces the
+    /// structured result (whether the fingerprint was newly added, the new
+    /// total, and whether a currently-present halt was cleared).
+    AckSystemFeedbackOk {
+        result: trellis_kernel::runtime_cli_observations_halt::SystemFeedbackAckResult,
+    },
+    Error {
+        message: String,
+    },
+    InvalidRequest {
+        message: String,
+    },
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct PreparedWorkerGateOutput {
+    request: serde_json::Value,
+    validation_kind: String,
+    worker_acceptance: serde_json::Value,
+    active_node: String,
+    held_target: String,
+    authorized_nodes: std::collections::BTreeSet<NodeId>,
+    configured_targets: std::collections::BTreeSet<TargetId>,
+    current_present_nodes: std::collections::BTreeSet<NodeId>,
+    current_proof_nodes: std::collections::BTreeSet<NodeId>,
+    current_deps: std::collections::BTreeMap<NodeId, std::collections::BTreeSet<NodeId>>,
+    current_target_claims: std::collections::BTreeMap<NodeId, std::collections::BTreeSet<TargetId>>,
+    #[serde(default)]
+    current_deviation_files: std::collections::BTreeMap<trellis_kernel::DeviationId, String>,
+    #[serde(default)]
+    current_node_deviation_claims:
+        std::collections::BTreeMap<NodeId, std::collections::BTreeSet<trellis_kernel::DeviationId>>,
+    /// Reference-paper registry (id -> spec) threaded from the request
+    /// (state-carried), feeding the unknown-id contract check and the
+    /// post-worker fingerprint hydration (claimed_reference_shas).
+    #[serde(default)]
+    configured_reference_papers: std::collections::BTreeMap<
+        trellis_kernel::RefPaperId,
+        trellis_kernel::ReferencePaperSpec,
+    >,
+    /// Current kernel `node_reference_grounds` at the moment the worker
+    /// burst was issued.
+    #[serde(default)]
+    current_node_reference_grounds: std::collections::BTreeMap<
+        NodeId,
+        std::collections::BTreeSet<trellis_kernel::RefPaperId>,
+    >,
+    #[serde(default)]
+    current_paper_approved_fingerprints: std::collections::BTreeMap<TargetId, String>,
+    // Paper-target-covering node set + their approved correspondence
+    // fingerprints (JSON-encoded CorrespondenceFingerprint), feeding the
+    // commit-time paper_target_corr_reopen_guard_errors check. See
+    // `ExecuteWorkerValidationPlanInput` for details.
+    #[serde(default)]
+    approved_target_nodes: std::collections::BTreeSet<NodeId>,
+    #[serde(default)]
+    approved_corr_fingerprints: std::collections::BTreeMap<NodeId, String>,
+    #[serde(default)]
+    coarse_dag_nodes: std::collections::BTreeSet<NodeId>,
+    /// Challenge registry + live claims, threaded from the request so
+    /// the acceptance pipeline can run the kernel byte-conformance
+    /// check (`challenge_conformance_errors`). Empty for paper-only
+    /// runs and legacy payloads.
+    #[serde(default)]
+    configured_challenge_targets: std::collections::BTreeMap<
+        trellis_kernel::ChallengeTargetId,
+        trellis_kernel::ChallengeTargetSpec,
+    >,
+    #[serde(default)]
+    current_challenge_claims: std::collections::BTreeMap<
+        NodeId,
+        std::collections::BTreeSet<trellis_kernel::ChallengeTargetId>,
+    >,
+    /// PV Phase 2: the present nodes carrying `PvRole::ExtractionModel`,
+    /// derived from `request.node_role`. Threads the role signal into the
+    /// acceptance pipeline so the `extraction_chain` gate
+    /// (`extraction_chain_errors`) can fail CLOSED on an empty source/toolchain
+    /// for an ExtractionModel node. Empty for all-math / non-PV runs ⇒ the gate
+    /// is a no-op (the all-math acceptance path is byte-identical).
+    #[serde(default)]
+    extraction_model_nodes: std::collections::BTreeSet<NodeId>,
+    /// PV role map from the request. Empty for all-math / non-PV runs; when
+    /// present it lets scoped-tablet validation apply role-specific node
+    /// contracts instead of ordinary FILESPEC semantics.
+    #[serde(default)]
+    node_role: std::collections::BTreeMap<NodeId, trellis_kernel::PvRole>,
+    /// PV under-model assumption staging nodes, derived from `request.node_role`
+    /// and gated by `request.is_pv`. Empty for all-math / non-PV runs, so a
+    /// coincidentally named ordinary node `Assumptions` is treated normally.
+    #[serde(default)]
+    under_model_assumption_nodes: std::collections::BTreeSet<NodeId>,
+    /// The single Assumptions node eligible for the staged-axiom authoring
+    /// exemption in this worker burst. This is populated only for an actual
+    /// PV assumption-authoring request.
+    #[serde(default)]
+    assumption_authoring_node: Option<NodeId>,
+    #[serde(default)]
+    current_coverage: std::collections::BTreeMap<TargetId, std::collections::BTreeSet<NodeId>>,
+    #[serde(default)]
+    current_paper_current_fingerprints: std::collections::BTreeMap<TargetId, String>,
+    repo_path: String,
+    before_snapshot: std::collections::BTreeMap<String, String>,
+    #[serde(default)]
+    before_tablet_contents: std::collections::BTreeMap<String, String>,
+    baseline_errors: Vec<String>,
+    imports_before: Vec<String>,
+    expected_active_hash: String,
+    baseline_declaration_hashes: std::collections::BTreeMap<NodeId, String>,
+    baseline_correspondence_hashes: std::collections::BTreeMap<NodeId, String>,
+    /// Optional path to the configured paper file (relative to
+    /// `repo_path` or absolute). Drives the substantiveness
+    /// fingerprint's `paper_source_sha` field. When unset, the lane
+    /// remains active via own_tex + node_kind reopen triggers, but
+    /// paper edits will not reopen substantiveness on any node — the
+    /// paper-edit reopen defence is a no-op for the cycle.
+    #[serde(default)]
+    paper_source_path: Option<PathBuf>,
+    /// Node kinds at the time the gate was prepared. Used to populate
+    /// the `node_kind` field in the substantiveness fingerprint during
+    /// post-worker hydration.
+    #[serde(default)]
+    current_node_kinds: std::collections::BTreeMap<NodeId, trellis_kernel::NodeKind>,
+    /// Patch C-R: pre-delta `live.open_nodes` snapshot captured by
+    /// `prepare_worker_gate_output` via `open_nodes_from_repo`. Threaded
+    /// into `ExecuteWorkerValidationPlanInput` so the helper-probe loop
+    /// in `proof_worker_delta_step_result` can detect sorryd→sorry-free
+    /// transitions for non-active proof_nodes. Empty default keeps
+    /// pre-Patch-C-R replays compatible — empty causes the helper-probe
+    /// loop to fire on new births only (the existing MCA-active-node
+    /// coverage is unchanged either way).
+    #[serde(default)]
+    current_open_nodes: std::collections::BTreeSet<NodeId>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ExecuteWorkerValidationPlanInput {
+    repo_path: PathBuf,
+    active_node: Option<NodeId>,
+    #[serde(default)]
+    before_snapshot: BTreeMap<String, String>,
+    #[serde(default)]
+    before_tablet_contents: BTreeMap<String, String>,
+    #[serde(default)]
+    baseline_errors: Vec<String>,
+    #[serde(default)]
+    expected_active_hash: String,
+    #[serde(default)]
+    baseline_declaration_hashes: BTreeMap<NodeId, String>,
+    #[serde(default)]
+    baseline_correspondence_hashes: BTreeMap<NodeId, String>,
+    #[serde(default)]
+    current_present_nodes: BTreeSet<NodeId>,
+    /// Kernel-owned on-disk carriers which are not ordinary theorem nodes.
+    /// They are removed from every disk-expanded worker scope.
+    #[serde(default)]
+    reserved_non_node_stems: BTreeSet<NodeId>,
+    /// Evidence-authenticated definition carriers which may appear in strict
+    /// local closure despite remaining outside `current_present_nodes`.
+    #[serde(default)]
+    seed_support_definition_nodes: BTreeSet<NodeId>,
+    #[serde(default)]
+    declared_deleted_nodes: BTreeSet<NodeId>,
+    /// Patch C-N item 1: node-kind map (NodeId → NodeKind) used by the
+    /// local-closure probe dep-kind validator inside
+    /// `proof_worker_delta_step_result`. Defaults to empty for
+    /// back-compat with standalone `ExecuteWorkerValidationPlan`
+    /// requests that don't supply kinds; an empty map causes the
+    /// validator to skip the kind refinement (membership-only check
+    /// still fires), matching the pre-Patch-C-N behavior. The
+    /// acceptance path always populates this from
+    /// `WorkerAcceptanceContext.current_node_kinds`.
+    #[serde(default)]
+    current_node_kinds: BTreeMap<NodeId, trellis_kernel::NodeKind>,
+    /// Patch C-R: pre-delta `live.open_nodes` snapshot (the kernel's
+    /// authoritative sorryd set BEFORE this worker burst). Threaded
+    /// through to `proof_worker_delta_step_result` so the helper-probe
+    /// loop can identify sorryd→sorry-free transitions for non-active
+    /// proof_nodes (new helper births + restructure-mode helper
+    /// closes). `prepare_worker_gate_output` populates this from disk
+    /// via `open_nodes_from_repo`. Empty default is back-compat with
+    /// pre-Patch-C-R serialized payloads — empty means "no pre-delta
+    /// open set known", which causes the helper-probe loop to fire on
+    /// new births only (a strict subset of the post-patch behaviour;
+    /// existing MCA-active-node coverage is unaffected).
+    #[serde(default)]
+    current_open_nodes: BTreeSet<NodeId>,
+    #[serde(default)]
+    configured_targets: BTreeSet<TargetId>,
+    #[serde(default)]
+    current_deps: BTreeMap<NodeId, BTreeSet<NodeId>>,
+    #[serde(default)]
+    current_target_claims: BTreeMap<NodeId, BTreeSet<TargetId>>,
+    // New fields feeding `paper_target_corr_reopen_guard_errors`. Populated
+    // from the kernel's `state.approved_target_nodes()` and the subset of
+    // `state.corr_approved_fingerprints` keyed by those nodes. When empty
+    // the guard is a no-op (no covering nodes → nothing to protect).
+    #[serde(default)]
+    approved_target_nodes: BTreeSet<NodeId>,
+    #[serde(default)]
+    approved_corr_fingerprints: BTreeMap<NodeId, String>,
+    // Coarse DAG snapshot from the end of theorem-stating. Drives the
+    // Restructure-vs-CoarseRestructure gate on active-node signature edits:
+    // nodes in this set need coarse_restructure to change signatures;
+    // proof-phase helpers added later can have signatures revised under
+    // plain restructure.
+    #[serde(default)]
+    coarse_dag_nodes: BTreeSet<NodeId>,
+    /// PV under-model assumption staging nodes. Empty means ordinary
+    /// non-PV semantics, including for a normal Tablet node named
+    /// `Assumptions`.
+    #[serde(default)]
+    under_model_assumption_nodes: BTreeSet<NodeId>,
+    /// PV role map. Empty preserves ordinary math-mode scoped-tablet
+    /// validation.
+    #[serde(default)]
+    node_role: BTreeMap<NodeId, trellis_kernel::PvRole>,
+    /// The Assumptions node eligible for the authoring-only axiom/TeX marker
+    /// exemption. Empty keeps every Assumptions node on ordinary validation.
+    #[serde(default)]
+    assumption_authoring_node: Option<NodeId>,
+    #[serde(default)]
+    authorized_nodes: BTreeSet<NodeId>,
+    /// This response's `node_reference_grounds` updates (full replacement
+    /// sets) + the pre-burst kernel claim view, feeding the
+    /// RevisionStatementEditScope frozen-node claim-delta check
+    /// (Amendment B1). Empty for legacy payloads / registry-free runs.
+    #[serde(default)]
+    node_reference_ground_updates: BTreeMap<NodeId, BTreeSet<trellis_kernel::RefPaperId>>,
+    #[serde(default)]
+    current_node_reference_grounds: BTreeMap<NodeId, BTreeSet<trellis_kernel::RefPaperId>>,
+    #[serde(default)]
+    validation_execution_plan: Vec<WorkerValidationExecutionPlanStep>,
+}
+
+#[derive(Debug, Serialize)]
+struct ExecutedWorkerValidationPlanOutput {
+    step_results: Vec<WorkerValidationStepResult>,
+    protected_semantic_change_nodes: BTreeSet<NodeId>,
+}
+
+#[derive(Debug, Serialize)]
+struct ScopedTabletCheckOutput {
+    ok: bool,
+    errors: Vec<String>,
+    warnings: Vec<String>,
+    all_errors: Vec<String>,
+    error_records: Vec<runtime_cli_observations::ErrorRecord>,
+    allowed_nodes: Vec<NodeId>,
+    build_output: String,
+}
+
+#[derive(Debug, Serialize)]
+struct CheckedTrellisWorkerResultOutput {
+    ok: bool,
+    errors: Vec<String>,
+    data: Option<serde_json::Value>,
+    response: Option<serde_json::Value>,
+    validation_step_results: Vec<WorkerValidationStepResult>,
+    contract_errors: Vec<String>,
+    validation_errors: Vec<String>,
+    final_outcome: String,
+}
+
+#[derive(Debug, Serialize)]
+struct CheckedTrellisReviewerResultOutput {
+    ok: bool,
+    errors: Vec<String>,
+    data: Option<serde_json::Value>,
+    response: Option<serde_json::Value>,
+}
+
+/// Cleanup-v2 (audit Finding 1): output for `CheckTrellisAuditResult`,
+/// the one-shot validate+normalize path for audit-burst artifacts.
+#[derive(Debug, Serialize)]
+struct CheckedTrellisAuditResultOutput {
+    ok: bool,
+    errors: Vec<String>,
+    data: Option<serde_json::Value>,
+    response: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Serialize)]
+struct HydratedWorkerResponseOutput {
+    response: WorkerResponse,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(default)]
+struct CheckedWorkerPayload {
+    outcome: String,
+    summary: String,
+    comments: String,
+    semantic_dep_updates: BTreeMap<String, BTreeSet<String>>,
+    target_claim_updates: BTreeMap<String, BTreeSet<String>>,
+    #[serde(default)]
+    challenge_claim_updates: BTreeMap<String, BTreeSet<String>>,
+    #[serde(default)]
+    deviation_requests: BTreeMap<String, DeviationRequest>,
+    #[serde(default)]
+    node_deviation_claims: BTreeMap<String, BTreeSet<String>>,
+    // Reference-paper claims. Same allowlist-strip hazard as the fields
+    // below: the validator re-emits the map, but unless it is also a
+    // field here serde drops it and `accept_worker_response` never sees
+    // it (the CheckedWorkerPayload half of Amendment G3).
+    #[serde(default)]
+    node_reference_grounds: BTreeMap<String, BTreeSet<String>>,
+    #[serde(default)]
+    deviation_deletions: BTreeSet<String>,
+    #[serde(default)]
+    deleted_nodes: BTreeSet<String>,
+    difficulty_updates: BTreeMap<String, String>,
+    // Required+validated by `validate_trellis_worker_result_data` for
+    // `outcome=needs_restructure`. Without this field on the deserialized
+    // payload, the validator's extracted value was silently dropped here,
+    // `accept_worker_response` built a default WorkerResponse with the
+    // suggested set empty, and the reviewer's
+    // `latest_worker_needs_restructure_suggested_nodes` snapshot was always
+    // `[]` — defeating the whole point of the field (let the reviewer widen
+    // scope concretely instead of guessing what the worker meant by "needs
+    // broader repair"). Same allowlist-strip pattern as the recently-fixed
+    // reviewer-side `request_sound_verifier_node_ids` (commit 78bc2b8).
+    #[serde(default)]
+    needs_restructure_suggested_nodes: Vec<String>,
+    // PV under-model (Slice 1): the worker's NL disproof / route opinion /
+    // reasoning for a `target_false_under_model` outcome. Same allowlist-strip
+    // hazard as `needs_restructure_suggested_nodes`: the validator extracts
+    // these, but unless they are fields here serde drops them and the engine
+    // never sees the disproof. Mirrored onto the WorkerResponse below.
+    #[serde(default)]
+    under_model_disproof: String,
+    #[serde(default)]
+    under_model_route_opinion: String,
+    #[serde(default)]
+    under_model_reasoning: String,
+    // PV under-model (Slice 2): metadata for a worker-authored staged
+    // assumption. The Lean/NL statements are not accepted from JSON; after
+    // normal worker validation the runtime reads the marked blocks from
+    // `Tablet/Assumptions.{lean,tex}` using `authored_assumption_id`.
+    #[serde(default)]
+    authored_assumption_id: String,
+    #[serde(default)]
+    authored_axiom_name: String,
+    #[serde(default)]
+    authored_citation_locator: String,
+    #[serde(default)]
+    authored_rust_justification: String,
+    #[serde(default)]
+    authored_claim_class: String,
+    // On-demand "call for an audit" (advisory). Same allowlist-strip
+    // hazard as `needs_restructure_suggested_nodes` above: the validator
+    // extracts it but unless it is also a field here, serde drops it and
+    // `accept_worker_response` never sees it. Mirrors the reviewer side's
+    // `RawReviewPayload::audit_request` (parsed/normalized identically in
+    // the kernel).
+    #[serde(default)]
+    audit_request: Option<RawAuditRequest>,
+    // Process memory challenges. Same allowlist-strip hazard as
+    // `audit_request` above: the validator re-emits the list, but unless
+    // it is also a field here serde drops it and
+    // `accept_worker_response` never sees it.
+    #[serde(default)]
+    memory_challenges: Vec<trellis_kernel::process_memory::MemoryChallenge>,
+}
+
+impl Default for CheckedWorkerPayload {
+    fn default() -> Self {
+        Self {
+            outcome: String::new(),
+            summary: String::new(),
+            comments: String::new(),
+            semantic_dep_updates: BTreeMap::new(),
+            target_claim_updates: BTreeMap::new(),
+            challenge_claim_updates: BTreeMap::new(),
+            deviation_requests: BTreeMap::new(),
+            node_deviation_claims: BTreeMap::new(),
+            node_reference_grounds: BTreeMap::new(),
+            deviation_deletions: BTreeSet::new(),
+            deleted_nodes: BTreeSet::new(),
+            difficulty_updates: BTreeMap::new(),
+            needs_restructure_suggested_nodes: Vec::new(),
+            under_model_disproof: String::new(),
+            under_model_route_opinion: String::new(),
+            under_model_reasoning: String::new(),
+            authored_assumption_id: String::new(),
+            authored_axiom_name: String::new(),
+            authored_citation_locator: String::new(),
+            authored_rust_justification: String::new(),
+            authored_claim_class: String::new(),
+            audit_request: None,
+            memory_challenges: Vec::new(),
+        }
+    }
+}
+
+struct ProvidedResponseAdapter {
+    response: Option<WrapperResponse>,
+}
+
+impl WrapperAdapter for ProvidedResponseAdapter {
+    fn dispatch(&mut self, request: &WrapperRequest) -> Result<WrapperResponse, String> {
+        let response = self
+            .response
+            .take()
+            .ok_or_else(|| format!("missing response for in-flight request {:?}", request.kind))?;
+        if response.request_id() != request.id || response.cycle() != request.cycle {
+            return Err(format!(
+                "provided response does not match in-flight request id={} cycle={}",
+                request.id, request.cycle
+            ));
+        }
+        Ok(response)
+    }
+}
+
+struct ProcessCheckpointHook {
+    command: PathBuf,
+}
+
+struct ProcessBridgeAdapter {
+    command: PathBuf,
+    config_path: PathBuf,
+    repo_path: Option<PathBuf>,
+    runtime_root: PathBuf,
+}
+
+enum RuntimeAdapter {
+    Provided(ProvidedResponseAdapter),
+    Process(ProcessBridgeAdapter),
+}
+
+impl WrapperAdapter for RuntimeAdapter {
+    fn dispatch(&mut self, request: &WrapperRequest) -> Result<WrapperResponse, String> {
+        match self {
+            Self::Provided(adapter) => adapter.dispatch(request),
+            Self::Process(adapter) => adapter.dispatch(request),
+        }
+    }
+}
+
+impl WrapperAdapter for ProcessBridgeAdapter {
+    fn dispatch(&mut self, request: &WrapperRequest) -> Result<WrapperResponse, String> {
+        let kernel_cmd = std::env::current_exe()
+            .map_err(|err| format!("failed to resolve current kernel binary: {err}"))?;
+        let input = json!({
+            "config_path": self.config_path,
+            "runtime_root": self.runtime_root,
+            "request": bridge_request_payload(
+                request,
+                Some(&self.config_path),
+                self.repo_path.as_deref(),
+            )?,
+        });
+        let output = Command::new(&self.command)
+            .env("TRELLIS_TRELLIS_KERNEL_CMD", &kernel_cmd)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .and_then(|mut child| {
+                use std::io::Write as _;
+                if let Some(stdin) = child.stdin.as_mut() {
+                    let payload = serde_json::to_vec_pretty(&input)?;
+                    stdin.write_all(&payload)?;
+                }
+                child.wait_with_output()
+            })
+            .map_err(|err| format!("failed to run bridge {}: {err}", self.command.display()))?;
+        if output.status.success() {
+            return serde_json::from_slice::<WrapperResponse>(&output.stdout)
+                .map_err(|err| format!("failed to parse bridge response: {err}"));
+        }
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if let Ok(value) = serde_json::from_slice::<serde_json::Value>(&output.stdout) {
+            if let Some(message) = value.get("error").and_then(|v| v.as_str()) {
+                return Err(format!(
+                    "bridge {} failed: {}",
+                    self.command.display(),
+                    message
+                ));
+            }
+        }
+        let detail = if !stderr.is_empty() {
+            stderr
+        } else if !stdout.is_empty() {
+            stdout
+        } else {
+            format!("exit status {}", output.status)
+        };
+        Err(format!(
+            "bridge {} failed: {}",
+            self.command.display(),
+            detail
+        ))
+    }
+}
+
+impl CheckpointSink for ProcessCheckpointHook {
+    fn commit(&mut self, payload: &CheckpointHookPayload) -> Result<(), String> {
+        let input = serde_json::to_vec_pretty(payload)
+            .map_err(|err| format!("failed to serialize checkpoint payload: {err}"))?;
+        let output = Command::new(&self.command)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .and_then(|mut child| {
+                use std::io::Write as _;
+                if let Some(stdin) = child.stdin.as_mut() {
+                    stdin.write_all(&input)?;
+                }
+                child.wait_with_output()
+            })
+            .map_err(|err| {
+                format!(
+                    "failed to run checkpoint hook {}: {err}",
+                    self.command.display()
+                )
+            })?;
+        if output.status.success() {
+            return Ok(());
+        }
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let detail = if !stderr.is_empty() {
+            stderr
+        } else if !stdout.is_empty() {
+            stdout
+        } else {
+            format!("exit status {}", output.status)
+        };
+        Err(format!(
+            "checkpoint hook {} failed: {}",
+            self.command.display(),
+            detail
+        ))
+    }
+}
+
+fn checkpoint_sink_from_env() -> Result<Option<ProcessCheckpointHook>, String> {
+    let raw = std::env::var("TRELLIS_RUNTIME_CHECKPOINT_HOOK").unwrap_or_default();
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    let path = PathBuf::from(trimmed);
+    if !path.exists() {
+        return Err(format!(
+            "checkpoint hook does not exist: {}",
+            path.display()
+        ));
+    }
+    Ok(Some(ProcessCheckpointHook { command: path }))
+}
+
+fn bridge_command_from_env() -> Result<Option<PathBuf>, String> {
+    let raw = std::env::var("TRELLIS_RUNTIME_BRIDGE_CMD").unwrap_or_default();
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(None);
+    }
+    let path = PathBuf::from(trimmed);
+    if !path.exists() {
+        return Err(format!("bridge command does not exist: {}", path.display()));
+    }
+    Ok(Some(path))
+}
+
+/// Generate a `fn(value) -> &'static str` that maps each enum variant
+/// to its snake_case JSON tag. Used for serializing kernel enums into
+/// the runtime_cli's hand-rolled JSON envelopes.
+macro_rules! snake_name_fn {
+    ($fn_name:ident, $type:ty, $( $variant:ident => $name:literal ),* $(,)?) => {
+        fn $fn_name(value: $type) -> &'static str {
+            match value {
+                $( <$type>::$variant => $name, )*
+            }
+        }
+    };
+}
+
+snake_name_fn!(request_kind_name, trellis_kernel::RequestKind,
+    Worker => "worker",
+    Paper => "paper",
+    Corr => "corr",
+    Sound => "sound",
+    Review => "review",
+    HumanGate => "human_gate",
+    Audit => "audit",
+    StuckMathAudit => "stuck_math_audit",
+);
+
+snake_name_fn!(phase_name, trellis_kernel::Phase,
+    TheoremStating => "theorem_stating",
+    RevisionStating => "revision_stating",
+    ProofFormalization => "proof_formalization",
+    Cleanup => "cleanup",
+    Complete => "complete",
+);
+
+snake_name_fn!(task_mode_name, trellis_kernel::TaskMode,
+    Global => "global",
+    Targeted => "targeted",
+    Local => "local",
+    Restructure => "restructure",
+    CoarseRestructure => "coarse_restructure",
+    Cleanup => "cleanup",
+);
+
+snake_name_fn!(review_decision_name, trellis_kernel::ReviewDecisionKind,
+    Continue => "continue",
+    AdvancePhase => "advance_phase",
+    NeedInput => "need_input",
+    Done => "done",
+);
+
+snake_name_fn!(gate_kind_name, trellis_kernel::GateKind,
+    None => "none",
+    Advance => "advance",
+    NeedInput => "need_input",
+    ProtectedReapproval => "protected_reapproval",
+    AssumptionReview => "assumption_review",
+);
+
+snake_name_fn!(reset_choice_name, trellis_kernel::ResetChoice,
+    None => "none",
+    LastCommit => "last_commit",
+    LastClean => "last_clean",
+    TheoremStatingNode => "theorem_stating_node",
+);
+
+snake_name_fn!(difficulty_name, trellis_kernel::NodeDifficulty,
+    Easy => "easy",
+    Hard => "hard",
+);
+
+snake_name_fn!(worker_profile_name, trellis_kernel::WorkerProfile,
+    None => "none",
+    Theorem => "theorem",
+    ProofEasy => "proof_easy",
+    ProofHard => "proof_hard",
+    Cleanup => "cleanup",
+    FinalCleanup => "final_cleanup",
+);
+
+snake_name_fn!(node_kind_name, trellis_kernel::NodeKind,
+    Preamble => "preamble",
+    Definition => "definition",
+    Proof => "proof",
+);
+
+snake_name_fn!(worker_validation_kind_name, trellis_kernel::WorkerValidationKind,
+    None => "none",
+    TheoremGlobal => "theorem_global",
+    TheoremTargeted => "theorem_targeted",
+    TheoremRestructure => "theorem_restructure",
+    ProofEasy => "proof_easy",
+    ProofLocal => "proof_local",
+    ProofRestructure => "proof_restructure",
+    ProofCoarseRestructure => "proof_coarse_restructure",
+    Cleanup => "cleanup",
+    FinalCleanup => "final_cleanup",
+);
+
+snake_name_fn!(worker_baseline_scope_name, trellis_kernel::WorkerBaselineScope,
+    None => "none",
+    AuthorizedNodes => "authorized_nodes",
+    AllPresent => "all_present",
+);
+
+snake_name_fn!(worker_proof_delta_mode_name, trellis_kernel::WorkerProofDeltaMode,
+    None => "none",
+    Easy => "easy",
+    Local => "local",
+    Restructure => "restructure",
+    CoarseRestructure => "coarse_restructure",
+);
+
+snake_name_fn!(scoped_tablet_allowed_nodes_mode_name, trellis_kernel::ScopedTabletAllowedNodesMode,
+    Explicit => "explicit",
+    AllPresent => "all_present",
+    PreviousOrExplicit => "previous_or_explicit",
+);
+
+fn worker_validation_execution_plan_json(
+    steps: &[trellis_kernel::WorkerValidationExecutionPlanStep],
+) -> Vec<serde_json::Value> {
+    steps
+        .iter()
+        .map(|step| match step {
+            trellis_kernel::WorkerValidationExecutionPlanStep::TheoremTargetEditScope {
+                target,
+                initial_scope,
+            } => json!({
+                "kind": "theorem_target_edit_scope",
+                "target": target,
+                "initial_scope": initial_scope,
+            }),
+            trellis_kernel::WorkerValidationExecutionPlanStep::RevisionStatementEditScope {
+                target,
+                authorized_editable_nodes,
+                frozen_nodes,
+                frozen_node_reasons,
+                removed_targets,
+                allow_new_obligations,
+            } => json!({
+                "kind": "revision_statement_edit_scope",
+                "target": target,
+                "authorized_editable_nodes": authorized_editable_nodes,
+                "frozen_nodes": frozen_nodes,
+                "frozen_node_reasons": frozen_node_reasons,
+                "removed_targets": removed_targets,
+                "allow_new_obligations": allow_new_obligations,
+            }),
+            trellis_kernel::WorkerValidationExecutionPlanStep::ScopedTablet {
+                allowed_nodes_mode,
+                explicit_nodes,
+            } => json!({
+                "kind": "scoped_tablet",
+                "allowed_nodes_mode": scoped_tablet_allowed_nodes_mode_name(*allowed_nodes_mode),
+                "explicit_nodes": explicit_nodes,
+            }),
+            trellis_kernel::WorkerValidationExecutionPlanStep::ProofEasyScope { active_node } => {
+                json!({
+                    "kind": "proof_easy_scope",
+                    "active_node": active_node,
+                })
+            }
+            trellis_kernel::WorkerValidationExecutionPlanStep::ProofWorkerDelta {
+                active_node,
+                mode,
+                authorized_nodes,
+                protected_semantic_change_nodes,
+                allow_new_obligations,
+                must_close_active,
+            } => json!({
+                "kind": "proof_worker_delta",
+                "active_node": active_node,
+                "mode": worker_proof_delta_mode_name(*mode),
+                "authorized_nodes": authorized_nodes,
+                "protected_semantic_change_nodes": protected_semantic_change_nodes,
+                "allow_new_obligations": allow_new_obligations,
+                "must_close_active": must_close_active,
+            }),
+            trellis_kernel::WorkerValidationExecutionPlanStep::CleanupPreserving {} => json!({
+                "kind": "cleanup_preserving",
+            }),
+            trellis_kernel::WorkerValidationExecutionPlanStep::FinalCleanupPreserving {
+                task_kind,
+                target_node,
+                authorized_nodes,
+                protected_statement_node_set,
+            } => {
+                // Cleanup-v2 Step 8: surface task-aware payload for the
+                // runtime validator. Legacy lint-only mode encodes as
+                // task_kind=null, target_node=null, both sets empty.
+                json!({
+                    "kind": "final_cleanup_preserving",
+                    "task_kind": task_kind,
+                    "target_node": target_node,
+                    "authorized_nodes": authorized_nodes,
+                    "protected_statement_node_set": protected_statement_node_set,
+                })
+            }
+        })
+        .collect()
+}
+
+/// Emit a top-level acceptance-progress phase header to stderr.
+///
+/// The `[acceptance]` prefix is for humans (and the calling agent) reading
+/// the tool's stderr stream while `check_trellis_worker_result` runs;
+/// stderr is unbuffered by default in Rust so each `eprintln!` flushes
+/// immediately and shows up in the live tool-output stream.
+fn acceptance_progress_phase(phase: usize, total: usize, name: &str) {
+    eprintln!("[acceptance] phase {phase}/{total}: {name}");
+}
+
+/// Emit a sub-counter line under a top-level phase. `parent` is the
+/// "phase {k}/{total}" prefix string (e.g. "2/6") so sub-events thread
+/// back to the right parent phase.
+fn acceptance_progress_sub(parent: &str, k: usize, sub_total: usize, detail: &str) {
+    eprintln!("[acceptance]   {parent} sub {k}/{sub_total}: {detail}");
+}
+
+/// Phase name for a worker-validation execution-plan step variant.
+fn validation_step_progress_name(step: &WorkerValidationExecutionPlanStep) -> &'static str {
+    match step {
+        WorkerValidationExecutionPlanStep::TheoremTargetEditScope { .. } => {
+            "theorem_target_edit_scope"
+        }
+        WorkerValidationExecutionPlanStep::RevisionStatementEditScope { .. } => {
+            "revision_statement_edit_scope"
+        }
+        WorkerValidationExecutionPlanStep::ScopedTablet { .. } => "scoped_tablet",
+        WorkerValidationExecutionPlanStep::ProofEasyScope { .. } => "proof_easy_scope",
+        WorkerValidationExecutionPlanStep::ProofWorkerDelta { .. } => "proof_worker_delta",
+        WorkerValidationExecutionPlanStep::CleanupPreserving {} => "cleanup_preserving",
+        WorkerValidationExecutionPlanStep::FinalCleanupPreserving { .. } => {
+            "final_cleanup_preserving"
+        }
+    }
+}
+
+fn execute_worker_validation_plan(
+    input: &ExecuteWorkerValidationPlanInput,
+) -> Result<ExecutedWorkerValidationPlanOutput, String> {
+    execute_worker_validation_plan_with_progress(input, None)
+}
+
+/// Variant that emits per-step progress sub-counters under the supplied
+/// parent phase tag (e.g. "2/6"). Used by `check_trellis_worker_result_output`
+/// so the caller agent sees `[acceptance]   2/6 sub k/n: <kind>` lines as
+/// each plan step runs. Pass `None` for callers that don't want progress
+/// (e.g. the standalone `ExecuteWorkerValidationPlan` request).
+fn execute_worker_validation_plan_with_progress(
+    input: &ExecuteWorkerValidationPlanInput,
+    progress_parent: Option<&str>,
+) -> Result<ExecutedWorkerValidationPlanOutput, String> {
+    fn execution_failure_step_result(
+        kind: &str,
+        error: String,
+        allowed_nodes: BTreeSet<NodeId>,
+    ) -> WorkerValidationStepResult {
+        WorkerValidationStepResult {
+            kind: kind.to_string(),
+            ok: false,
+            detail: error.clone(),
+            errors: vec![error],
+            build_output: String::new(),
+            allowed_nodes,
+            local_closure_results: BTreeMap::new(),
+        }
+    }
+
+    let total_steps = input.validation_execution_plan.len();
+    let mut previous_allowed_nodes: BTreeSet<NodeId> = BTreeSet::new();
+    let mut step_results: Vec<WorkerValidationStepResult> = Vec::new();
+    let mut protected_semantic_change_nodes: BTreeSet<NodeId> = BTreeSet::new();
+    for (step_idx, step) in input.validation_execution_plan.iter().enumerate() {
+        if let Some(parent) = progress_parent {
+            acceptance_progress_sub(
+                parent,
+                step_idx + 1,
+                total_steps,
+                validation_step_progress_name(step),
+            );
+        }
+        match step {
+            WorkerValidationExecutionPlanStep::TheoremTargetEditScope {
+                target,
+                initial_scope,
+            } => {
+                let resolved_target = target
+                    .clone()
+                    .or_else(|| input.active_node.clone())
+                    .ok_or_else(|| {
+                        "theorem_target_edit_scope step is missing target".to_string()
+                    })?;
+                let mut step_result = theorem_target_edit_scope_step_result_with_assumption_authoring(
+                    &input.repo_path,
+                    &resolved_target,
+                    &input.before_snapshot,
+                    initial_scope,
+                    input.assumption_authoring_node.as_ref(),
+                    &input.declared_deleted_nodes,
+                );
+                step_result
+                    .allowed_nodes
+                    .retain(|node| !input.reserved_non_node_stems.contains(node));
+                previous_allowed_nodes = step_result.allowed_nodes.clone();
+                step_results.push(step_result);
+            }
+            WorkerValidationExecutionPlanStep::RevisionStatementEditScope {
+                target: _,
+                authorized_editable_nodes,
+                frozen_nodes,
+                frozen_node_reasons,
+                removed_targets,
+                allow_new_obligations,
+            } => {
+                let step_result = revision_statement_edit_scope_step_result(
+                    &input.repo_path,
+                    &input.before_snapshot,
+                    authorized_editable_nodes,
+                    frozen_nodes,
+                    frozen_node_reasons,
+                    removed_targets,
+                    *allow_new_obligations,
+                    &input.current_target_claims,
+                    &input.node_reference_ground_updates,
+                    &input.current_node_reference_grounds,
+                );
+                step_results.push(step_result);
+            }
+            WorkerValidationExecutionPlanStep::ScopedTablet {
+                allowed_nodes_mode,
+                explicit_nodes,
+            } => {
+                let allowed_nodes = match allowed_nodes_mode {
+                    trellis_kernel::ScopedTabletAllowedNodesMode::AllPresent => {
+                        let mut nodes = input.current_present_nodes.clone();
+                        nodes.extend(current_tablet_node_names(&input.repo_path));
+                        nodes
+                    }
+                    trellis_kernel::ScopedTabletAllowedNodesMode::PreviousOrExplicit => {
+                        if previous_allowed_nodes.is_empty() {
+                            explicit_nodes.clone()
+                        } else {
+                            previous_allowed_nodes.clone()
+                        }
+                    }
+                    trellis_kernel::ScopedTabletAllowedNodesMode::Explicit => {
+                        explicit_nodes.clone()
+                    }
+                };
+                let allowed_nodes: BTreeSet<NodeId> = allowed_nodes
+                    .difference(&input.reserved_non_node_stems)
+                    .cloned()
+                    .collect();
+                let observe_all_present = matches!(
+                    allowed_nodes_mode,
+                    trellis_kernel::ScopedTabletAllowedNodesMode::AllPresent
+                );
+                let step_result = scoped_tablet_step_result_with_roles(
+                    &input.repo_path,
+                    &input.baseline_errors,
+                    &allowed_nodes,
+                    observe_all_present,
+                    &input.before_snapshot,
+                    &input.node_role,
+                    input.assumption_authoring_node.as_ref(),
+                    &input.declared_deleted_nodes,
+                )
+                .unwrap_or_else(|err| {
+                    execution_failure_step_result("scoped_tablet", err, allowed_nodes.clone())
+                });
+                step_results.push(step_result);
+            }
+            WorkerValidationExecutionPlanStep::ProofEasyScope { active_node } => {
+                let resolved_active = active_node.as_ref().or(input.active_node.as_ref());
+                let detail = format!(
+                    "Legacy proof_easy_scope validation steps are retired; regenerate the worker request so the kernel emits proof_worker_delta with explicit allow_new_obligations and must_close_active gates{}.",
+                    resolved_active
+                        .map(|node| format!(" for active_node={node}"))
+                        .unwrap_or_default()
+                );
+                step_results.push(WorkerValidationStepResult {
+                    kind: "proof_easy_scope".to_string(),
+                    ok: false,
+                    detail: detail.clone(),
+                    errors: vec![detail],
+                    build_output: String::new(),
+                    allowed_nodes: BTreeSet::new(),
+                    local_closure_results: BTreeMap::new(),
+                });
+            }
+            WorkerValidationExecutionPlanStep::ProofWorkerDelta {
+                active_node,
+                mode,
+                authorized_nodes,
+                protected_semantic_change_nodes: step_protected_semantic_change_nodes,
+                allow_new_obligations,
+                must_close_active,
+            } => {
+                let resolved_active = active_node
+                    .clone()
+                    .or_else(|| input.active_node.clone())
+                    .unwrap_or_default();
+                let resolved_authorized_nodes = if authorized_nodes.is_empty() {
+                    input.authorized_nodes.clone()
+                } else {
+                    authorized_nodes.clone()
+                };
+                let step_result = proof_worker_delta_step_result_with_under_model_assumptions(
+                    &input.repo_path,
+                    &resolved_active,
+                    &input.before_snapshot,
+                    &input.current_present_nodes,
+                    &input.declared_deleted_nodes,
+                    &input.current_node_kinds,
+                    // Patch C-R: pre-delta `live.open_nodes` so the helper-
+                    // probe loop can detect sorryd→sorry-free transitions
+                    // on non-active proof_nodes. `prepare_worker_gate_output`
+                    // captures this from disk via `open_nodes_from_repo`
+                    // before the worker burst runs.
+                    &input.current_open_nodes,
+                    &input.expected_active_hash,
+                    *mode,
+                    &input.approved_target_nodes,
+                    &input.approved_corr_fingerprints,
+                    &input.coarse_dag_nodes,
+                    &resolved_authorized_nodes,
+                    step_protected_semantic_change_nodes,
+                    &mut protected_semantic_change_nodes,
+                    &input.under_model_assumption_nodes,
+                    input.assumption_authoring_node.as_ref(),
+                    &input.seed_support_definition_nodes,
+                    *allow_new_obligations,
+                    *must_close_active,
+                )
+                .unwrap_or_else(|err| {
+                    execution_failure_step_result(
+                        "proof_worker_delta",
+                        err,
+                        resolved_authorized_nodes.clone(),
+                    )
+                });
+                step_results.push(step_result);
+            }
+            WorkerValidationExecutionPlanStep::CleanupPreserving {} => {
+                let step_result = cleanup_preserving_step_result(
+                    &input.repo_path,
+                    &input.before_snapshot,
+                    &input.before_tablet_contents,
+                    &input.baseline_declaration_hashes,
+                    &input.baseline_correspondence_hashes,
+                    &input.configured_targets,
+                    &input.current_deps,
+                    &input.current_target_claims,
+                    &input.current_present_nodes,
+                )
+                .unwrap_or_else(|err| {
+                    execution_failure_step_result("cleanup_preserving", err, BTreeSet::new())
+                });
+                step_results.push(step_result);
+            }
+            WorkerValidationExecutionPlanStep::FinalCleanupPreserving {
+                task_kind,
+                target_node,
+                authorized_nodes,
+                protected_statement_node_set,
+            } => {
+                // Cleanup-v2 Step 9: task-aware validator dispatch. The
+                // payload's `task_kind` selects between legacy lint-only
+                // (None), LintFix (single-node), and Substitution
+                // (target deletion + authorized importer edits)
+                // semantics. See `final_cleanup_preserving_step_result`
+                // for the per-mode constraint list.
+                let step_result = final_cleanup_preserving_step_result(
+                    &input.repo_path,
+                    &input.before_snapshot,
+                    &input.baseline_declaration_hashes,
+                    &input.baseline_correspondence_hashes,
+                    &input.current_present_nodes,
+                    task_kind.as_ref(),
+                    target_node.as_ref(),
+                    authorized_nodes,
+                    protected_statement_node_set,
+                )
+                .unwrap_or_else(|err| {
+                    execution_failure_step_result("final_cleanup_preserving", err, BTreeSet::new())
+                });
+                step_results.push(step_result);
+            }
+        }
+    }
+    Ok(ExecutedWorkerValidationPlanOutput {
+        step_results,
+        protected_semantic_change_nodes,
+    })
+}
+
+fn bridge_request_payload(
+    request: &WrapperRequest,
+    _config_path: Option<&std::path::Path>,
+    repo_path: Option<&std::path::Path>,
+) -> Result<serde_json::Value, String> {
+    let mut request_owned = request.clone();
+    trellis_kernel::populate_request_prompt_contracts(&mut request_owned, repo_path);
+    let request = &request_owned;
+
+    // Structural emit: every WrapperRequest field is rendered via serde's
+    // Serialize derive. This eliminates the recurring bug class where a
+    // newly-added WrapperRequest field is consumed downstream (validator,
+    // legality check, prompt template) but silently absent from the bridge
+    // JSON, deserializing back to its serde default and producing wrong
+    // legality verdicts. Fields that have previously hit this class:
+    // `substantiveness_verify_nodes`, `next_active_coarse` (commit 78bc2b8 prior bug),
+    // `request_sound_verifier_node_ids` (commit 78bc2b8), and the
+    // sibling cluster `sound_verifier_requestable_nodes`,
+    // `sound_repair_ready_nodes`, `kernel_hinted_next_active_coarse_nodes`,
+    // `proof_active_node_base_legal_candidates`,
+    // `coarse_repair_blocker_carriers`, `resettable_theorem_stating_nodes`,
+    // `cleanup_force_done_view`, etc. that this fix collectively addresses.
+    //
+    // The overlays below replace fields where the prompt expects a shape
+    // serde doesn't produce by default: lowercase snake_case enum names
+    // instead of PascalCase variants, sub-objects with computed `enabled`
+    // overrides, helper-derived fields not on the struct. Adding a new
+    // WrapperRequest field requires no change here — its serde rendering
+    // flows through automatically.
+    let mut payload =
+        serde_json::to_value(request).map_err(|err| format!("serialize WrapperRequest: {err}"))?;
+    let obj = payload
+        .as_object_mut()
+        .ok_or_else(|| "WrapperRequest must serialize to a JSON object".to_string())?;
+
+    // Top-level enum-typed fields: prompt expects friendly snake_case.
+    obj.insert("kind".into(), json!(request_kind_name(request.kind)));
+    obj.insert("phase".into(), json!(phase_name(request.phase)));
+    obj.insert("mode".into(), json!(task_mode_name(request.mode)));
+    obj.insert("gate_kind".into(), json!(gate_kind_name(request.gate_kind)));
+    obj.insert(
+        "retry_outcome_kind".into(),
+        json!(match request.retry_outcome_kind {
+            RetryOutcomeKind::None => "None",
+            RetryOutcomeKind::Invalid => "Invalid",
+            RetryOutcomeKind::Stuck => "Stuck",
+            RetryOutcomeKind::NeedsRestructure => "NeedsRestructure",
+            RetryOutcomeKind::Transport => "Transport",
+            RetryOutcomeKind::TargetFalseUnderModel => "TargetFalseUnderModel",
+        }),
+    );
+    obj.insert(
+        "allowed_decisions".into(),
+        json!(request
+            .allowed_decisions
+            .iter()
+            .map(|item| review_decision_name(*item))
+            .collect::<Vec<_>>()),
+    );
+    obj.insert(
+        "allowed_next_modes".into(),
+        json!(request
+            .allowed_next_modes
+            .iter()
+            .map(|item| task_mode_name(*item))
+            .collect::<Vec<_>>()),
+    );
+    obj.insert(
+        "allowed_resets".into(),
+        json!(request
+            .allowed_resets
+            .iter()
+            .map(|item| reset_choice_name(*item))
+            .collect::<Vec<_>>()),
+    );
+    obj.insert(
+        "current_node_kinds".into(),
+        json!(request
+            .current_node_kinds
+            .iter()
+            .map(|(node, kind)| (node.clone(), node_kind_name(*kind)))
+            .collect::<std::collections::BTreeMap<_, _>>()),
+    );
+
+    // worker_context: prompt-side `enabled` is the kernel value OR the
+    // request kind itself being Worker (legacy convenience); enum fields
+    // need snake_case rendering. Rebuild the whole sub-object.
+    obj.insert(
+        "worker_context".into(),
+        json!({
+            "enabled": request.worker_context.enabled || request.kind == RequestKind::Worker,
+            "active_difficulty": difficulty_name(request.worker_context.active_difficulty),
+            "active_easy_attempts": request.worker_context.active_easy_attempts,
+            "worker_profile": worker_profile_name(request.worker_context.worker_profile),
+            "validation_kind": worker_validation_kind_name(request.worker_context.validation_kind),
+            "authorized_nodes": request.worker_context.authorized_nodes,
+            "protected_semantic_change_nodes": request.worker_context.protected_semantic_change_nodes,
+            "next_context_mode": match request.worker_context.next_context_mode {
+                trellis_kernel::WorkerContextMode::Resume => "resume",
+                trellis_kernel::WorkerContextMode::Fresh => "fresh",
+            },
+            "paper_focus_ranges": request.worker_context.paper_focus_ranges,
+            "work_style_hint": match request.worker_context.work_style_hint {
+                trellis_kernel::WorkerWorkStyleHint::None => "none",
+                trellis_kernel::WorkerWorkStyleHint::Restructure => "restructure",
+            },
+        }),
+    );
+
+    // worker_acceptance: same shape — computed `enabled` + enum renames.
+    obj.insert(
+        "worker_acceptance".into(),
+        json!({
+            "enabled": request.worker_acceptance.enabled || request.kind == RequestKind::Worker,
+            "validation_kind": worker_validation_kind_name(request.worker_acceptance.validation_kind),
+            "authorized_nodes": request.worker_acceptance.authorized_nodes,
+            "protected_semantic_change_nodes": request.worker_acceptance.protected_semantic_change_nodes,
+            "validation_execution_plan": worker_validation_execution_plan_json(
+                &request.worker_acceptance.validation_execution_plan
+            ),
+            "require_explicit_target_claims_for_new_nodes": request.worker_acceptance.require_explicit_target_claims_for_new_nodes,
+            "forbid_tablet_changes_when_stuck": request.worker_acceptance.forbid_tablet_changes_when_stuck,
+            "observation_plan": {
+                "capture_before_snapshot": request.worker_acceptance.observation_plan.capture_before_snapshot,
+                "capture_before_tablet_contents": request.worker_acceptance.observation_plan.capture_before_tablet_contents,
+                "capture_scoped_tablet_baseline_errors": request.worker_acceptance.observation_plan.capture_scoped_tablet_baseline_errors,
+                "scoped_tablet_baseline_scope": worker_baseline_scope_name(request.worker_acceptance.observation_plan.scoped_tablet_baseline_scope),
+                "capture_imports_before": request.worker_acceptance.observation_plan.capture_imports_before,
+                "capture_expected_active_hash": request.worker_acceptance.observation_plan.capture_expected_active_hash,
+                "capture_baseline_declaration_hashes": request.worker_acceptance.observation_plan.capture_baseline_declaration_hashes,
+                "capture_baseline_correspondence_hashes": request.worker_acceptance.observation_plan.capture_baseline_correspondence_hashes,
+            },
+        }),
+    );
+
+    // Legacy alias kept for prompt-template compatibility — `audit_latch`
+    // is the older name for what's now `stuck_math_audit`.
+    obj.insert("audit_latch".into(), json!(request.stuck_math_audit));
+
+    // Helper-derived fields not stored on WrapperRequest.
+    obj.insert(
+        "review_blocker_choices".into(),
+        json!(blocker_choices(&request.blockers)),
+    );
+    obj.insert(
+        "allowed_reset_blocker_ids".into(),
+        json!(blocker_choice_ids(&request.allowed_reset_blockers)),
+    );
+
+    // PV Phase 8 (the monotonicity gate): on a ProtectedReapproval HumanGate
+    // request carrying reopened PV spec-role nodes, render the human-facing
+    // monotonicity diff — per node, which axes of the spec statement changed
+    // since approval, framed as the strengthen-not-weaken question the human
+    // is being asked to judge (the kernel cannot decide implication on a
+    // hashed const-set, so it surfaces the change and asks the human to
+    // confirm the new statement is at least as strong as the approved one).
+    // Empty for all-math (the field is skipped on the wire) ⇒ this overlay is
+    // absent ⇒ contract baseline byte-identical.
+    if !request
+        .protected_reapproval_corr_fingerprint_pairs
+        .is_empty()
+    {
+        let bullets: Vec<serde_json::Value> = request
+            .protected_reapproval_corr_fingerprint_pairs
+            .iter()
+            .map(|(node, pair)| {
+                let changed_axes = runtime_cli_observations::diff_corr_fingerprint_axes(
+                    &pair.approved,
+                    &pair.current,
+                );
+                json!({
+                    "node": node,
+                    "monotonicity_question": format!(
+                        "The correspondence statement of `{node}` changed since it \
+                         was last approved. Re-approve only if the new statement is \
+                         at least as STRONG as the approved one (a strengthened or \
+                         equivalent specification); a weakened specification must be \
+                         rejected. The kernel reopened this node and every theorem \
+                         bound to it, and blocks completion until you decide."
+                    ),
+                    "changed_axes": changed_axes,
+                })
+            })
+            .collect();
+        obj.insert("protected_reapproval_monotonicity".into(), json!(bullets));
+    }
+
+    Ok(payload)
+}
+
+fn config_path_for_repo(repo_path: &Path) -> Result<PathBuf, String> {
+    let trellis = repo_path.join("trellis.config.json");
+    if trellis.is_file() {
+        return Ok(trellis);
+    }
+    let legacy = repo_path.join("lagent.config.json");
+    if legacy.is_file() {
+        return Ok(legacy);
+    }
+    Err(format!(
+        "no trellis.config.json or lagent.config.json found under {}",
+        repo_path.display()
+    ))
+}
+
+fn local_closure_axcheck_required_for_repo(repo_path: &Path) -> bool {
+    match config_path_for_repo(repo_path) {
+        Ok(config_path) => {
+            trellis_kernel::resolve_local_closure_axcheck_enabled(&config_path).unwrap_or(true)
+        }
+        Err(_) => true,
+    }
+}
+
+fn hydrated_bridge_request_payload(
+    repo_path: &Path,
+    request: &WrapperRequest,
+) -> Result<serde_json::Value, String> {
+    let config_path = config_path_for_repo(repo_path)?;
+    let mut request_owned = request.clone();
+    trellis_kernel::populate_request_prompt_contracts(&mut request_owned, Some(repo_path));
+    if matches!(
+        request_owned.kind,
+        RequestKind::Paper | RequestKind::Corr | RequestKind::Sound
+    ) {
+        let bindings =
+            trellis_kernel::resolve_request_verifier_bindings(&config_path, &request_owned)?;
+        request_owned.paper_verify_lane_bindings = bindings.paper_verify_lane_bindings;
+        request_owned.corr_verify_lane_bindings = bindings.corr_verify_lane_bindings;
+        request_owned.sound_verify_lane_bindings = bindings.sound_verify_lane_bindings;
+    } else {
+        request_owned.paper_verify_lane_bindings.clear();
+        request_owned.corr_verify_lane_bindings.clear();
+        request_owned.sound_verify_lane_bindings.clear();
+    }
+    if matches!(
+        request_owned.kind,
+        RequestKind::Worker
+            | RequestKind::Review
+            | RequestKind::Audit
+            | RequestKind::StuckMathAudit
+    ) {
+        let bindings =
+            trellis_kernel::resolve_request_actor_bindings(&config_path, &request_owned)?;
+        request_owned.worker_binding = bindings.worker_binding;
+        request_owned.reviewer_binding = bindings.reviewer_binding;
+        request_owned.stuck_math_audit_binding = bindings.stuck_math_audit_binding;
+    } else {
+        request_owned.worker_binding = trellis_kernel::BridgeActorBinding::default();
+        request_owned.reviewer_binding = trellis_kernel::BridgeActorBinding::default();
+        request_owned.stuck_math_audit_binding = trellis_kernel::BridgeActorBinding::default();
+    }
+    bridge_request_payload(&request_owned, Some(&config_path), Some(repo_path))
+}
+
+fn assumption_authoring_node_for_request(
+    request: &WrapperRequest,
+    under_model_assumption_nodes: &BTreeSet<NodeId>,
+) -> Option<NodeId> {
+    let assumptions = NodeId::from(trellis_kernel::assumptions_registry::ASSUMPTIONS_NODE);
+    if request.is_pv
+        && request.assumption_authoring.is_some()
+        && request.active_node.as_ref() == Some(&assumptions)
+        && under_model_assumption_nodes.contains(&assumptions)
+    {
+        Some(assumptions)
+    } else {
+        None
+    }
+}
+
+fn assumption_authoring_node_for_context(context: &PreparedWorkerGateOutput) -> Option<NodeId> {
+    if let Some(node) = context.assumption_authoring_node.clone() {
+        return Some(node);
+    }
+    let assumptions = NodeId::from(trellis_kernel::assumptions_registry::ASSUMPTIONS_NODE);
+    let has_authoring = context
+        .request
+        .get("assumption_authoring")
+        .is_some_and(|value| !value.is_null());
+    if has_authoring
+        && context.active_node == assumptions.as_str()
+        && context.under_model_assumption_nodes.contains(&assumptions)
+    {
+        Some(assumptions)
+    } else {
+        None
+    }
+}
+
+fn prepare_worker_gate_output(
+    repo_path: &std::path::Path,
+    request: &WrapperRequest,
+    collect_observations: bool,
+    paper_source_path: Option<&std::path::Path>,
+) -> Result<PreparedWorkerGateOutput, String> {
+    if collect_observations {
+        sync_tablet_render_support_from_repo(repo_path)?;
+    }
+    let request_payload = bridge_request_payload(request, None, Some(repo_path))?;
+    let worker_acceptance = request_payload
+        .get("worker_acceptance")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    // Hash capture (`capture_expected_active_hash`,
+    // `capture_baseline_declaration_hashes`) used to route through the
+    // parser-based splitter and required oleans for the target nodes
+    // to be materialised so Lean elaboration saw a consistent import
+    // graph. Since 2026-05-12 those hashes are computed by
+    // `filespec_split::declaration_hash_strict`, a pure-text scan with
+    // no Lean / lake / olean access. The materialise step is therefore
+    // unnecessary work; the other `ensure_worker_checker_support_available`
+    // call-sites below (baseline lake-build errors, correspondence
+    // fingerprints, paper-faithfulness fingerprints) genuinely need
+    // olean state and stay.
+    let under_model_assumption_nodes =
+        runtime_cli_observations::under_model_assumption_nodes_from_roles(
+            request.is_pv,
+            &request.node_role,
+        );
+    let assumption_authoring_node =
+        assumption_authoring_node_for_request(request, &under_model_assumption_nodes);
+    let observations =
+        trellis_kernel::prepare_worker_gate_observations(&WorkerGateObservationInput {
+            repo_path: repo_path.to_path_buf(),
+            current_present_nodes: request.current_present_nodes.clone(),
+            active_node: request.active_node.clone(),
+            under_model_assumption_nodes: under_model_assumption_nodes.clone(),
+            assumption_authoring_node: assumption_authoring_node.clone(),
+            observation_plan: request.worker_acceptance.observation_plan.clone(),
+            collect_observations,
+        })?;
+    let baseline_errors = if collect_observations
+        && request
+            .worker_acceptance
+            .observation_plan
+            .capture_scoped_tablet_baseline_errors
+    {
+        let baseline_allowed_nodes = match request
+            .worker_acceptance
+            .observation_plan
+            .scoped_tablet_baseline_scope
+        {
+            trellis_kernel::WorkerBaselineScope::AllPresent => {
+                request.current_present_nodes.clone()
+            }
+            trellis_kernel::WorkerBaselineScope::AuthorizedNodes => {
+                request.worker_acceptance.authorized_nodes.clone()
+            }
+            trellis_kernel::WorkerBaselineScope::None => BTreeSet::new(),
+        };
+        ensure_worker_checker_support_available(repo_path, &baseline_allowed_nodes)?;
+        let tablet_observation = match request
+            .worker_acceptance
+            .observation_plan
+            .scoped_tablet_baseline_scope
+        {
+            trellis_kernel::WorkerBaselineScope::AllPresent => {
+                observe_tablet_with_roles(repo_path, &request.node_role)?
+            }
+            trellis_kernel::WorkerBaselineScope::AuthorizedNodes => {
+                observe_tablet_nodes_with_roles(
+                    repo_path,
+                    &baseline_allowed_nodes,
+                    &request.node_role,
+                )?
+            }
+            trellis_kernel::WorkerBaselineScope::None => observe_tablet_nodes_with_roles(
+                repo_path,
+                &baseline_allowed_nodes,
+                &request.node_role,
+            )?,
+        };
+        let evaluated = evaluate_tablet_observation_with_roles(
+            repo_path,
+            &tablet_observation,
+            &request.node_role,
+            assumption_authoring_node.as_ref(),
+        );
+        relevant_new_errors(&evaluated, &[], &baseline_allowed_nodes)
+    } else {
+        Vec::new()
+    };
+    let baseline_correspondence_hashes = if collect_observations
+        && request
+            .worker_acceptance
+            .observation_plan
+            .capture_baseline_correspondence_hashes
+    {
+        ensure_worker_checker_support_available(repo_path, &request.current_present_nodes)?;
+        observe_correspondence_fingerprints_with_under_model_assumptions(
+            repo_path,
+            &request.current_present_nodes,
+            &under_model_assumption_nodes,
+        )?
+    } else {
+        BTreeMap::new()
+    };
+    let current_coverage = coverage_from_target_claims(
+        &request.configured_targets,
+        &request.current_target_claims,
+        &request.current_present_nodes,
+    );
+    let proof_validation_kind = matches!(
+        request.worker_acceptance.validation_kind,
+        WorkerValidationKind::ProofEasy
+            | WorkerValidationKind::ProofLocal
+            | WorkerValidationKind::ProofRestructure
+            | WorkerValidationKind::ProofCoarseRestructure
+    );
+    // `current_protected_fingerprints` used to be computed here from
+    // `request.protected_snapshot.keys()` for the post-hoc worker-honesty
+    // loop that ran after worker response ingest. Both have been removed —
+    // covering-node protection now lands at worker-commit time via the
+    // `paper_target_corr_reopen_guard_errors` check, so no pre-worker
+    // snapshot is needed.
+    let current_paper_current_fingerprints = if collect_observations && proof_validation_kind {
+        ensure_worker_checker_support_available(repo_path, &request.current_present_nodes)?;
+        let covering_union: BTreeSet<NodeId> =
+            current_coverage.values().flatten().cloned().collect();
+        let lean_relevant_per_covering =
+            runtime_cli_observations::observe_lean_relevant_definition_descendants_per_node(
+                repo_path,
+                &covering_union,
+            )?;
+        observe_paper_faithfulness_fingerprints(
+            repo_path,
+            &request.configured_targets,
+            &request.current_target_claims,
+            &request.current_present_nodes,
+            &request.current_paper_approved_fingerprints,
+            &lean_relevant_per_covering,
+        )
+    } else {
+        BTreeMap::new()
+    };
+    // Patch C-R: capture pre-delta `open_nodes` (the kernel's
+    // authoritative sorryd set BEFORE the worker burst). Sourced from
+    // disk via `open_nodes_from_repo` — `has_sorry` over each present
+    // node's `.lean` content. Matches the kernel's own `live.open_nodes`
+    // computation (worker_normalization::normalize_worker_response uses
+    // the same helper post-delta). Empty when observations are skipped
+    // (collect_observations=false, e.g. replay paths) to preserve the
+    // existing back-compat surface.
+    let current_open_nodes = if collect_observations {
+        trellis_kernel::open_nodes_from_repo(repo_path, &request.current_present_nodes)
+    } else {
+        BTreeSet::new()
+    };
+    Ok(PreparedWorkerGateOutput {
+        request: request_payload,
+        validation_kind: worker_validation_kind_name(request.worker_acceptance.validation_kind)
+            .to_string(),
+        worker_acceptance,
+        active_node: request
+            .active_node
+            .as_ref()
+            .map(|n| n.to_string())
+            .unwrap_or_default(),
+        held_target: request
+            .held_target
+            .as_ref()
+            .map(|n| n.to_string())
+            .unwrap_or_default(),
+        authorized_nodes: request.worker_acceptance.authorized_nodes.clone(),
+        configured_targets: request.configured_targets.clone(),
+        current_present_nodes: request.current_present_nodes.clone(),
+        current_proof_nodes: request.current_proof_nodes.clone(),
+        current_deps: request.current_deps.clone(),
+        current_target_claims: request.current_target_claims.clone(),
+        current_deviation_files: request.current_deviation_files.clone(),
+        current_node_deviation_claims: request.node_deviation_claims.clone(),
+        configured_reference_papers: request.configured_reference_papers.clone(),
+        current_node_reference_grounds: request.node_reference_grounds.clone(),
+        current_paper_approved_fingerprints: request.current_paper_approved_fingerprints.clone(),
+        approved_target_nodes: request.approved_target_nodes.clone(),
+        approved_corr_fingerprints: request.approved_corr_fingerprints.clone(),
+        coarse_dag_nodes: request.coarse_dag_nodes.clone(),
+        configured_challenge_targets: request.configured_challenge_targets.clone(),
+        current_challenge_claims: request.current_challenge_claims.clone(),
+        // PV Phase 2: derive the ExtractionModel node set from the threaded
+        // role map. Empty for all-math (`request.node_role` empty).
+        extraction_model_nodes: request
+            .node_role
+            .iter()
+            .filter(|(_, role)| **role == trellis_kernel::PvRole::ExtractionModel)
+            .map(|(node, _)| node.clone())
+            .collect(),
+        node_role: request.node_role.clone(),
+        under_model_assumption_nodes,
+        assumption_authoring_node,
+        current_coverage,
+        current_paper_current_fingerprints,
+        repo_path: repo_path.display().to_string(),
+        before_snapshot: observations.before_snapshot,
+        before_tablet_contents: observations.before_tablet_contents,
+        baseline_errors,
+        imports_before: observations.imports_before,
+        expected_active_hash: observations.expected_active_hash,
+        baseline_declaration_hashes: observations.baseline_declaration_hashes,
+        baseline_correspondence_hashes,
+        paper_source_path: paper_source_path.map(|p| p.to_path_buf()),
+        current_node_kinds: request.current_node_kinds.clone(),
+        current_open_nodes,
+    })
+}
+
+fn check_node_output(
+    repo_path: &std::path::Path,
+    node_name: &str,
+    expected_hash: Option<&str>,
+) -> Result<runtime_cli_observations::EvaluatedNode, String> {
+    let requested_nodes = BTreeSet::from([NodeId::from(node_name)]);
+    ensure_worker_checker_support_available(repo_path, &requested_nodes)?;
+    let observation = observe_node(repo_path, node_name)?;
+    Ok(evaluate_node_observation(
+        repo_path,
+        &observation,
+        expected_hash,
+    ))
+}
+
+fn check_tablet_output(
+    repo_path: &std::path::Path,
+) -> Result<runtime_cli_observations::EvaluatedTablet, String> {
+    ensure_worker_checker_support_available(repo_path, &BTreeSet::new())?;
+    let observation = observe_tablet(repo_path)?;
+    Ok(evaluate_tablet_observation(repo_path, &observation))
+}
+
+fn check_tablet_scoped_output(
+    repo_path: &std::path::Path,
+    baseline_errors: &[String],
+    allowed_nodes: &BTreeSet<NodeId>,
+) -> Result<ScopedTabletCheckOutput, String> {
+    ensure_worker_checker_support_available(repo_path, allowed_nodes)?;
+    let observation = observe_tablet_nodes(repo_path, allowed_nodes)?;
+    let evaluated = evaluate_tablet_observation(repo_path, &observation);
+    let errors = relevant_new_errors(&evaluated, baseline_errors, allowed_nodes);
+    Ok(ScopedTabletCheckOutput {
+        ok: errors.is_empty(),
+        errors,
+        warnings: evaluated.warnings,
+        all_errors: evaluated.errors,
+        error_records: evaluated.error_records,
+        allowed_nodes: allowed_nodes.iter().cloned().collect(),
+        build_output: evaluated.build_output,
+    })
+}
+
+fn worker_outcome_from_checked_payload(raw: &str) -> Result<trellis_kernel::WorkerOutcome, String> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "valid" => Ok(trellis_kernel::WorkerOutcome::Valid),
+        "invalid" => Ok(trellis_kernel::WorkerOutcome::Invalid),
+        "stuck" => Ok(trellis_kernel::WorkerOutcome::Stuck),
+        "needs_restructure" => Ok(trellis_kernel::WorkerOutcome::NeedsRestructure),
+        // PV under-model (Slice 1).
+        "target_false_under_model" => Ok(trellis_kernel::WorkerOutcome::TargetFalseUnderModel),
+        _ => Err(
+            "worker outcome must be one of ['valid', 'invalid', 'stuck', 'needs_restructure', 'target_false_under_model']"
+                .to_string(),
+        ),
+    }
+}
+
+fn difficulty_updates_from_checked_payload(
+    raw: &BTreeMap<String, String>,
+) -> BTreeMap<NodeId, Update<NodeDifficulty>> {
+    raw.iter()
+        .map(|(node, value)| {
+            let update = if value.eq_ignore_ascii_case("easy") {
+                Update::Set(NodeDifficulty::Easy)
+            } else {
+                Update::Set(NodeDifficulty::Hard)
+            };
+            (NodeId::from(node), update)
+        })
+        .collect()
+}
+
+fn request_id_from_value(request: &serde_json::Value) -> u32 {
+    request
+        .get("id")
+        .and_then(|value| value.as_u64())
+        .map(|value| value as u32)
+        .unwrap_or_default()
+}
+
+fn cycle_from_value(request: &serde_json::Value) -> u32 {
+    request
+        .get("cycle")
+        .and_then(|value| value.as_u64())
+        .map(|value| value as u32)
+        .unwrap_or_default()
+}
+
+fn node_kinds_from_request_value(
+    request: &serde_json::Value,
+) -> Result<BTreeMap<NodeId, trellis_kernel::NodeKind>, String> {
+    serde_json::from_value(
+        request
+            .get("current_node_kinds")
+            .cloned()
+            .unwrap_or_else(|| json!({})),
+    )
+    .map_err(|err| format!("worker acceptance context has invalid current_node_kinds: {err}"))
+}
+
+fn node_role_from_request_value(
+    request: &serde_json::Value,
+) -> Result<BTreeMap<NodeId, trellis_kernel::PvRole>, String> {
+    serde_json::from_value(
+        request
+            .get("node_role")
+            .cloned()
+            .unwrap_or_else(|| json!({})),
+    )
+    .map_err(|err| format!("worker acceptance context has invalid node_role: {err}"))
+}
+
+fn target_claims_after_updates(
+    configured_targets: &BTreeSet<TargetId>,
+    base: &BTreeMap<NodeId, BTreeSet<TargetId>>,
+    updates: &BTreeMap<NodeId, Update<BTreeSet<TargetId>>>,
+    present_nodes: &BTreeSet<NodeId>,
+) -> BTreeMap<NodeId, BTreeSet<TargetId>> {
+    present_nodes
+        .iter()
+        .map(|node| {
+            let next = match updates.get(node) {
+                Some(Update::Set(targets)) => targets.clone(),
+                Some(Update::Same) | None => base
+                    .get(node)
+                    .cloned()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .filter(|target| configured_targets.contains(target))
+                    .collect(),
+            };
+            (node.clone(), next)
+        })
+        .collect()
+}
+
+fn deviation_files_after_updates(
+    base: &BTreeMap<trellis_kernel::DeviationId, String>,
+    updates: &BTreeMap<trellis_kernel::DeviationId, DeviationRequest>,
+) -> BTreeMap<trellis_kernel::DeviationId, String> {
+    let mut deviation_files = base.clone();
+    for (id, request) in updates {
+        if !request.path.trim().is_empty() {
+            deviation_files.insert(id.clone(), request.path.clone());
+        }
+    }
+    deviation_files
+}
+
+fn node_deviation_claims_after_updates(
+    base: &BTreeMap<NodeId, BTreeSet<trellis_kernel::DeviationId>>,
+    deviation_requests: &BTreeMap<trellis_kernel::DeviationId, trellis_kernel::DeviationRequest>,
+    updates: &BTreeMap<NodeId, BTreeSet<trellis_kernel::DeviationId>>,
+    present_nodes: &BTreeSet<NodeId>,
+) -> BTreeMap<NodeId, BTreeSet<trellis_kernel::DeviationId>> {
+    // Mirror `apply_worker_structure_updates` (model.rs:5617-5650):
+    // first seed claims from `deviation_requests[id].affected_nodes`
+    // intersected with `present_nodes`, then apply the explicit
+    // `node_deviation_claims` overrides (which may clear a node's
+    // claim set entirely). The two computations must agree so the
+    // hydrator's `substantiveness_current_fingerprints` snapshot
+    // matches the state that lands on the next kernel apply.
+    let mut combined: BTreeMap<NodeId, BTreeSet<trellis_kernel::DeviationId>> = base.clone();
+    for (id, request) in deviation_requests {
+        if request.path.trim().is_empty() {
+            continue;
+        }
+        for node in &request.affected_nodes {
+            if present_nodes.contains(node) {
+                combined.entry(node.clone()).or_default().insert(id.clone());
+            }
+        }
+    }
+    for (node, claims) in updates {
+        if claims.is_empty() {
+            combined.remove(node);
+        } else {
+            combined.insert(node.clone(), claims.clone());
+        }
+    }
+    present_nodes
+        .iter()
+        .filter_map(|node| {
+            let claims = combined.get(node).cloned().unwrap_or_default();
+            if claims.is_empty() {
+                None
+            } else {
+                Some((node.clone(), claims))
+            }
+        })
+        .collect()
+}
+
+/// Reference-paper claims after a response's full-set-replacement
+/// updates, mirroring `apply_worker_structure_updates` +
+/// `normalize_live_structural_state` (prune absent nodes and ids
+/// outside the configured registry) so the hydrator's fingerprint
+/// snapshot matches the state that lands on the next kernel apply.
+fn node_reference_grounds_after_updates(
+    base: &BTreeMap<NodeId, BTreeSet<trellis_kernel::RefPaperId>>,
+    updates: &BTreeMap<NodeId, BTreeSet<trellis_kernel::RefPaperId>>,
+    configured_reference_papers: &BTreeMap<
+        trellis_kernel::RefPaperId,
+        trellis_kernel::ReferencePaperSpec,
+    >,
+    present_nodes: &BTreeSet<NodeId>,
+) -> BTreeMap<NodeId, BTreeSet<trellis_kernel::RefPaperId>> {
+    let mut combined: BTreeMap<NodeId, BTreeSet<trellis_kernel::RefPaperId>> = base.clone();
+    for (node, claims) in updates {
+        if claims.is_empty() {
+            combined.remove(node);
+        } else {
+            combined.insert(node.clone(), claims.clone());
+        }
+    }
+    combined.retain(|node, claims| {
+        claims.retain(|id| configured_reference_papers.contains_key(id));
+        present_nodes.contains(node) && !claims.is_empty()
+    });
+    combined
+}
+
+fn coverage_from_target_claims(
+    configured_targets: &BTreeSet<TargetId>,
+    target_claims: &BTreeMap<NodeId, BTreeSet<TargetId>>,
+    present_nodes: &BTreeSet<NodeId>,
+) -> BTreeMap<TargetId, BTreeSet<NodeId>> {
+    configured_targets
+        .iter()
+        .map(|target| {
+            let covered = present_nodes
+                .iter()
+                .filter(|node| {
+                    target_claims
+                        .get(*node)
+                        .is_some_and(|targets| targets.contains(target))
+                })
+                .cloned()
+                .collect();
+            (target.clone(), covered)
+        })
+        .collect()
+}
+
+fn proof_validation_kind_requires_protected_package_check(validation_kind: &str) -> bool {
+    matches!(
+        validation_kind,
+        "proof_easy" | "proof_local" | "proof_restructure" | "proof_coarse_restructure"
+    )
+}
+
+fn proof_protected_package_legality_error(
+    validation_kind: &str,
+    acceptance_context: &PreparedWorkerGateOutput,
+    response: &trellis_kernel::WorkerResponse,
+) -> Option<String> {
+    if !proof_validation_kind_requires_protected_package_check(validation_kind)
+        || validation_kind == "proof_coarse_restructure"
+    {
+        return None;
+    }
+    if response.snapshot.coverage != acceptance_context.current_coverage {
+        return Some("proof worker changed protected package coverage".to_string());
+    }
+    // The paper-fingerprint descendant axis is now Lean-relevance-filtered
+    // (paper_fingerprints.rs `lean_relevant_definition_descendants`). A
+    // worker adding a helper that no covering node's `lean_semantic_closure`
+    // walk consumes does not change this axis; only Lean-relevant additions
+    // or modifications surface here, which is exactly the protection
+    // intent. No descendant strip is required; compare directly.
+    if response.snapshot.paper_current_fingerprints
+        != acceptance_context.current_paper_current_fingerprints
+    {
+        return Some("proof worker changed protected package paper fingerprints".to_string());
+    }
+    // The old per-node protected_snapshot post-hoc honesty check lived here.
+    // Deleted: under the new design, commit-time protection is a single
+    // `paper_target_corr_reopen_guard_errors` check restricted to
+    // paper-target-covering nodes (wired in
+    // `proof_worker_delta_step_result`). Non-covering nodes are
+    // intentionally NOT post-hoc-honesty-checked against a pre-worker
+    // fingerprint snapshot — they flow through normal correspondence
+    // reopen → verify → reviewer adjudication on meaning changes.
+    None
+}
+
+fn populate_response_fingerprints(
+    repo_path: &std::path::Path,
+    configured_targets: &std::collections::BTreeSet<TargetId>,
+    current_target_claims: &std::collections::BTreeMap<
+        NodeId,
+        std::collections::BTreeSet<TargetId>,
+    >,
+    current_deviation_files: &std::collections::BTreeMap<trellis_kernel::DeviationId, String>,
+    current_node_deviation_claims: &std::collections::BTreeMap<
+        NodeId,
+        std::collections::BTreeSet<trellis_kernel::DeviationId>,
+    >,
+    configured_reference_papers: &std::collections::BTreeMap<
+        trellis_kernel::RefPaperId,
+        trellis_kernel::ReferencePaperSpec,
+    >,
+    current_node_reference_grounds: &std::collections::BTreeMap<
+        NodeId,
+        std::collections::BTreeSet<trellis_kernel::RefPaperId>,
+    >,
+    approved_paper_fingerprints: &std::collections::BTreeMap<TargetId, String>,
+    paper_source_path: Option<&std::path::Path>,
+    current_node_kinds: &std::collections::BTreeMap<NodeId, trellis_kernel::NodeKind>,
+    node_role: &std::collections::BTreeMap<NodeId, trellis_kernel::PvRole>,
+    under_model_assumption_nodes: &std::collections::BTreeSet<NodeId>,
+    response: &mut trellis_kernel::WorkerResponse,
+) -> Result<(), String> {
+    let present_nodes = response.snapshot.present_nodes.clone();
+    let node_kinds = node_kinds_after_updates(
+        current_node_kinds,
+        &response.node_kind_updates,
+        &present_nodes,
+    );
+    let target_claims = target_claims_after_updates(
+        configured_targets,
+        current_target_claims,
+        &response.target_claim_updates,
+        &present_nodes,
+    );
+    let deviation_files =
+        deviation_files_after_updates(current_deviation_files, &response.deviation_requests);
+    let node_deviation_claims = node_deviation_claims_after_updates(
+        current_node_deviation_claims,
+        &response.deviation_requests,
+        &response.node_deviation_claims,
+        &present_nodes,
+    );
+    // Reference-paper claims after this response's full-set-replacement
+    // updates. Same hazard class as the `node_kind_updates` merge below:
+    // the acceptance-cycle fingerprint must describe the POST-worker
+    // claim set, or a freshly claimed node is fingerprinted claim-free
+    // on the acceptance cycle and with the claim on the next runtime
+    // observe — a spurious substantiveness double-reopen (Amendment G4).
+    let node_reference_grounds = node_reference_grounds_after_updates(
+        current_node_reference_grounds,
+        &response.node_reference_grounds,
+        configured_reference_papers,
+        &present_nodes,
+    );
+    let target_fingerprints = observe_correspondence_fingerprints_with_under_model_assumptions(
+        repo_path,
+        &present_nodes,
+        under_model_assumption_nodes,
+    )?;
+    let deviation_current_fingerprints =
+        observe_deviation_fingerprints(repo_path, &deviation_files)?;
+    let sound_current_fingerprints =
+        observe_soundness_fingerprints(repo_path, &present_nodes, &node_kinds, node_role)?;
+    let sound_current_fingerprint_parts =
+        observe_soundness_fingerprint_parts(repo_path, &present_nodes, &node_kinds, node_role)?;
+    let sketch_proof_nodes = observe_sketch_proof_nodes(repo_path, &present_nodes);
+    let placeholder_definition_nodes =
+        runtime_cli_observations::observe_placeholder_definition_nodes(
+            repo_path,
+            &present_nodes,
+            &node_kinds,
+        );
+    let coverage_now =
+        coverage_from_target_claims(configured_targets, &target_claims, &present_nodes);
+    let covering_union: BTreeSet<NodeId> = coverage_now.values().flatten().cloned().collect();
+    let lean_relevant_per_covering =
+        runtime_cli_observations::observe_lean_relevant_definition_descendants_per_node(
+            repo_path,
+            &covering_union,
+        )?;
+    let paper_current_fingerprints = observe_paper_faithfulness_fingerprints(
+        repo_path,
+        configured_targets,
+        &target_claims,
+        &present_nodes,
+        approved_paper_fingerprints,
+        &lean_relevant_per_covering,
+    );
+    // Substantiveness fingerprints describe the post-worker snapshot.
+    // `node_kind_updates` are produced by kernel normalization from disk
+    // before hydration, so apply them before hashing. Otherwise a newly
+    // introduced proof/helper node is fingerprinted as the default
+    // Definition on the acceptance cycle, then as Proof on the next cycle,
+    // creating a spurious substantiveness reopen.
+    let substantiveness_fingerprints =
+        runtime_cli_observations::observe_substantiveness_fingerprints(
+            repo_path,
+            &present_nodes,
+            paper_source_path,
+            &node_kinds,
+            &node_deviation_claims,
+            &deviation_current_fingerprints,
+            configured_reference_papers,
+            &node_reference_grounds,
+        )?;
+    response.snapshot.coverage =
+        coverage_from_target_claims(configured_targets, &target_claims, &present_nodes);
+    response.snapshot.target_fingerprints = target_fingerprints.clone();
+    response.snapshot.corr_current_fingerprints = target_fingerprints;
+    response.snapshot.paper_current_fingerprints = paper_current_fingerprints;
+    response.snapshot.deviation_current_fingerprints = deviation_current_fingerprints;
+    response.snapshot.substantiveness_current_fingerprints = substantiveness_fingerprints;
+    response.snapshot.sound_current_fingerprints = sound_current_fingerprints;
+    response.snapshot.sound_current_fingerprint_parts = sound_current_fingerprint_parts;
+    response.snapshot.sketch_proof_nodes = sketch_proof_nodes;
+    response.snapshot.placeholder_definition_nodes = placeholder_definition_nodes;
+    // Narrow Lean type-surface closure per target. Snapshotted at the
+    // next AdvancePhase Approve (engine.rs `apply_human_gate_response`
+    // GateKind::Advance / HumanChoice::Approve branch) into
+    // `approved_targets.protected_closure_nodes`, which extends
+    // `approved_target_nodes()` and therefore the worker-acceptance
+    // protection set in `proof_worker_protected_package_legal`. Cheap
+    // to observe on every burst because `observe_lean_semantic_payloads`
+    // memoises per-node payloads in-process and on disk.
+    response.snapshot.protected_closure_nodes_per_target =
+        runtime_cli_observations::observe_protected_closure_nodes(
+            repo_path,
+            &response.snapshot.coverage,
+            &response.snapshot.present_nodes,
+        )?;
+    Ok(())
+}
+
+fn node_kinds_after_updates(
+    current_node_kinds: &BTreeMap<NodeId, NodeKind>,
+    updates: &BTreeMap<NodeId, Update<NodeKind>>,
+    present_nodes: &BTreeSet<NodeId>,
+) -> BTreeMap<NodeId, NodeKind> {
+    let mut node_kinds = current_node_kinds.clone();
+    for (node, update) in updates {
+        match update {
+            Update::Same => {}
+            Update::Set(kind) => {
+                node_kinds.insert(node.clone(), *kind);
+            }
+        }
+    }
+    node_kinds.retain(|node, _| present_nodes.contains(node));
+    node_kinds
+}
+
+fn hydrate_worker_response_output(
+    input: &HydrateWorkerResponseInput,
+) -> Result<HydratedWorkerResponseOutput, String> {
+    let mut response = input.response.clone();
+    let present_nodes = response.snapshot.present_nodes.clone();
+    ensure_worker_checker_support_available(&input.repo_path, &present_nodes)?;
+    populate_response_fingerprints(
+        &input.repo_path,
+        &input.configured_targets,
+        &input.current_target_claims,
+        &input.current_deviation_files,
+        &input.current_node_deviation_claims,
+        &input.configured_reference_papers,
+        &input.current_node_reference_grounds,
+        &input.approved_paper_fingerprints,
+        input.paper_source_path.as_deref(),
+        &input.current_node_kinds,
+        &input.node_role,
+        &input.under_model_assumption_nodes,
+        &mut response,
+    )?;
+    Ok(HydratedWorkerResponseOutput { response })
+}
+
+fn compute_changed_node_stems_for_autofix(
+    before_snapshot: &BTreeMap<String, String>,
+    repo_path: &Path,
+) -> BTreeSet<String> {
+    let current = snapshot_tablet_dir(repo_path);
+    let mut stems = BTreeSet::new();
+    for (filename, current_hash) in &current {
+        if !filename.ends_with(".lean") {
+            continue;
+        }
+        if before_snapshot.get(filename) != Some(current_hash) {
+            if let Some(stem) = filename.strip_suffix(".lean") {
+                stems.insert(stem.to_string());
+            }
+        }
+    }
+    stems
+}
+
+/// Seed-owned model/refinement files that ordinary workers may read but may
+/// never revise in a required-v1 campaign.  A trust revision is a separate,
+/// audit-authorized lifecycle transition; letting an ordinary theorem/proof
+/// burst edit these bytes would silently change the Rust↔model boundary after
+/// the seed was approved.
+const TRUST_V1_IMMUTABLE_WORKER_FILES: &[&str] = &[
+    "Preamble.lean",
+    "Preamble.tex",
+    "Assumptions.lean",
+    "Assumptions.tex",
+];
+
+fn trust_base_required_v1(request: &serde_json::Value) -> bool {
+    request
+        .get("trust_base_required_v1")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+}
+
+fn trust_v1_dormant_conditional_candidate_nodes(
+    acceptance_context: &PreparedWorkerGateOutput,
+) -> Result<BTreeSet<NodeId>, String> {
+    let value = acceptance_context
+        .request
+        .get("trust_dormant_conditional_candidate_nodes")
+        .cloned()
+        .ok_or_else(|| {
+            "trust-v1 worker request is missing its dormant conditional-candidate protection set"
+                .to_owned()
+        })?;
+    serde_json::from_value(value).map_err(|error| {
+        format!(
+            "trust-v1 worker request has an invalid dormant conditional-candidate protection set: {error}"
+        )
+    })
+}
+
+fn trust_v1_reserved_non_node_stems(
+    acceptance_context: &PreparedWorkerGateOutput,
+) -> Result<BTreeSet<NodeId>, String> {
+    let mut reserved = BTreeSet::from([NodeId::from(
+        trellis_kernel::assumptions_registry::ASSUMPTIONS_NODE,
+    )]);
+    reserved.extend(trust_v1_dormant_conditional_candidate_nodes(
+        acceptance_context,
+    )?);
+    Ok(reserved)
+}
+
+/// Cheap, fail-closed guard executed before any Lean build or semantic probe.
+/// The pre-burst snapshot was captured by the kernel after support-file sync;
+/// equality against the authoritative post-burst workspace therefore proves
+/// that a worker neither modified, deleted, replaced, nor newly introduced a
+/// seed-owned support file.  File-kind checks close the symlink/device route
+/// that a content-only hash comparison would miss.
+fn trust_v1_seed_support_edit_errors(
+    repo_path: &Path,
+    acceptance_context: &PreparedWorkerGateOutput,
+) -> Vec<String> {
+    if !trust_base_required_v1(&acceptance_context.request) {
+        return Vec::new();
+    }
+    let mut errors = Vec::new();
+    if acceptance_context.before_snapshot.is_empty() {
+        errors.push(
+            "trust-v1 worker acceptance is missing its authenticated pre-burst Tablet snapshot"
+                .to_string(),
+        );
+        return errors;
+    }
+    let after = snapshot_tablet_dir(repo_path);
+    for filename in TRUST_V1_IMMUTABLE_WORKER_FILES {
+        let path = repo_path.join("Tablet").join(filename);
+        let file_kind_ok = fs::symlink_metadata(&path)
+            .map(|metadata| metadata.file_type().is_file())
+            .unwrap_or(false);
+        if !file_kind_ok {
+            errors.push(format!(
+                "trust-v1 immutable seed support file Tablet/{filename} is missing or is not a regular file"
+            ));
+            continue;
+        }
+        match (
+            acceptance_context.before_snapshot.get(*filename),
+            after.get(*filename),
+        ) {
+            (Some(before_hash), Some(after_hash)) if before_hash == after_hash => {}
+            (Some(_), Some(_)) => errors.push(format!(
+                "ordinary workers may not modify trust-v1 immutable seed support file Tablet/{filename}; use the audit-authorized trust-revision lifecycle"
+            )),
+            (Some(_), None) => errors.push(format!(
+                "ordinary workers may not delete trust-v1 immutable seed support file Tablet/{filename}"
+            )),
+            (None, Some(_)) => errors.push(format!(
+                "trust-v1 pre-burst snapshot did not authenticate required seed support file Tablet/{filename}"
+            )),
+            (None, None) => errors.push(format!(
+                "trust-v1 required seed support file Tablet/{filename} is absent from both the pre-burst snapshot and current workspace"
+            )),
+        }
+    }
+    errors
+}
+
+/// Dormant conditional candidates are authenticated catalog entries, not
+/// ordinary Tablet nodes.  A worker must not materialize or mutate their
+/// carriers before a journal profile-selection event activates them.  An
+/// unchanged pre-existing regular file is tolerated for crash recovery, but
+/// remains excluded from every worker edit scope.
+fn trust_v1_dormant_candidate_edit_errors(
+    repo_path: &Path,
+    acceptance_context: &PreparedWorkerGateOutput,
+) -> Vec<String> {
+    if !trust_base_required_v1(&acceptance_context.request) {
+        return Vec::new();
+    }
+    let dormant = match trust_v1_dormant_conditional_candidate_nodes(acceptance_context) {
+        Ok(nodes) => nodes,
+        Err(error) => return vec![error],
+    };
+    let after = snapshot_tablet_dir(repo_path);
+    let mut errors = Vec::new();
+    for node in dormant {
+        if acceptance_context.current_present_nodes.contains(&node) {
+            errors.push(format!(
+                "trust-v1 request marks conditional candidate {node} as both dormant and present"
+            ));
+        }
+        for extension in ["lean", "tex"] {
+            let filename = format!("{}.{}", node.as_str(), extension);
+            let before_hash = acceptance_context.before_snapshot.get(&filename);
+            let after_hash = after.get(&filename);
+            let unchanged = before_hash == after_hash;
+            let path = repo_path.join("Tablet").join(&filename);
+            let regular_if_present = fs::symlink_metadata(&path)
+                .map(|metadata| metadata.file_type().is_file())
+                .unwrap_or(after_hash.is_none());
+            if !unchanged || !regular_if_present {
+                errors.push(format!(
+                    "ordinary workers may not create, modify, delete, or replace dormant trust conditional candidate Tablet/{filename}"
+                ));
+            }
+        }
+    }
+    errors
+}
+
+fn skipped_validation_results(
+    plan: &[WorkerValidationExecutionPlanStep],
+) -> Vec<WorkerValidationStepResult> {
+    plan.iter()
+        .map(|step| WorkerValidationStepResult {
+            kind: validation_step_progress_name(step).to_string(),
+            ok: true,
+            detail: String::new(),
+            errors: Vec::new(),
+            build_output: String::new(),
+            allowed_nodes: BTreeSet::new(),
+            local_closure_results: BTreeMap::new(),
+        })
+        .collect()
+}
+
+fn staged_lean_block_declares_axiom(lean_statement: &str, axiom_name: &str) -> bool {
+    let axiom_name = axiom_name.trim();
+    if axiom_name.is_empty() {
+        return false;
+    }
+    lean_statement.lines().any(|line| {
+        let Some(rest) = line.trim_start().strip_prefix("axiom ") else {
+            return false;
+        };
+        let rest = rest.trim_start();
+        let Some(after_name) = rest.strip_prefix(axiom_name) else {
+            return false;
+        };
+        after_name.trim_start().starts_with(':')
+    })
+}
+
+fn check_trellis_worker_result_output(
+    repo_path: &std::path::Path,
+    acceptance_context: serde_json::Value,
+    raw_payload: serde_json::Value,
+) -> Result<CheckedTrellisWorkerResultOutput, String> {
+    // Stable enumeration: each of these seven top-level phases is emitted to
+    // stderr with `[acceptance] phase k/7: ...` before its work runs (or
+    // `(skipped — ...)` when control flow takes a path that bypasses the
+    // phase; the skip note names the already-recorded outcome as the cause
+    // so workers don't read the skip itself as a new internal failure). The Python `run_kernel_cli` wrapper streams stderr line-by-line
+    // so the calling agent sees progress in real time during the 5-30 minute
+    // disk-bound checks, instead of a silent gap until the JSON response.
+    //
+    // Phase 5 (FILESPEC validation) was added 2026-05-12 to surface
+    // body-marker / declaration-shape violations as worker-time
+    // deterministic_rejection_reasons. The marker rule (every ordinary
+    // Tablet `.lean` file has exactly one line whose trimmed content is
+    // `-- BODY`) lets the kernel locate the statement/proof boundary
+    // via a sub-millisecond text scan instead of the previous
+    // parser-based path, which had a long tail of false-positive
+    // failure modes (e.g. Mathlib's `scoped prefix:arg "#" => Finset.card`
+    // on `FiberAndDegreeMixedLiftedIntersectionUniformBound` — the
+    // burn-loop incident this phase was originally added for).
+    const ACCEPTANCE_PHASES: usize = 7;
+
+    let allowed_outcomes = worker_allowed_outcomes_for_validation(&acceptance_context)?;
+    let validated =
+        validate_trellis_worker_result_data_with_allowed_outcomes(&raw_payload, &allowed_outcomes);
+    if !validated.ok {
+        return Ok(CheckedTrellisWorkerResultOutput {
+            ok: false,
+            errors: validated.errors,
+            data: None,
+            response: None,
+            validation_step_results: Vec::new(),
+            contract_errors: Vec::new(),
+            validation_errors: Vec::new(),
+            final_outcome: String::new(),
+        });
+    }
+
+    acceptance_progress_phase(1, ACCEPTANCE_PHASES, "parse acceptance context");
+    let validated_data = validated
+        .data
+        .clone()
+        .ok_or_else(|| "validated worker payload is missing data".to_string())?;
+    let payload: CheckedWorkerPayload = serde_json::from_value(validated_data.clone())
+        .map_err(|err| format!("validated worker payload had unexpected shape: {err}"))?;
+    let mut acceptance_context: PreparedWorkerGateOutput =
+        serde_json::from_value(acceptance_context)
+            .map_err(|err| format!("worker acceptance context has unexpected shape: {err}"))?;
+    if acceptance_context.node_role.is_empty() {
+        acceptance_context.node_role = node_role_from_request_value(&acceptance_context.request)?;
+    }
+    if acceptance_context.extraction_model_nodes.is_empty() {
+        acceptance_context.extraction_model_nodes = acceptance_context
+            .node_role
+            .iter()
+            .filter(|(_, role)| **role == trellis_kernel::PvRole::ExtractionModel)
+            .map(|(node, _)| node.clone())
+            .collect();
+    }
+    if acceptance_context.under_model_assumption_nodes.is_empty() {
+        acceptance_context.under_model_assumption_nodes =
+            runtime_cli_observations::under_model_assumption_nodes_from_roles(
+                acceptance_context_request_is_pv(&acceptance_context.request),
+                &acceptance_context.node_role,
+            );
+    }
+    let assumption_authoring_node = assumption_authoring_node_for_context(&acceptance_context);
+
+    let validation_execution_plan: Vec<WorkerValidationExecutionPlanStep> = serde_json::from_value(
+        acceptance_context
+            .worker_acceptance
+            .get("validation_execution_plan")
+            .cloned()
+            .unwrap_or_else(|| json!([])),
+    )
+    .map_err(|err| {
+        format!("worker acceptance context has invalid validation_execution_plan: {err}")
+    })?;
+
+    // Trust-v1 support carriers are outside ordinary worker authority.  Run
+    // this byte/file-kind check before any Lean build: the real dec2flt run
+    // demonstrated that a post-edit dependency closure can otherwise make a
+    // modified carrier look like an authorized theorem node.
+    let mut trust_seed_support_errors =
+        trust_v1_seed_support_edit_errors(repo_path, &acceptance_context);
+    for error in trust_v1_dormant_candidate_edit_errors(repo_path, &acceptance_context) {
+        if !trust_seed_support_errors.contains(&error) {
+            trust_seed_support_errors.push(error);
+        }
+    }
+    let trust_reserved_stems = if trust_base_required_v1(&acceptance_context.request) {
+        match trust_v1_reserved_non_node_stems(&acceptance_context) {
+            Ok(stems) => stems,
+            Err(error) => {
+                if !trust_seed_support_errors.contains(&error) {
+                    trust_seed_support_errors.push(error);
+                }
+                BTreeSet::from([NodeId::from(
+                    trellis_kernel::assumptions_registry::ASSUMPTIONS_NODE,
+                )])
+            }
+        }
+    } else {
+        BTreeSet::new()
+    };
+
+    let is_non_progress_outcome = matches!(
+        payload.outcome.as_str(),
+        "stuck" | "needs_restructure" | "target_false_under_model"
+    );
+
+    // Auto-fix orphan-import injection runs INSIDE this CLI subcommand,
+    // AFTER `execute_worker_validation_plan` returns step results but
+    // BEFORE `populate_response_fingerprints` reads disk for fingerprints.
+    //
+    // This ordering eliminates the bug (#55) where kernel state stored
+    // stale pre-auto-fix fingerprints while disk had post-auto-fix
+    // content. Validators on both sides still observe pre-auto-fix disk
+    // (matching the worker's check.py); only fingerprints see the
+    // post-auto-fix state, ensuring kernel state and disk agree.
+    //
+    // Historical context: an earlier design ran auto-fix BEFORE
+    // validation, which produced "authoritative checker mismatch"
+    // rejections (worker check.py saw pre-fix, supervisor's check.py
+    // saw post-fix, the two disagreed and the burst was rejected).
+    // The current ordering avoids that because validation is scoped to
+    // pre-fix disk on both sides; only fingerprints see the post-fix
+    // state. Bridge.py no longer calls auto_fix; the polish step is
+    // kernel-authored. Worker repo sync still runs in bridge.py via
+    // `propagate_tablet_back_to_worker` after this CLI returns.
+
+    let (validation_step_results, protected_semantic_change_nodes) = if !trust_seed_support_errors
+        .is_empty()
+    {
+        eprintln!(
+            "[acceptance] phase 2/{ACCEPTANCE_PHASES}: validation execution plan (skipped — trust-v1 immutable seed-support edit was rejected before semantic checks)"
+        );
+        (
+            skipped_validation_results(&validation_execution_plan),
+            BTreeSet::new(),
+        )
+    } else if is_non_progress_outcome {
+        eprintln!(
+            "[acceptance] phase 2/{ACCEPTANCE_PHASES}: validation execution plan (skipped — the worker-declared outcome={} ends acceptance early; details at the end)",
+            payload.outcome
+        );
+        (Vec::new(), BTreeSet::new())
+    } else {
+        acceptance_progress_phase(2, ACCEPTANCE_PHASES, "validation execution plan");
+        let executed = execute_worker_validation_plan_with_progress(
+            &ExecuteWorkerValidationPlanInput {
+                repo_path: repo_path.to_path_buf(),
+                active_node: if acceptance_context.active_node.is_empty() {
+                    None
+                } else {
+                    Some(NodeId::from(acceptance_context.active_node.clone()))
+                },
+                before_snapshot: acceptance_context.before_snapshot.clone(),
+                before_tablet_contents: acceptance_context.before_tablet_contents.clone(),
+                baseline_errors: acceptance_context.baseline_errors.clone(),
+                expected_active_hash: acceptance_context.expected_active_hash.clone(),
+                baseline_declaration_hashes: acceptance_context.baseline_declaration_hashes.clone(),
+                baseline_correspondence_hashes: acceptance_context
+                    .baseline_correspondence_hashes
+                    .clone(),
+                current_present_nodes: acceptance_context.current_present_nodes.clone(),
+                reserved_non_node_stems: trust_reserved_stems.clone(),
+                seed_support_definition_nodes: if trust_base_required_v1(
+                    &acceptance_context.request,
+                ) {
+                    BTreeSet::from([NodeId::from(
+                        trellis_kernel::assumptions_registry::ASSUMPTIONS_NODE,
+                    )])
+                } else {
+                    BTreeSet::new()
+                },
+                declared_deleted_nodes: payload
+                    .deleted_nodes
+                    .iter()
+                    .map(|node| NodeId::from(node.as_str()))
+                    .collect(),
+                // Patch C-N item 1: forward kinds so the local-closure
+                // probe dep-kind validator inside
+                // `proof_worker_delta_step_result` has the map it needs
+                // to reject kind-confused deps (boundary listed as
+                // definition, etc.). On the acceptance path this is
+                // always populated from the request's
+                // `current_node_kinds`.
+                current_node_kinds: acceptance_context.current_node_kinds.clone(),
+                // Patch C-R: forward the pre-delta open_nodes snapshot
+                // captured at `prepare_worker_gate_output` time so the
+                // helper-probe loop in `proof_worker_delta_step_result`
+                // can detect sorryd→sorry-free transitions for non-
+                // active proof_nodes.
+                current_open_nodes: acceptance_context.current_open_nodes.clone(),
+                configured_targets: acceptance_context.configured_targets.clone(),
+                current_deps: acceptance_context.current_deps.clone(),
+                current_target_claims: acceptance_context.current_target_claims.clone(),
+                approved_target_nodes: acceptance_context.approved_target_nodes.clone(),
+                approved_corr_fingerprints: acceptance_context.approved_corr_fingerprints.clone(),
+                coarse_dag_nodes: acceptance_context.coarse_dag_nodes.clone(),
+                under_model_assumption_nodes: acceptance_context
+                    .under_model_assumption_nodes
+                    .clone(),
+                node_role: acceptance_context.node_role.clone(),
+                assumption_authoring_node: assumption_authoring_node.clone(),
+                authorized_nodes: acceptance_context.authorized_nodes.clone(),
+                // Amendment B1: the frozen-node claim-delta check needs
+                // the response's reference-ground updates + the pre-burst
+                // kernel view.
+                node_reference_ground_updates: payload
+                    .node_reference_grounds
+                    .iter()
+                    .map(|(node, claims)| {
+                        (
+                            NodeId::from(node),
+                            claims
+                                .iter()
+                                .map(trellis_kernel::RefPaperId::from)
+                                .collect(),
+                        )
+                    })
+                    .collect(),
+                current_node_reference_grounds: acceptance_context
+                    .current_node_reference_grounds
+                    .clone(),
+                validation_execution_plan: validation_execution_plan.clone(),
+            },
+            Some("2/6"),
+        )?;
+        (
+            executed.step_results,
+            executed.protected_semantic_change_nodes,
+        )
+    };
+
+    acceptance_progress_phase(3, ACCEPTANCE_PHASES, "finalize worker acceptance");
+    let current_node_kinds = node_kinds_from_request_value(&acceptance_context.request)?;
+
+    let worker_acceptance_input = WorkerAcceptanceInput {
+        request_id: request_id_from_value(&acceptance_context.request),
+        cycle: cycle_from_value(&acceptance_context.request),
+        payload_outcome: worker_outcome_from_checked_payload(&payload.outcome)?,
+        difficulty_updates: difficulty_updates_from_checked_payload(&payload.difficulty_updates),
+        deviation_requests: payload
+            .deviation_requests
+            .iter()
+            .map(|(id, request)| (trellis_kernel::DeviationId::from(id), request.clone()))
+            .collect(),
+        node_deviation_claims: payload
+            .node_deviation_claims
+            .iter()
+            .map(|(node, claims)| {
+                (
+                    NodeId::from(node),
+                    claims
+                        .iter()
+                        .map(trellis_kernel::DeviationId::from)
+                        .collect(),
+                )
+            })
+            .collect(),
+        node_reference_grounds: payload
+            .node_reference_grounds
+            .iter()
+            .map(|(node, claims)| {
+                (
+                    NodeId::from(node),
+                    claims
+                        .iter()
+                        .map(trellis_kernel::RefPaperId::from)
+                        .collect(),
+                )
+            })
+            .collect(),
+        configured_reference_papers: acceptance_context
+            .configured_reference_papers
+            .keys()
+            .cloned()
+            .collect(),
+        deviation_deletions: payload
+            .deviation_deletions
+            .iter()
+            .map(trellis_kernel::DeviationId::from)
+            .collect(),
+        deleted_nodes: payload
+            .deleted_nodes
+            .iter()
+            .map(|node| NodeId::from(node.as_str()))
+            .collect(),
+        current_node_deviation_claims: acceptance_context.current_node_deviation_claims.clone(),
+        current_deviation_files: acceptance_context.current_deviation_files.clone(),
+        before_snapshot: acceptance_context.before_snapshot.clone(),
+        forbid_tablet_changes_when_stuck: acceptance_context
+            .worker_acceptance
+            .get("forbid_tablet_changes_when_stuck")
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false),
+        validation_execution_plan,
+        validation_step_results: validation_step_results.clone(),
+        protected_semantic_change_nodes,
+        audit_request: payload.audit_request.clone(),
+        memory_challenges: payload.memory_challenges.clone(),
+        normalization: WorkerNormalizationInput {
+            repo_path: repo_path.to_path_buf(),
+            configured_targets: acceptance_context.configured_targets.clone(),
+            current_present_nodes: acceptance_context.current_present_nodes.clone(),
+            current_proof_nodes: acceptance_context.current_proof_nodes.clone(),
+            current_node_kinds,
+            current_deps: acceptance_context.current_deps.clone(),
+            current_target_claims: acceptance_context.current_target_claims.clone(),
+            approved_paper_fingerprints: acceptance_context
+                .current_paper_approved_fingerprints
+                .clone(),
+            target_claim_updates: payload
+                .target_claim_updates
+                .iter()
+                .map(|(node, targets)| {
+                    (
+                        NodeId::from(node),
+                        targets.iter().map(TargetId::from).collect(),
+                    )
+                })
+                .collect(),
+            configured_challenge_targets: acceptance_context.configured_challenge_targets.clone(),
+            extraction_model_nodes: acceptance_context.extraction_model_nodes.clone(),
+            current_challenge_claims: acceptance_context.current_challenge_claims.clone(),
+            challenge_claim_updates: payload
+                .challenge_claim_updates
+                .iter()
+                .map(|(node, targets)| {
+                    (
+                        NodeId::from(node),
+                        targets
+                            .iter()
+                            .map(trellis_kernel::ChallengeTargetId::from)
+                            .collect(),
+                    )
+                })
+                .collect(),
+            target_fingerprints: BTreeMap::new(),
+            sound_current_fingerprints: BTreeMap::new(),
+        },
+    };
+    let mut output = if trust_base_required_v1(&acceptance_context.request) {
+        accept_worker_response_excluding(
+            &worker_acceptance_input,
+            &trust_reserved_stems,
+        )?
+    } else {
+        accept_worker_response(&worker_acceptance_input)?
+    };
+
+    output.response.summary = payload.summary.trim().to_string();
+    output.response.comments = payload.comments.trim().to_string();
+    output.response.needs_restructure_suggested_nodes = payload
+        .needs_restructure_suggested_nodes
+        .iter()
+        .map(|name| NodeId::from(name.trim()))
+        .collect();
+    // PV under-model (Slice 1): mirror the validated disproof / route opinion
+    // / reasoning onto the response so the engine's
+    // `record_latest_worker_rationale` can carry them to the next reviewer and
+    // (on NeedInput) into the audit context. Same post-acceptance population
+    // pattern as `needs_restructure_suggested_nodes` above.
+    output.response.under_model_disproof = payload.under_model_disproof.trim().to_string();
+    output.response.under_model_route_opinion =
+        payload.under_model_route_opinion.trim().to_string();
+    output.response.under_model_reasoning = payload.under_model_reasoning.trim().to_string();
+    // PV under-model (Slice 2): mirror only metadata from JSON. The Lean/NL
+    // statement blocks are hydrated from Tablet/Assumptions.{lean,tex} below
+    // after normal worker validation has accepted the disk edit.
+    output.response.authored_assumption_id = payload.authored_assumption_id.trim().to_string();
+    output.response.authored_axiom_name = payload.authored_axiom_name.trim().to_string();
+    output.response.authored_citation_locator =
+        payload.authored_citation_locator.trim().to_string();
+    output.response.authored_rust_justification =
+        payload.authored_rust_justification.trim().to_string();
+    output.response.authored_claim_class = payload.authored_claim_class.trim().to_string();
+    let has_authored_assumption_metadata = !output.response.authored_assumption_id.is_empty()
+        || !output.response.authored_axiom_name.is_empty()
+        || !output.response.authored_citation_locator.is_empty()
+        || !output.response.authored_rust_justification.is_empty()
+        || !output.response.authored_claim_class.is_empty();
+    if assumption_authoring_node.is_none() && has_authored_assumption_metadata {
+        let err = "authored_assumption_* fields are only legal on a PV assumption-authoring worker request".to_string();
+        output.validation_errors.push(err.clone());
+        output.errors.push(err);
+        output.final_outcome = trellis_kernel::WorkerOutcome::Invalid;
+        output.ok = false;
+        output.response.outcome = trellis_kernel::WorkerOutcome::Invalid;
+    }
+
+    // This is an authority violation, not a worker-authored non-progress
+    // verdict.  It dominates every payload outcome (including Stuck,
+    // NeedsRestructure, and target_false_under_model) and returns immediately
+    // so no expensive checker or fingerprint pass runs over rejected bytes.
+    if !trust_seed_support_errors.is_empty() {
+        for error in &trust_seed_support_errors {
+            if !output.errors.contains(error) {
+                output.errors.push(error.clone());
+            }
+            if !output.validation_errors.contains(error) {
+                output.validation_errors.push(error.clone());
+            }
+        }
+        output.final_outcome = trellis_kernel::WorkerOutcome::Invalid;
+        output.ok = false;
+        output.response.outcome = trellis_kernel::WorkerOutcome::Invalid;
+        output.response.deterministic_rejection_reasons = output.errors.clone();
+        let mut response_json = serde_json::to_value(&output.response)
+            .map_err(|err| format!("failed to serialize worker response: {err}"))?;
+        if let Some(obj) = response_json.as_object_mut() {
+            obj.insert("kind".to_string(), json!("worker"));
+        }
+        eprintln!(
+            "[acceptance] phases 4-7/{ACCEPTANCE_PHASES}: skipped after immutable seed-support rejection"
+        );
+        return Ok(CheckedTrellisWorkerResultOutput {
+            ok: false,
+            errors: output.errors.clone(),
+            data: Some(validated_data),
+            response: Some(response_json),
+            validation_step_results,
+            contract_errors: output.contract_errors,
+            validation_errors: output.validation_errors,
+            final_outcome: "invalid".to_string(),
+        });
+    }
+
+    // #55: kernel-authored auto-fix runs HERE, after acceptance is
+    // finalized but before fingerprints are populated. Acceptance
+    // already consumed the pre-auto-fix `before_snapshot`; fingerprints
+    // get re-read post-auto-fix below, so kernel state and disk agree.
+    //
+    // `changed_node_stems` is hoisted here (was: scoped inside the
+    // auto-fix block) so phase 5 can re-use it without recomputing
+    // against the same before_snapshot. The check is cheap (disk diff
+    // over a small set of files) but routing through the same source
+    // of truth avoids any chance of phase 5 acting on a different node
+    // set than phase 4.
+    // Computed unconditionally so phase 5 (FILESPEC) can validate the
+    // worker's file shape even when prior phases set outcome=Invalid.
+    // Phase 4 (auto-fix) still skips on Invalid below — auto-fix mutates
+    // disk and should not run against a rejected response — but the
+    // FILESPEC string scan is cheap and surfaces the actual shape-error
+    // cause (e.g. `Declaration name is ""`) before phase 6's Lean
+    // compilation has to re-discover the same diagnostic.
+    let changed_node_stems: std::collections::BTreeSet<String> =
+        compute_changed_node_stems_for_autofix(&acceptance_context.before_snapshot, repo_path);
+    // Edit-driven Lake artifact invalidation (unitdistance cycle 696,
+    // reviewer-3116): the worker burst edited Tablet sources IN PLACE, so
+    // any pre-burst `.lake/build/{lib/lean,ir}/Tablet/` artifacts for the
+    // changed stems — and for cached-import dependents that reference them
+    // — now describe the PRE-edit code. A bare probe (`lake env lean`,
+    // which never builds) would resolve imports through those phantom
+    // oleans and display pre-edit signatures. Purge them here, before the
+    // fingerprint/hydrate phases: every downstream consumer either
+    // materializes first (`materialize-tablet-oleans` = `lake build`, run
+    // by phase 7's hydrate (which rebuilds via ensure_worker_checker_support_available
+    // and re-runs fingerprints) and by propagate_tablet_back_to_worker's mirror.
+    // so the purge forces a real rebuild) or fails loudly on the missing
+    // olean instead of silently reading a stale signature. Runs on every
+    // outcome: on Valid/Stuck/NeedsRestructure the edits stay on disk (old
+    // artifacts stale), and on Invalid the worktree is later restored to
+    // the pre-burst base (burst-built artifacts stale in the other
+    // direction). Deleted-source stems are swept by the same call, so
+    // worker-deleted nodes lose their ghost oleans at acceptance too.
+    trellis_kernel::purge_invalidated_tablet_build_artifacts(repo_path, &changed_node_stems);
+    if output.final_outcome == WorkerOutcome::Valid {
+        acceptance_progress_phase(4, ACCEPTANCE_PHASES, "auto-fix orphan imports");
+        let total_stems = changed_node_stems.len();
+        for (idx, stem) in changed_node_stems.iter().enumerate() {
+            if stem == "Preamble"
+                || stem == "Axioms"
+                || stem == trellis_kernel::assumptions_registry::ASSUMPTIONS_NODE
+            {
+                continue;
+            }
+            acceptance_progress_sub("4/7", idx + 1, total_stems, stem);
+            let _ = normalize_node_lean_imports_on_disk(repo_path, stem);
+        }
+        // Re-extract deps from disk so dep_updates in the response
+        // reflect the post-auto-fix import surface. accept_worker_response
+        // already populated dep_updates from a pre-auto-fix disk read
+        // (normalize_worker_response → direct_deps_from_repo), and
+        // auto-fix may have just added `import Tablet.Preamble` lines
+        // that the pre-fix read missed. Without this re-extraction,
+        // kernel state.deps would diverge from disk until the next
+        // worker burst's normalize self-heals it. Today the divergence
+        // is benign (Preamble is excluded from orphan logic and is a
+        // dep-graph leaf), but principled state/disk parity is cheap
+        // here and protects against future logic that consults state.deps
+        // (e.g. reviewer prompts include current_deps).
+        //
+        // Why this targeted re-extraction is sufficient (audit follow-up
+        // — full normalize was the audit's recommendation, but it would
+        // be redundant work given what auto-fix actually does):
+        //
+        // `normalize_node_lean_imports_on_disk` ONLY adds an
+        // `import Tablet.Preamble` line to a node's `.lean` file when
+        // it has zero existing Tablet imports. That can affect at most:
+        //   - imports → deps              (covered: re-extract below)
+        //   - file content hash → fingerprints
+        //                                  (covered: populate_response_fingerprints
+        //                                   re-reads disk below)
+        //
+        // What auto-fix CANNOT affect, and why:
+        //   - present_nodes / open_nodes  : doesn't add or remove `.lean` files
+        //                                   or sorrys; only edits import lines
+        //   - node_kinds                  : derived from declaration heads,
+        //                                   not imports
+        //   - proof_nodes                 : derived from sorry presence,
+        //                                   not imports
+        //   - target_claims               : derived from `.tex`, not `.lean`
+        //                                   imports
+        //
+        // If `normalize_node_lean_imports_on_disk` ever grows beyond
+        // import-line edits (e.g. starts adding declarations or
+        // touching sorrys), this targeted re-extraction will silently
+        // miss the new effects — at which point the right move is to
+        // replace this block with a full normalize_worker_response
+        // re-run (the audit's recommendation).
+        let post_fix_deps =
+            direct_deps_from_repo(repo_path, &output.response.snapshot.present_nodes);
+        output.response.dep_updates =
+            diff_node_sets(&acceptance_context.current_deps, &post_fix_deps);
+    } else {
+        eprintln!(
+            "[acceptance] phase 4/{ACCEPTANCE_PHASES}: auto-fix orphan imports (skipped — outcome={:?} was already recorded by an earlier phase; details at the end)",
+            output.final_outcome
+        );
+    }
+
+    // Phase 5: FILESPEC validation. For each node added or modified
+    // by the worker, verify the file matches the FILESPEC marker rule
+    // — exactly one line whose trimmed content is `-- BODY`, with the
+    // principal declaration named after the file stem appearing before
+    // the marker. Pure-text via `filespec_split::validate_filespec`;
+    // no Lean dependency, sub-millisecond per file.
+    //
+    // Surfacing this here gives the worker a deterministic rejection
+    // reason in its own Shell output during the burst, so the worker
+    // can repair the file in-place rather than producing a kernel-side
+    // failure mode no later request can recover from. (Cf. the 2026-05-12
+    // burn loop on `FiberAndDegreeMixedLiftedIntersectionUniformBound`,
+    // where Mathlib's `scoped prefix:arg "#" => Finset.card` notation
+    // confused the previous parser-based splitter; the FILESPEC marker
+    // approach is parser-independent and indentation-inert, eliminating
+    // that entire failure class.)
+    // FILESPEC validation runs regardless of prior outcome: it is a
+    // sub-millisecond pure-text check whose role is to surface the
+    // actual shape error (e.g. missing `-- BODY` marker, principal
+    // declaration named "" instead of the expected stem) BEFORE phase
+    // 6's Lean compilation re-discovers the same diagnostic the
+    // expensive way. When prior phases already set Invalid, phase 5
+    // can only confirm Invalid (or add additional shape errors); it
+    // cannot promote back to Valid.
+    acceptance_progress_phase(5, ACCEPTANCE_PHASES, "FILESPEC validation");
+    let total_stems = changed_node_stems.len();
+    for (idx, stem) in changed_node_stems.iter().enumerate() {
+        if stem == "Preamble"
+            || stem == "Axioms"
+            || stem == trellis_kernel::assumptions_registry::ASSUMPTIONS_NODE
+        {
+            continue;
+        }
+        acceptance_progress_sub("5/7", idx + 1, total_stems, stem);
+        // FILESPEC rule: each ordinary `Tablet/<Node>.lean` must
+        // contain exactly one line whose trimmed content is
+        // `-- BODY`, with the principal declaration named after the
+        // file stem appearing before the marker. Pure-text check;
+        // no Lean dependency. Replaces the prior Lean-parser-based
+        // `decl_split` parsability gate (which had a long tail of
+        // false-positive failure modes on scoped notation, set_option
+        // wrappers, multi-line let-in-signature, etc.).
+        let content_result =
+            trellis_kernel::filespec_split::read_node_file(repo_path, stem).map(|(c, _)| c);
+        let content = match content_result {
+            Ok(c) => c,
+            Err(err) => {
+                let msg = format!("FILESPEC read failed for {stem}: {err}");
+                output.validation_errors.push(msg.clone());
+                output.errors.push(msg);
+                output.final_outcome = trellis_kernel::WorkerOutcome::Invalid;
+                output.ok = false;
+                output.response.outcome = trellis_kernel::WorkerOutcome::Invalid;
+                continue;
+            }
+        };
+        if let Err(err) = trellis_kernel::filespec_split::validate_filespec(&content, stem) {
+            let msg = format!(
+                "FILESPEC validation failed for {stem}: {err} \
+                 (every ordinary Tablet `.lean` file must contain \
+                 exactly one line whose trimmed content is `-- BODY`, \
+                 placed between the principal declaration and its \
+                 proof body; the marker is a Lean line comment, so \
+                 it has no parser interaction and any indentation \
+                 is fine)"
+            );
+            output.validation_errors.push(msg.clone());
+            output.errors.push(msg);
+            output.final_outcome = trellis_kernel::WorkerOutcome::Invalid;
+            output.ok = false;
+            output.response.outcome = trellis_kernel::WorkerOutcome::Invalid;
+        }
+    }
+
+    acceptance_progress_phase(6, ACCEPTANCE_PHASES, "observe response fingerprints");
+    // Populate response fingerprints on every outcome so the engine's
+    // worker_semantic_delta check sees real fingerprints and does not
+    // spuriously flag NeedsRestructure / Stuck submissions as a snapshot
+    // delta against the prior (hydrated) state.live. Valid paths additionally
+    // run hydrate_worker_response_output below for its checker-support
+    // materialization side effect (fingerprint population is idempotent).
+    if let Err(err) = populate_response_fingerprints(
+        repo_path,
+        &acceptance_context.configured_targets,
+        &acceptance_context.current_target_claims,
+        &acceptance_context.current_deviation_files,
+        &acceptance_context.current_node_deviation_claims,
+        &acceptance_context.configured_reference_papers,
+        &acceptance_context.current_node_reference_grounds,
+        &acceptance_context.current_paper_approved_fingerprints,
+        acceptance_context.paper_source_path.as_deref(),
+        &acceptance_context.current_node_kinds,
+        &acceptance_context.node_role,
+        &acceptance_context.under_model_assumption_nodes,
+        &mut output.response,
+    ) {
+        if output.final_outcome == trellis_kernel::WorkerOutcome::Valid {
+            output.validation_errors.push(err.clone());
+            output.errors.push(err);
+            output.final_outcome = trellis_kernel::WorkerOutcome::Invalid;
+            output.ok = false;
+            output.response.outcome = trellis_kernel::WorkerOutcome::Invalid;
+        } else {
+            output.validation_errors.push(err);
+        }
+    }
+
+    if output.final_outcome == trellis_kernel::WorkerOutcome::Valid {
+        acceptance_progress_phase(7, ACCEPTANCE_PHASES, "hydrate response and legality check");
+        match hydrate_worker_response_output(&HydrateWorkerResponseInput {
+            repo_path: repo_path.to_path_buf(),
+            configured_targets: acceptance_context.configured_targets.clone(),
+            current_target_claims: acceptance_context.current_target_claims.clone(),
+            current_deviation_files: acceptance_context.current_deviation_files.clone(),
+            current_node_deviation_claims: acceptance_context.current_node_deviation_claims.clone(),
+            configured_reference_papers: acceptance_context.configured_reference_papers.clone(),
+            current_node_reference_grounds: acceptance_context
+                .current_node_reference_grounds
+                .clone(),
+            approved_paper_fingerprints: acceptance_context
+                .current_paper_approved_fingerprints
+                .clone(),
+            paper_source_path: acceptance_context.paper_source_path.clone(),
+            current_node_kinds: acceptance_context.current_node_kinds.clone(),
+            node_role: acceptance_context.node_role.clone(),
+            under_model_assumption_nodes: acceptance_context.under_model_assumption_nodes.clone(),
+            response: output.response.clone(),
+        }) {
+            Ok(hydrated) => {
+                output.response = hydrated.response;
+                if assumption_authoring_node.is_some() {
+                    let assumption_id = payload.authored_assumption_id.trim();
+                    let axiom_name = payload.authored_axiom_name.trim();
+                    if assumption_id.is_empty() || axiom_name.is_empty() {
+                        let err = "assumption-authoring worker response must include non-empty authored_assumption_id and authored_axiom_name".to_string();
+                        output.validation_errors.push(err.clone());
+                        output.errors.push(err);
+                        output.final_outcome = trellis_kernel::WorkerOutcome::Invalid;
+                        output.ok = false;
+                        output.response.outcome = trellis_kernel::WorkerOutcome::Invalid;
+                    } else {
+                        match trellis_kernel::assumptions_registry::extract_staged_assumption_blocks(
+                            repo_path,
+                            assumption_id,
+                        ) {
+                            Ok(blocks) => {
+                                if !staged_lean_block_declares_axiom(
+                                    &blocks.lean_statement,
+                                    axiom_name,
+                                ) {
+                                    let err = format!(
+                                        "assumption-authoring staged Lean block `{assumption_id}` must contain a literal `axiom {axiom_name} : ...` declaration"
+                                    );
+                                    output.validation_errors.push(err.clone());
+                                    output.errors.push(err);
+                                    output.final_outcome = trellis_kernel::WorkerOutcome::Invalid;
+                                    output.ok = false;
+                                    output.response.outcome =
+                                        trellis_kernel::WorkerOutcome::Invalid;
+                                } else {
+                                    output.response.staged_assumption_lean_statement =
+                                        blocks.lean_statement;
+                                    output.response.staged_assumption_nl_statement =
+                                        blocks.nl_statement;
+                                }
+                            }
+                            Err(err) => {
+                                output.validation_errors.push(err.clone());
+                                output.errors.push(err);
+                                output.final_outcome = trellis_kernel::WorkerOutcome::Invalid;
+                                output.ok = false;
+                                output.response.outcome = trellis_kernel::WorkerOutcome::Invalid;
+                            }
+                        }
+                    }
+                }
+            }
+            Err(err) => {
+                output.validation_errors.push(err.clone());
+                output.errors.push(err);
+                output.final_outcome = trellis_kernel::WorkerOutcome::Invalid;
+                output.ok = false;
+                output.response.outcome = trellis_kernel::WorkerOutcome::Invalid;
+            }
+        }
+    } else {
+        eprintln!(
+            "[acceptance] phase 7/{ACCEPTANCE_PHASES}: hydrate response and legality check (skipped — outcome={:?} was already recorded by an earlier phase; details at the end)",
+            output.final_outcome
+        );
+    }
+
+    if output.final_outcome == trellis_kernel::WorkerOutcome::Valid {
+        if let Some(err) = proof_protected_package_legality_error(
+            &acceptance_context.validation_kind,
+            &acceptance_context,
+            &output.response,
+        ) {
+            output.validation_errors.push(err.clone());
+            output.errors.push(err);
+            output.final_outcome = trellis_kernel::WorkerOutcome::Invalid;
+            output.ok = false;
+            output.response.outcome = trellis_kernel::WorkerOutcome::Invalid;
+        }
+    }
+
+    output.response.deterministic_rejection_reasons =
+        if output.final_outcome == trellis_kernel::WorkerOutcome::Invalid {
+            output.errors.clone()
+        } else {
+            Vec::new()
+        };
+
+    let mut response_json = serde_json::to_value(&output.response)
+        .map_err(|err| format!("failed to serialize worker response: {err}"))?;
+    if let Some(obj) = response_json.as_object_mut() {
+        obj.insert("kind".to_string(), json!("worker"));
+    }
+
+    Ok(CheckedTrellisWorkerResultOutput {
+        ok: output.ok,
+        errors: output.errors.clone(),
+        data: Some(validated_data),
+        response: Some(response_json),
+        validation_step_results,
+        contract_errors: output.contract_errors,
+        validation_errors: output.validation_errors,
+        final_outcome: format!("{:?}", output.final_outcome).to_ascii_lowercase(),
+    })
+}
+
+fn worker_allowed_outcomes_for_validation(
+    acceptance_context: &serde_json::Value,
+) -> Result<Vec<String>, String> {
+    let validation_kind_value = acceptance_context
+        .get("worker_acceptance")
+        .and_then(|value| value.get("validation_kind"))
+        .cloned()
+        .or_else(|| acceptance_context.get("validation_kind").cloned())
+        .ok_or_else(|| "worker acceptance context is missing validation_kind".to_string())?;
+    let validation_kind: WorkerValidationKind = serde_json::from_value(validation_kind_value)
+        .map_err(|err| format!("worker acceptance context has invalid validation_kind: {err}"))?;
+    let cleanup_like = matches!(
+        validation_kind,
+        WorkerValidationKind::Cleanup | WorkerValidationKind::FinalCleanup
+    );
+    if cleanup_like {
+        return Ok(vec!["valid".to_string(), "invalid".to_string()]);
+    }
+    if let Some(allowed_outcomes) = advertised_worker_allowed_outcomes(acceptance_context)? {
+        return Ok(allowed_outcomes);
+    }
+    if acceptance_context_request_is_pv(acceptance_context) {
+        return Ok(vec![
+            "valid".to_string(),
+            "invalid".to_string(),
+            "stuck".to_string(),
+            "needs_restructure".to_string(),
+            "target_false_under_model".to_string(),
+        ]);
+    }
+    Ok(vec![
+        "valid".to_string(),
+        "invalid".to_string(),
+        "stuck".to_string(),
+        "needs_restructure".to_string(),
+    ])
+}
+
+fn advertised_worker_allowed_outcomes(
+    acceptance_context: &serde_json::Value,
+) -> Result<Option<Vec<String>>, String> {
+    let candidates = [
+        (
+            "request.worker_contract.allowed_outcomes",
+            acceptance_context
+                .get("request")
+                .and_then(|value| value.get("worker_contract"))
+                .and_then(|value| value.get("allowed_outcomes")),
+        ),
+        (
+            "request.allowed_outcomes",
+            acceptance_context
+                .get("request")
+                .and_then(|value| value.get("allowed_outcomes")),
+        ),
+        (
+            "worker_contract.allowed_outcomes",
+            acceptance_context
+                .get("worker_contract")
+                .and_then(|value| value.get("allowed_outcomes")),
+        ),
+        (
+            "allowed_outcomes",
+            acceptance_context.get("allowed_outcomes"),
+        ),
+    ];
+    for (path, value) in candidates {
+        let Some(value) = value else {
+            continue;
+        };
+        let Some(items) = value.as_array() else {
+            return Err(format!(
+                "worker acceptance context has invalid {path}: expected array of strings"
+            ));
+        };
+        let mut allowed_outcomes = Vec::new();
+        for (idx, item) in items.iter().enumerate() {
+            let Some(item) = item.as_str() else {
+                return Err(format!(
+                    "worker acceptance context has invalid {path}[{idx}]: expected string"
+                ));
+            };
+            let item = item.trim().to_ascii_lowercase();
+            if item.is_empty() {
+                continue;
+            }
+            if !known_worker_outcome_name(&item) {
+                return Err(format!(
+                    "worker acceptance context has invalid {path}[{idx}]: unknown outcome '{item}'"
+                ));
+            }
+            if !allowed_outcomes.iter().any(|seen| seen == &item) {
+                allowed_outcomes.push(item);
+            }
+        }
+        if !allowed_outcomes.is_empty() {
+            return Ok(Some(allowed_outcomes));
+        }
+    }
+    Ok(None)
+}
+
+fn known_worker_outcome_name(value: &str) -> bool {
+    matches!(
+        value,
+        "valid" | "invalid" | "stuck" | "needs_restructure" | "target_false_under_model"
+    )
+}
+
+fn acceptance_context_request_is_pv(acceptance_context: &serde_json::Value) -> bool {
+    acceptance_context
+        .get("request")
+        .and_then(|value| value.get("is_pv"))
+        .and_then(|value| value.as_bool())
+        .or_else(|| {
+            acceptance_context
+                .get("is_pv")
+                .and_then(|value| value.as_bool())
+        })
+        .unwrap_or(false)
+}
+
+fn build_malformed_response_output(
+    kind: RequestKind,
+    request_id: u32,
+    cycle: u32,
+) -> Result<WrapperResponse, String> {
+    match kind {
+        RequestKind::Worker => Ok(WrapperResponse::Worker(WorkerResponse {
+            request_id,
+            cycle,
+            status: ResponseStatus::Malformed,
+            outcome: WorkerOutcome::Invalid,
+            ..WorkerResponse::default()
+        })),
+        RequestKind::Review => Ok(WrapperResponse::Review(ReviewResponse {
+            request_id,
+            cycle,
+            status: ResponseStatus::Malformed,
+            ..ReviewResponse::default()
+        })),
+        // Cleanup-v2 (audit Finding 1): malformed audit responses route
+        // through the kernel's audit-burst retry path (one retry per
+        // burst, then force AuditDone).
+        RequestKind::Audit => Ok(WrapperResponse::Audit(trellis_kernel::AuditResponse {
+            request_id,
+            cycle,
+            status: ResponseStatus::Malformed,
+            ..trellis_kernel::AuditResponse::default()
+        })),
+        RequestKind::StuckMathAudit => {
+            Ok(WrapperResponse::StuckMathAudit(StuckMathAuditResponse {
+                request_id,
+                cycle,
+                status: ResponseStatus::Malformed,
+                ..StuckMathAuditResponse::default()
+            }))
+        }
+        // Bug 1 (designs incident 2026-06-26): verifier panels
+        // (corr/paper/sound) that complete WITHOUT writing a result
+        // artifact (missing/unparseable `…raw.json`) must be RETRYABLE,
+        // not a fatal `runtime step failed`. The bridge classifies such a
+        // burst as a transport-flavored Malformed verifier response; the
+        // engine's `apply_{paper,corr,sound}_response` Malformed branch
+        // re-issues the same verifier request (mirrors the worker Malformed
+        // re-dispatch), so a transient verifier flake self-heals on retry
+        // instead of taking the supervisor down. A `Malformed` status with
+        // empty lane updates applies no status change (statuses are held).
+        RequestKind::Paper => Ok(WrapperResponse::Paper(PaperResponse {
+            request_id,
+            cycle,
+            status: ResponseStatus::Malformed,
+            ..PaperResponse::default()
+        })),
+        RequestKind::Corr => Ok(WrapperResponse::Corr(CorrResponse {
+            request_id,
+            cycle,
+            status: ResponseStatus::Malformed,
+            ..CorrResponse::default()
+        })),
+        RequestKind::Sound => Ok(WrapperResponse::Sound(SoundResponse {
+            request_id,
+            cycle,
+            status: ResponseStatus::Malformed,
+            ..SoundResponse::default()
+        })),
+        _ => Err(format!(
+            "build_malformed_response only supports \
+             worker/review/audit/stuck_math_audit/paper/corr/sound, got {:?}",
+            kind
+        )),
+    }
+}
+
+/// Normalize a `human_gate_response.json` payload against the in-flight
+/// gate request.
+///
+/// Returns `(response, fresh)`:
+///   * `response` — the normalized `HumanGateResponse` (Malformed/Approve on
+///     unparseable or choiceless payloads, matching the legacy behavior).
+///   * `fresh` — gate-response freshness (Defect 1). A response is *fresh*
+///     only when it carries a `cycle` stamp equal to the in-flight gate's
+///     `cycle`. A payload with no `cycle` field, or a `cycle` that does not
+///     match, is *stale*: it was written for an earlier gate (or by a viewer
+///     build that does not yet stamp) and must NOT auto-clear the current
+///     gate. The bridge keeps blocking on a stale response and only consumes
+///     (deletes) the file when `fresh` is true.
+///
+/// Backward consideration: older viewer builds wrote `{"choice": "..."}`
+/// with no `cycle`. Such a payload is reported `fresh = false`, so the gate
+/// keeps blocking until a stamped response arrives. The viewer write path is
+/// updated to stamp `cycle` (see `viewer_adapter._feedback_post`); operators
+/// on an un-updated viewer must re-issue the approval once the viewer is
+/// updated. This is the intended safe direction: never auto-consume an
+/// un-stamped response.
+fn normalize_human_gate_output(
+    request_id: u32,
+    cycle: u32,
+    raw_payload_text: &str,
+) -> (WrapperResponse, bool) {
+    let malformed = || {
+        (
+            WrapperResponse::HumanGate(HumanGateResponse {
+                request_id,
+                cycle,
+                status: ResponseStatus::Malformed,
+                choice: HumanChoice::Approve,
+                trust_actor_authentication_receipt: None,
+            }),
+            // A malformed payload is never a fresh, consumable response.
+            false,
+        )
+    };
+    let payload: Value = match serde_json::from_str(raw_payload_text) {
+        Ok(value) => value,
+        Err(_) => return malformed(),
+    };
+    let obj = match payload.as_object() {
+        Some(obj) => obj,
+        None => return malformed(),
+    };
+    let choice = match obj.get("choice").and_then(Value::as_str) {
+        Some(raw) if raw.eq_ignore_ascii_case("approve") => HumanChoice::Approve,
+        Some(raw) if raw.eq_ignore_ascii_case("feedback") => HumanChoice::Feedback,
+        _ => return malformed(),
+    };
+    // Freshness: the payload must carry a `cycle` stamp matching the
+    // in-flight gate. Accept both a JSON number and a numeric string (the
+    // viewer writes JSON; defensive parse covers hand-edited files).
+    let stamped_cycle = obj.get("cycle").and_then(|v| {
+        v.as_u64()
+            .or_else(|| v.as_str().and_then(|s| s.trim().parse::<u64>().ok()))
+    });
+    let fresh = stamped_cycle == Some(u64::from(cycle));
+    let trust_actor_authentication_receipt =
+        obj.get("trust_actor_authentication_receipt").cloned();
+    (
+        WrapperResponse::HumanGate(HumanGateResponse {
+            request_id,
+            cycle,
+            status: ResponseStatus::Ok,
+            choice,
+            trust_actor_authentication_receipt,
+        }),
+        fresh,
+    )
+}
+
+fn check_trellis_reviewer_result_output(
+    review_request: serde_json::Value,
+    raw_payload: serde_json::Value,
+) -> Result<CheckedTrellisReviewerResultOutput, String> {
+    let validated = validate_trellis_reviewer_result_data(&raw_payload);
+    if !validated.ok {
+        return Ok(CheckedTrellisReviewerResultOutput {
+            ok: false,
+            errors: validated.errors,
+            data: None,
+            response: None,
+        });
+    }
+
+    let validated_data = validated
+        .data
+        .clone()
+        .ok_or_else(|| "validated reviewer payload is missing data".to_string())?;
+    let request: WrapperRequest = serde_json::from_value(review_request)
+        .map_err(|err| format!("review request has unexpected shape: {err}"))?;
+    let raw_payload: RawReviewPayload = serde_json::from_value(validated_data.clone())
+        .map_err(|err| format!("validated reviewer payload had unexpected shape: {err}"))?;
+    let output = normalize_review_response(&ReviewNormalizationInput {
+        request,
+        raw_payload,
+    })?;
+
+    let mut response_json = serde_json::to_value(&output.response)
+        .map_err(|err| format!("failed to serialize review response: {err}"))?;
+    if let Some(obj) = response_json.as_object_mut() {
+        obj.insert("kind".to_string(), json!("review"));
+    }
+
+    Ok(CheckedTrellisReviewerResultOutput {
+        ok: true,
+        errors: Vec::new(),
+        data: Some(validated_data),
+        response: Some(response_json),
+    })
+}
+
+/// Cleanup-v2 (audit Finding 1): one-shot validate+normalize for an
+/// audit-burst artifact. Mirrors `check_trellis_reviewer_result_output`.
+fn check_trellis_audit_result_output(
+    audit_request: serde_json::Value,
+    raw_payload: serde_json::Value,
+) -> Result<CheckedTrellisAuditResultOutput, String> {
+    let validated = validate_trellis_audit_result_data(&raw_payload);
+    if !validated.ok {
+        return Ok(CheckedTrellisAuditResultOutput {
+            ok: false,
+            errors: validated.errors,
+            data: None,
+            response: None,
+        });
+    }
+    let validated_data = validated
+        .data
+        .clone()
+        .ok_or_else(|| "validated audit payload is missing data".to_string())?;
+    let request: WrapperRequest = serde_json::from_value(audit_request)
+        .map_err(|err| format!("audit request has unexpected shape: {err}"))?;
+    let raw_payload: trellis_kernel::RawAuditPayload =
+        serde_json::from_value(validated_data.clone())
+            .map_err(|err| format!("validated audit payload had unexpected shape: {err}"))?;
+    let output = normalize_audit_response(&AuditNormalizationInput {
+        request,
+        raw_payload,
+    })?;
+    let mut response_json = serde_json::to_value(&output.response)
+        .map_err(|err| format!("failed to serialize audit response: {err}"))?;
+    if let Some(obj) = response_json.as_object_mut() {
+        obj.insert("kind".to_string(), json!("audit"));
+    }
+    Ok(CheckedTrellisAuditResultOutput {
+        ok: true,
+        errors: Vec::new(),
+        data: Some(validated_data),
+        response: Some(response_json),
+    })
+}
+
+fn check_trellis_stuck_math_audit_result_output(
+    audit_request: serde_json::Value,
+    raw_payload: serde_json::Value,
+    repo_path: Option<&std::path::Path>,
+) -> Result<CheckedTrellisAuditResultOutput, String> {
+    let validated = validate_trellis_stuck_math_audit_result_data(&raw_payload);
+    if !validated.ok {
+        return Ok(CheckedTrellisAuditResultOutput {
+            ok: false,
+            errors: validated.errors,
+            data: None,
+            response: None,
+        });
+    }
+    let validated_data = validated
+        .data
+        .clone()
+        .ok_or_else(|| "validated stuck math audit payload is missing data".to_string())?;
+    let request: WrapperRequest = serde_json::from_value(audit_request)
+        .map_err(|err| format!("stuck math audit request has unexpected shape: {err}"))?;
+    if request.kind != RequestKind::StuckMathAudit {
+        return Err(format!(
+            "stuck math audit checker expected RequestKind::StuckMathAudit, got {:?}",
+            request.kind
+        ));
+    }
+    let report = validated_data
+        .get("report")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .to_string();
+    let tasks: Vec<trellis_kernel::AuditTask> = serde_json::from_value(
+        validated_data
+            .get("tasks")
+            .cloned()
+            .unwrap_or_else(|| json!([])),
+    )
+    .map_err(|err| format!("validated stuck math audit tasks had unexpected shape: {err}"))?;
+    let probe_paths: Vec<String> = serde_json::from_value(
+        validated_data
+            .get("probe_paths")
+            .cloned()
+            .unwrap_or_else(|| json!([])),
+    )
+    .map_err(|err| format!("validated stuck math audit probe_paths had unexpected shape: {err}"))?;
+    let cone_clean_node = validated_data
+        .get("cone_clean_node")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(NodeId::from);
+    let confirm_need_input = validated_data
+        .get("confirm_need_input")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    let global_repair_approve = validated_data
+        .get("global_repair_approve")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    let global_repair_approved_extension_node_ids: Vec<String> = serde_json::from_value(
+        validated_data
+            .get("global_repair_approved_extension_node_ids")
+            .cloned()
+            .unwrap_or_else(|| json!([])),
+    )
+    .map_err(|err| {
+        format!("validated global_repair_approved_extension_node_ids had unexpected shape: {err}")
+    })?;
+    let global_repair_auditor_reason = validated_data
+        .get("global_repair_auditor_reason")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .to_string();
+    // GapResearch Planner / Critic flat payloads. The validator emits the
+    // normalized scalar fields (route_tex, route_needs_human, gap_decision,
+    // gap_feedback) into `validated_data`; round-trip them straight back so
+    // the allowlist does not silently strip them.
+    let route_tex = validated_data
+        .get("route_tex")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .to_string();
+    let route_needs_human = validated_data
+        .get("route_needs_human")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    let gap_decision = validated_data
+        .get("gap_decision")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .to_string();
+    let gap_feedback = validated_data
+        .get("gap_feedback")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .to_string();
+    // Revision Planner structured action list. The validator emits the
+    // normalized `revision_actions` object into `validated_data`; round-trip it
+    // straight back so the allowlist does not silently strip it
+    // (feedback_allowlist_validator).
+    let revision_actions: trellis_kernel::RevisionActions = serde_json::from_value(
+        validated_data
+            .get("revision_actions")
+            .cloned()
+            .unwrap_or_else(|| json!({})),
+    )
+    .map_err(|err| format!("validated revision_actions had unexpected shape: {err}"))?;
+    // PV "prove OR disprove": the auditor's polarity decision. The validator
+    // emits the normalized scalar into `validated_data`; round-trip it back so
+    // the allowlist does not silently strip it (feedback_allowlist_validator).
+    let set_live_polarity = validated_data
+        .get("set_live_polarity")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .to_string();
+    // The flip's pair name is emitted into `validated_data` only when the
+    // auditor named one (baseline-stable); absent/empty round-trips to None
+    // so target-less responses stay byte-identical on the wire.
+    let set_live_polarity_target = validated_data
+        .get("set_live_polarity_target")
+        .and_then(|value| value.as_str())
+        .map(str::to_string)
+        .filter(|value| !value.is_empty());
+    // PV under-model (Slice 1): the auditor's bug/deviation ruling + named
+    // candidate invariant `C`. Round-tripped from `validated_data` so the
+    // allowlist does not strip them (feedback_allowlist_validator).
+    let under_model_ruling = validated_data
+        .get("under_model_ruling")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .to_string();
+    let under_model_candidate_invariant = validated_data
+        .get("under_model_candidate_invariant")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .to_string();
+    // PV under-model (Slice 2): the assumptions-lane verdict carriers.
+    let assumptions_lane_verdict = validated_data
+        .get("assumptions_lane_verdict")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .to_string();
+    let assumptions_lane_reason = validated_data
+        .get("assumptions_lane_reason")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .to_string();
+    let assumptions_lane_hunt_result = validated_data
+        .get("assumptions_lane_hunt_result")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .to_string();
+    let assumptions_lane_probe_result = validated_data
+        .get("assumptions_lane_probe_result")
+        .and_then(|value| value.as_str())
+        .unwrap_or("")
+        .to_string();
+    // Process memory (spec §6): round-trip the shape-validated
+    // `memory_operations` (feedback_allowlist_validator) and run the
+    // request-context + disk halves of the deterministic validation here
+    // — coarse-node membership against the request's coarse DAG, and
+    // entry existence/status against the repo worktree. Violations reject
+    // the artifact through the ordinary `ok:false` path.
+    let memory_operations: Vec<trellis_kernel::process_memory::MemoryOperation> =
+        serde_json::from_value(
+            validated_data
+                .get("memory_operations")
+                .cloned()
+                .unwrap_or_else(|| json!([])),
+        )
+        .map_err(|err| format!("validated memory_operations had unexpected shape: {err}"))?;
+    if !memory_operations.is_empty() {
+        let mut memory_errors = trellis_kernel::process_memory::validate_memory_operations_shape(
+            &memory_operations,
+            Some(&request.coarse_dag_nodes),
+        );
+        match repo_path {
+            Some(repo) => memory_errors.extend(
+                trellis_kernel::process_memory::validate_memory_operations_on_disk(
+                    &memory_operations,
+                    repo,
+                ),
+            ),
+            None => memory_errors.push(
+                "memory_operations require a repo_path on the checker request (fail closed)"
+                    .to_string(),
+            ),
+        }
+        if !memory_errors.is_empty() {
+            return Ok(CheckedTrellisAuditResultOutput {
+                ok: false,
+                errors: memory_errors,
+                data: None,
+                response: None,
+            });
+        }
+    }
+    // Audit-ordered node retirement: round-trip the shape-validated
+    // request (feedback_allowlist_validator). State-dependent legality
+    // (nodes present / non-coarse / non-protected, PF-only) lives in the
+    // engine's `stuck_math_audit_validation_failure`.
+    let node_retirement_request: Option<trellis_kernel::model::NodeRetirementRequest> =
+        match validated_data.get("node_retirement_request") {
+            None => None,
+            Some(value) if value.is_null() => None,
+            Some(value) => Some(serde_json::from_value(value.clone()).map_err(|err| {
+                format!("validated node_retirement_request had unexpected shape: {err}")
+            })?),
+        };
+    let response = WrapperResponse::StuckMathAudit(StuckMathAuditResponse {
+        request_id: request.id,
+        cycle: request.cycle,
+        status: ResponseStatus::Ok,
+        confirm_need_input,
+        report,
+        tasks,
+        probe_paths,
+        cone_clean_node,
+        global_repair_approve,
+        global_repair_approved_extension_node_ids,
+        global_repair_auditor_reason,
+        route_tex,
+        route_needs_human,
+        gap_decision,
+        gap_feedback,
+        revision_actions,
+        set_live_polarity,
+        set_live_polarity_target,
+        under_model_ruling,
+        under_model_candidate_invariant,
+        assumptions_lane_verdict,
+        assumptions_lane_reason,
+        assumptions_lane_hunt_result,
+        assumptions_lane_probe_result,
+        memory_operations,
+        node_retirement_request,
+    });
+    let mut response_json = serde_json::to_value(&response)
+        .map_err(|err| format!("failed to serialize stuck math audit response: {err}"))?;
+    if let Some(obj) = response_json.as_object_mut() {
+        obj.insert("kind".to_string(), json!("stuck_math_audit"));
+    }
+    Ok(CheckedTrellisAuditResultOutput {
+        ok: true,
+        errors: Vec::new(),
+        data: Some(validated_data),
+        response: Some(response_json),
+    })
+}
+
+fn read_request() -> Result<RuntimeCliRequest, String> {
+    let mut input = String::new();
+    io::stdin()
+        .read_to_string(&mut input)
+        .map_err(|err| format!("failed to read stdin: {err}"))?;
+    let value = trellis_kernel::trust_base::parse_json_strict(input.as_bytes())
+        .map_err(|err| format!("invalid runtime request JSON: {err}"))?;
+    serde_json::from_value(value).map_err(|err| format!("invalid runtime request JSON: {err}"))
+}
+
+fn checkpoint_from_paths(paths: &RuntimePaths) -> Result<Option<RuntimeCheckpoint>, String> {
+    if !paths.checkpoint_path.exists() {
+        return Ok(None);
+    }
+    let text = fs::read_to_string(&paths.checkpoint_path)
+        .map_err(|err| format!("failed to read checkpoint: {err}"))?;
+    let checkpoint =
+        serde_json::from_str(&text).map_err(|err| format!("failed to parse checkpoint: {err}"))?;
+    Ok(Some(checkpoint))
+}
+
+fn success_response(
+    runtime: &SupervisorRuntime,
+    outcome: Option<RuntimeStepOutcome>,
+    steps_executed: u32,
+    import_summary: Option<LegacyImportSummary>,
+) -> Result<RuntimeCliResponse, String> {
+    Ok(RuntimeCliResponse::Ok {
+        state: runtime.state().clone(),
+        metadata: runtime.metadata().clone(),
+        outcome,
+        checkpoint: checkpoint_from_paths(runtime.paths())?,
+        event_count: runtime.event_count(),
+        steps_executed,
+        import_summary,
+    })
+}
+
+fn make_adapter(
+    runtime: &SupervisorRuntime,
+    response: Option<WrapperResponse>,
+) -> Result<RuntimeAdapter, String> {
+    if let Some(response) = response {
+        return Ok(RuntimeAdapter::Provided(ProvidedResponseAdapter {
+            response: Some(response),
+        }));
+    }
+    if let Some(command) = bridge_command_from_env()? {
+        let config_path = runtime
+            .metadata()
+            .config_path
+            .clone()
+            .ok_or_else(|| "runtime metadata is missing config_path".to_string())?;
+        return Ok(RuntimeAdapter::Process(ProcessBridgeAdapter {
+            command,
+            config_path,
+            repo_path: runtime.metadata().repo_path.clone(),
+            runtime_root: runtime.paths().root.clone(),
+        }));
+    }
+    Ok(RuntimeAdapter::Provided(ProvidedResponseAdapter {
+        response: None,
+    }))
+}
+
+/// Recompute corr/sound fingerprints from the CURRENT on-disk worktree and
+/// return the list of `node`s whose disk fingerprint differs from the value
+/// recorded in `runtime` state. An empty result means disk matches recorded
+/// state. Factored out of `load_runtime_with_fingerprint_validation` so the
+/// state-inconsistency recovery can re-check after an auto-rewind to the last
+/// checkpoint without duplicating the comparison logic (designs incident,
+/// round-2).
+fn fingerprint_mismatches(
+    runtime: &SupervisorRuntime,
+    repo_path: &Path,
+    nodes: &BTreeSet<NodeId>,
+) -> Result<Vec<String>, String> {
+    let recorded_corr = &runtime.state().live.corr_current_fingerprints;
+    let recorded_sound = &runtime.state().live.sound_current_fingerprints;
+    let under_model_assumption_nodes =
+        runtime_cli_observations::under_model_assumption_nodes_from_state(runtime.state());
+    let observed_corr = observe_correspondence_fingerprints_with_under_model_assumptions(
+        repo_path,
+        nodes,
+        &under_model_assumption_nodes,
+    )
+    .map_err(|err| format!("Bug B fingerprint validation: corr observe failed: {err}"))?;
+    let observed_sound = observe_soundness_fingerprints(
+        repo_path,
+        nodes,
+        &runtime.state().node_kinds,
+        &runtime.state().node_role,
+    )
+    .map_err(|err| format!("Bug B fingerprint validation: sound observe failed: {err}"))?;
+    let mut mismatches: Vec<String> = Vec::new();
+    let assumptions_node = NodeId::from(trellis_kernel::assumptions_registry::ASSUMPTIONS_NODE);
+    let empty_under_model_assumptions_pin = if nodes.contains(&assumptions_node)
+        && runtime
+            .state()
+            .is_under_model_assumptions_node(&assumptions_node)
+        && recorded_corr
+            .get(&assumptions_node)
+            .is_some_and(|fp| fp.is_empty())
+    {
+        !trellis_kernel::assumptions_registry::has_worker_authored_staged_assumption(repo_path)?
+    } else {
+        false
+    };
+    for node in nodes {
+        if let Some(expected) = recorded_corr.get(node) {
+            if node == &assumptions_node && empty_under_model_assumptions_pin {
+                continue;
+            }
+            let actual = observed_corr.get(node).cloned().unwrap_or_default();
+            if &actual != expected {
+                mismatches.push(format!("corr[{node}]: state={expected} disk={actual}"));
+            }
+        }
+        if let Some(expected) = recorded_sound.get(node) {
+            let actual = observed_sound.get(node).cloned().unwrap_or_default();
+            if &actual != expected {
+                mismatches.push(format!("sound[{node}]: state={expected} disk={actual}"));
+            }
+        }
+    }
+    Ok(mismatches)
+}
+
+/// Bug B: load + recompute corr/sound fingerprints from disk. On any
+/// mismatch with the kernel's recorded `state.live.{corr,sound}_current_fingerprints`,
+/// AUTO-REWIND the worktree to the last checkpoint (ResetChoice::LastCommit
+/// semantics — `git reset --hard HEAD`) and re-check; only fail hard if the
+/// divergence persists after the rewind (designs incident, round-2). Drift
+/// means the worktree was mutated outside the protocol since the last verifier
+/// panel ran (manual git surgery, partial restore, mid-write crash); the
+/// minimal, automatic recovery is to discard the stray worktree state back to
+/// the last committed checkpoint. This MUST NOT use LastClean — see the
+/// recovery block below.
+///
+/// Skipped when:
+/// - metadata.repo_path is unset (test fixtures, init flow).
+/// - Tablet/ doesn't exist (uninitialized repo).
+/// - There's an in-flight Worker request — the worker burst is mutating
+///   disk and divergence is the expected condition until the burst
+///   result is normalized.
+///
+/// Paper fingerprints (target-keyed via paper.tex line-range claims)
+/// and baseline_declaration_hashes (per-request snapshots, not per-state)
+/// are NOT validated here — different shape, less drift-prone.
+fn load_runtime_with_fingerprint_validation(
+    paths: RuntimePaths,
+) -> Result<SupervisorRuntime, String> {
+    let mut runtime =
+        SupervisorRuntime::load(paths).map_err(|err| format!("runtime load failed: {err}"))?;
+
+    // Fingerprint-schema migration (lean-relevance refactor). Runs on EVERY
+    // load, not once: it recomputes fingerprints from the CURRENT on-disk
+    // Tablet text and re-aligns the approved/mirror baselines under the
+    // active schema mode. Runs before validation so subsequent byte-equality
+    // checks at `current_corr_state` / `current_paper_state` see the migrated
+    // shape on both sides. Refuses to run during in-flight worker (audit
+    // point — could otherwise bless unaccepted WIP into the approval
+    // baseline). Returns `changed=false` (and validation proceeds) when no
+    // recompute target differs from its stored value.
+    if let Some(repo_path) = runtime.metadata().repo_path.clone() {
+        if repo_path.join("Tablet").is_dir() {
+            runtime
+                .try_post_load_state_migration(|state| {
+                    runtime_cli_observations::migrate_corr_fingerprint_schema(state, &repo_path)
+                })
+                .map_err(|err| format!("corr fingerprint schema migration failed: {err}"))?;
+            runtime
+                .try_post_load_state_migration(|state| {
+                    runtime_cli_observations::migrate_soundness_fingerprint_schema_if_enabled(
+                        state, &repo_path,
+                    )
+                })
+                .map_err(|err| format!("soundness fingerprint schema migration failed: {err}"))?;
+            // NOTE: the Decide-pair registration backfill (audit round 2, B2)
+            // is deliberately NOT invoked here. It runs inside
+            // `SupervisorRuntime::load`, before the trust-required
+            // `ProtocolState::validate()` and before both fingerprint
+            // migrations above — see the ordering comment at its call site in
+            // `runtime.rs`. Called from here it was too late to repair a
+            // `node_kinds` value on the only kind of run that needs it.
+        }
+        // PV Phase 2 (D3): reconcile the source→model drift on resume. A
+        // re-extracted (drifted) ExtractionModel reopens its bound theorems and
+        // the approved provenance re-baselines. No-op for all-math / non-PV
+        // (empty configured + empty approved ⇒ returns early), so it runs on
+        // EVERY resume without disturbing the live math run. Guarded inside
+        // against an in-flight worker burst.
+        if let Some(config_path) = runtime.metadata().config_path.clone() {
+            if config_path.exists() {
+                runtime
+                    .try_post_load_state_migration(|state| {
+                        reconcile_pv_provenance(state, &config_path)
+                    })
+                    .map_err(|err| format!("PV provenance reconcile failed: {err}"))?;
+            }
+        }
+        // PV Phase 8 (the monotonicity gate): reopen any PV spec-role node
+        // whose correspondence statement changed since approval, forcing a
+        // ProtectedReapproval HumanGate (the kernel can't decide
+        // strengthen-vs-weaken, so the human re-judges direction). No-op for
+        // all-math / non-PV (empty `node_role` ⇒ early return), so it runs on
+        // EVERY resume without disturbing the live math run. Guarded inside
+        // against an in-flight worker burst. Composes with the provenance
+        // reconcile above (both .extend() the same BTreeSet).
+        runtime
+            .try_post_load_state_migration(reconcile_pv_spec_monotonicity)
+            .map_err(|err| format!("PV spec-monotonicity reconcile failed: {err}"))?;
+        runtime
+            .try_post_load_state_migration(|state| {
+                reconcile_pending_under_model_assumptions(state, &repo_path)
+            })
+            .map_err(|err| format!("PV under-model assumptions reconcile failed: {err}"))?;
+        // Burst-history backfill: if `<repo>/.trellis/logs/burst-history.jsonl`
+        // doesn't exist yet, walk the per-cycle event log
+        // (`<repo>/.trellis-history/event-log/cycle-*.jsonl`) once and emit
+        // one summary row per `wrapper_response` event. Best-effort (errors
+        // logged to stderr, never blocks startup). Idempotent (no-op if the
+        // ledger already exists).
+        let event_log_dir = runtime.event_log_dir();
+        trellis_kernel::burst_history::backfill_if_missing(&repo_path, &event_log_dir);
+    }
+
+    let Some(repo_path) = runtime.metadata().repo_path.as_deref() else {
+        return Ok(runtime);
+    };
+    if !repo_path.join("Tablet").is_dir() {
+        return Ok(runtime);
+    }
+    if let Some(req) = runtime.state().in_flight_request.as_ref() {
+        if req.kind == trellis_kernel::RequestKind::Worker {
+            return Ok(runtime);
+        }
+    }
+    let recorded_corr = &runtime.state().live.corr_current_fingerprints;
+    let recorded_sound = &runtime.state().live.sound_current_fingerprints;
+    let present = &runtime.state().live.present_nodes;
+    let nodes_to_check: BTreeSet<NodeId> = recorded_corr
+        .keys()
+        .chain(recorded_sound.keys())
+        .filter(|n| n.as_str() != "Preamble")
+        // A Decide flip moves the demoted side's files to `Dormant/`; a
+        // fingerprint entry surviving for a node absent from the live
+        // tablet is staleness, not disk divergence (dec2flt cycle 280:
+        // the check read the flipped-out node's entries, demanded its
+        // Tablet/ files, auto-rewound, and exited as "corruption").
+        .filter(|n| present.contains(*n))
+        .cloned()
+        .collect();
+    if nodes_to_check.is_empty() {
+        return Ok(runtime);
+    }
+    let mismatches = fingerprint_mismatches(&runtime, repo_path, &nodes_to_check)?;
+    if mismatches.is_empty() {
+        return Ok(runtime);
+    }
+    // ── State-inconsistency recovery (designs incident, round-2) ──────────
+    // The loaded kernel state diverges from the on-disk worktree. This is an
+    // OPERATIONAL fault (stray worktree edit / partial restore / mid-write
+    // crash), NOT a mathematical-quality decision. The correct, minimal,
+    // automatic recovery is a LastCommit rewind: reset the worktree to the
+    // most recent committed checkpoint (`git reset --hard HEAD`, the latest
+    // `supervisor2/checkpoint-*` commit, ~1 cycle back). The committed
+    // checkpoint's `protocol_state.json` IS the state we just loaded, so
+    // re-syncing the worktree to HEAD makes disk match recorded state again.
+    //
+    // This path MUST NOT use LastClean. "clean" is a VERIFIER-LANE judgement
+    // (soundness/correspondence/paper) whose nearest tag can be hundreds of
+    // cycles back — for the designs run, 226 cycles back (clean-003334 @ 661).
+    // Auto-LastClean on a state fault is exactly the catastrophic blast radius
+    // the incident exposed. `restore_worktree_to_head` resets to HEAD only and
+    // never reaches `restore_repo_worktree_to_last_clean`; LastClean stays
+    // reserved for a reviewer-driven `ResetChoice::LastClean`.
+    eprintln!(
+        "trellis: kernel state diverges from disk on {} fingerprint(s) at load \
+         (cycle={}); auto-rewinding the worktree to the last checkpoint \
+         (LastCommit / `git reset --hard HEAD`) — NOT LastClean. Mismatches:\n  {}",
+        mismatches.len(),
+        runtime.state().cycle,
+        mismatches.join("\n  ")
+    );
+    trellis_kernel::runtime::restore_worktree_to_head(repo_path).map_err(|err| {
+        format!(
+            "state-inconsistency recovery: auto-rewind to the last checkpoint \
+             (`git reset --hard HEAD`) failed: {err}. Recover manually (do NOT \
+             auto-LastClean)."
+        )
+    })?;
+    let residual = fingerprint_mismatches(&runtime, repo_path, &nodes_to_check)?;
+    if !residual.is_empty() {
+        return Err(format!(
+            "kernel state still diverges from disk on {} fingerprint(s) AFTER an \
+             automatic rewind to the last checkpoint (LastCommit / HEAD) — HEAD \
+             itself does not match the recorded state. This is a genuine state/disk \
+             corruption, not a stray worktree edit. Investigate the checkpoint \
+             history and recover manually; do NOT auto-LastClean. Residual \
+             mismatches:\n  {}",
+            residual.len(),
+            residual.join("\n  ")
+        ));
+    }
+    eprintln!(
+        "trellis: state-inconsistency recovery succeeded — worktree rewound to the \
+         last checkpoint (HEAD) and now matches recorded kernel state. Resuming."
+    );
+    Ok(runtime)
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Patch C-D: local-closure runtime CLI orchestration.
+//
+// The runtime CLI is the I/O boundary for local-closure probes:
+// - Computes real per-record input hashes (toolchain, manifest, preamble,
+//   approved-axioms, active-decl, active-statement) at install time.
+// - Runs the deterministic-revalidation pass before reviewer round-trips,
+//   in the cleanup-burst response pipeline, and during first-deploy
+//   migration.
+// - Persists migration progress under
+//   `<runtime_root>/checker-state/local-closure-records/<node>.json` so
+//   supervisor kills mid-migration carry forward.
+//
+// Engine functions stay pure-state. Probe I/O happens here. Hash
+// computation is centralized in `compute_local_closure_record_inputs`
+// so every install site uses identical input semantics.
+// ────────────────────────────────────────────────────────────────────
+
+/// Closure-record schema version. Bumped when traversal semantics or the
+/// hash-input set evolves; existing records' `closure_version` mismatch
+/// triggers re-probe via deterministic revalidation. C-B writes
+/// `"TODO_PATCH_C_D_VERSION"` as a sentinel for records awaiting hash
+/// backfill; the backfill pass replaces it with this constant.
+const CLOSURE_VERSION: &str = "patch_c_v1";
+
+/// C-B hash sentinel — replaced by `compute_local_closure_record_inputs`
+/// at backfill time. Records carrying this string are pending real-hash
+/// computation.
+const CLOSURE_HASH_SENTINEL: &str = "TODO_PATCH_C_D_HASH";
+
+/// C-B closure-version sentinel — paired with `CLOSURE_HASH_SENTINEL` so
+/// the backfill pass can detect placeholder records by either field.
+const CLOSURE_VERSION_SENTINEL: &str = "TODO_PATCH_C_D_VERSION";
+
+/// Number of transport-error retries before `retry_exhausted=true`.
+/// After exhaustion, deterministic revalidation skips the node and the
+/// failure surfaces to the operator as an infrastructure diagnostic.
+/// Plan §7.4.1.
+const TRANSPORT_RETRY_BUDGET: u32 = 5;
+
+/// Cap on exponential-backoff window (cycles). Plan §7.4.1.
+const TRANSPORT_BACKOFF_MAX_CYCLES: u64 = 64;
+
+/// Subdirectory under `runtime_root` for persisted local-closure records
+/// (one JSON file per node). Plan §7.10.
+const LOCAL_CLOSURE_RECORDS_DIR: &str = "checker-state/local-closure-records";
+
+/// Filename suffix for persisted records.
+const LOCAL_CLOSURE_RECORDS_EXT: &str = "json";
+
+fn local_closure_records_dir(runtime_root: &Path) -> PathBuf {
+    runtime_root.join(LOCAL_CLOSURE_RECORDS_DIR)
+}
+
+fn remove_persisted_local_closure_record_files(
+    runtime_root: &Path,
+    nodes: &[NodeId],
+    log_label: &str,
+) {
+    if nodes.is_empty() {
+        return;
+    }
+    let records_dir = local_closure_records_dir(runtime_root);
+    for node in nodes {
+        let path = records_dir.join(trellis_kernel::runtime::persisted_record_file_name(node));
+        match fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+            Err(err) => {
+                eprintln!(
+                    "[{log_label}] failed to remove demoted record {}: {err}",
+                    path.display()
+                );
+            }
+        }
+    }
+}
+
+fn hash_bytes(content: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(content);
+    format!("{:x}", hasher.finalize())
+}
+
+fn hash_text(content: &str) -> String {
+    hash_bytes(content.as_bytes())
+}
+
+fn hash_file_or_empty(path: &Path) -> String {
+    match fs::read(path) {
+        Ok(bytes) => hash_bytes(&bytes),
+        Err(_) => String::new(),
+    }
+}
+
+/// Hash the per-node approved-kernel-axioms set. Plan §7.1: a per-node
+/// hash means a per-node waiver does NOT touch other records.
+///
+/// Audit MEDIUM (approved-axioms load errors): returns `Err(_)` on I/O
+/// or parse failure so callers can surface an `internal_error` rather
+/// than silently substituting an empty approved set. The previous
+/// `.unwrap_or_default()` call site collapsed every load failure into
+/// "hash of empty list", which would mislabel an infrastructure /
+/// config error as a clean record.
+fn hash_axioms_set(approved: &std::collections::BTreeSet<String>) -> String {
+    let serialized: Vec<&str> = approved.iter().map(String::as_str).collect();
+    let blob = serde_json::to_string(&serialized).unwrap_or_default();
+    hash_text(&blob)
+}
+
+fn hash_approved_axioms_for_node(repo: &Path, node: &str) -> Result<String, String> {
+    let approved = load_approved_axioms(repo, node)?;
+    Ok(hash_axioms_set(&approved))
+}
+
+/// Read the active node's `<repo>/Tablet/<node>.lean` content and hash
+/// the whole file.
+fn active_decl_hash_for_node(repo: &Path, node: &str) -> String {
+    let path = repo.join("Tablet").join(format!("{node}.lean"));
+    hash_file_or_empty(&path)
+}
+
+/// Hash just the declaration statement for `node`, normalized via
+/// `find_declaration` (existing helper from runtime_cli_observations).
+/// Empty-string fallback matches existing behavior in
+/// `runtime_cli_observations::declaration_hash`.
+fn active_statement_hash_for_node(repo: &Path, node: &str) -> String {
+    let path = repo.join("Tablet").join(format!("{node}.lean"));
+    let lean_content = match fs::read_to_string(&path) {
+        Ok(content) => content,
+        Err(_) => return String::new(),
+    };
+    let decl = find_declaration(&lean_content, node);
+    if decl.is_empty() {
+        String::new()
+    } else {
+        hash_text(&decl)
+    }
+}
+
+/// Resolve the exact checker implementation selected for this repository.
+/// Failure leaves empty identities on ordinary/legacy runs; trust-v1 proof
+/// receipt construction rejects those empty values and therefore fails closed.
+fn local_closure_checker_identities(repo: &Path) -> (String, String, String) {
+    let checker_script = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .map(|root| root.join("scripts/lean_local_closure.lean"));
+    let checker_script_hash = checker_script
+        .as_deref()
+        .map(hash_file_or_empty)
+        .unwrap_or_default();
+    let prefix = Command::new("lean")
+        .current_dir(repo)
+        .args(["--print-prefix"])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .and_then(|output| String::from_utf8(output.stdout).ok())
+        .map(|output| PathBuf::from(output.trim()));
+    let lean_executable_hash = prefix
+        .as_ref()
+        .map(|root| hash_file_or_empty(&root.join("bin/lean")))
+        .unwrap_or_default();
+    let lake_executable_hash = prefix
+        .as_ref()
+        .map(|root| hash_file_or_empty(&root.join("bin/lake")))
+        .unwrap_or_default();
+    (
+        lean_executable_hash,
+        lake_executable_hash,
+        checker_script_hash,
+    )
+}
+
+/// Plan §7.0/§7.1 — compute a fully populated `LocalClosureRecord` from
+/// disk inputs and probe content. The `kernel_axioms` /
+/// `boundary_theorems` / `strict_*_deps` fields come from the probe (the
+/// engine already attaches these via `apply_local_closure_acceptance_bookkeeping`).
+/// Hash fields are read fresh per call.
+///
+/// Used at three sites:
+/// 1. Backfill of post-engine-apply C-B sentinel records.
+/// 2. Deterministic-revalidation pass.
+/// 3. Migration probe install.
+fn compute_local_closure_record_inputs(
+    repo: &Path,
+    node: &NodeId,
+    kernel_axioms: &BTreeSet<String>,
+    boundary_theorems: &BTreeMap<NodeId, String>,
+    strict_theorem_deps: &BTreeMap<NodeId, String>,
+    strict_definition_deps: &BTreeMap<NodeId, String>,
+    accepted_at_snapshot_id: String,
+    axcheck_status: AxcheckStatus,
+) -> Result<LocalClosureRecord, String> {
+    let approved_axioms_hash = hash_approved_axioms_for_node(repo, node.as_str())?;
+    let (lean_executable_hash, lake_executable_hash, checker_script_hash) =
+        local_closure_checker_identities(repo);
+    Ok(LocalClosureRecord {
+        node: node.clone(),
+        closure_version: CLOSURE_VERSION.to_string(),
+        toolchain_hash: hash_file_or_empty(&repo.join("lean-toolchain")),
+        lean_executable_hash,
+        lake_executable_hash,
+        checker_script_hash,
+        lake_manifest_hash: hash_file_or_empty(&repo.join("lake-manifest.json")),
+        preamble_hash: hash_file_or_empty(&repo.join("Tablet/Preamble.lean")),
+        approved_axioms_hash,
+        active_decl_hash: active_decl_hash_for_node(repo, node.as_str()),
+        active_statement_hash: active_statement_hash_for_node(repo, node.as_str()),
+        kernel_axioms: kernel_axioms.clone(),
+        boundary_theorems: boundary_theorems.clone(),
+        strict_theorem_deps: strict_theorem_deps.clone(),
+        strict_definition_deps: strict_definition_deps.clone(),
+        seed_support_definition_deps: BTreeMap::new(),
+        seed_support_evidence_root: None,
+        seed_support_file_hashes: BTreeMap::new(),
+        // Patch C-P HIGH 1 (b) — populated by callers that have access
+        // to live `corr_current_fingerprints` (engine probe path /
+        // deterministic revalidation / migration). Left empty here so
+        // pre-Patch-C-P callsites and tests that don't care continue
+        // to compile; the migration-time check treats an empty map as
+        // "no kernel-hash invariants to enforce" (additive layer atop
+        // the strict-signal + cross-record-evidence checks).
+        kernel_semantic_hashes: BTreeMap::new(),
+        accepted_at_snapshot_id,
+        // Audit H-4 — caller supplies the axcheck status derived
+        // from probe envelope. Backfill / dep-hash sweep callers
+        // that don't have probe access pass the prior record's
+        // status (preservation) or `AxcheckStatus::Skipped` (defensive
+        // default for synthetic / probeless callers).
+        axcheck_status,
+    })
+}
+
+/// Patch C-P HIGH 1 (b) — populate `kernel_semantic_hashes` on a record
+/// from the current `state.live.corr_current_fingerprints`. Covers every
+/// dep across all three categories. Empty string for deps the kernel
+/// has not yet fingerprinted (rare but possible during early bursts).
+///
+/// Called by sites that own a fresh `LocalClosureRecord` and have access
+/// to live state: the deterministic-revalidation pass and any future
+/// site that synthesizes a record from probe output. The engine itself
+/// populates the field inline at record-creation time (see
+/// `apply_local_closure_acceptance_bookkeeping` in engine.rs).
+///
+/// Patch C-Q Q11 — delegates to `trellis_kernel::model::populate_kernel_semantic_hashes`
+/// so the engine and runtime-CLI sites share one loop.
+fn populate_kernel_semantic_hashes_from_state(
+    record: &mut LocalClosureRecord,
+    state: &ProtocolState,
+) {
+    trellis_kernel::model::populate_kernel_semantic_hashes(record, state);
+}
+
+/// Detect a record that still carries C-B sentinel hash inputs and
+/// therefore needs a backfill pass.
+fn record_needs_hash_backfill(record: &LocalClosureRecord) -> bool {
+    record.closure_version == CLOSURE_VERSION_SENTINEL
+        || record.toolchain_hash == CLOSURE_HASH_SENTINEL
+        || record.lake_manifest_hash == CLOSURE_HASH_SENTINEL
+        || record.preamble_hash == CLOSURE_HASH_SENTINEL
+        || record.approved_axioms_hash == CLOSURE_HASH_SENTINEL
+        || record.active_decl_hash == CLOSURE_HASH_SENTINEL
+        || record.active_statement_hash == CLOSURE_HASH_SENTINEL
+}
+
+/// Walk `state.local_closure_records` and replace any C-B sentinel hash
+/// fields with computed ones. Returns true iff at least one record was
+/// rewritten (so the caller knows whether to persist).
+///
+/// Trigger: after every `step_with_checkpoint_sink` that may have
+/// installed sentinel records via `apply_local_closure_acceptance_bookkeeping`'s
+/// sorryd→sorry-free arm. Idempotent: a fully-populated record is left
+/// alone.
+/// Patch C-Q Q6 — outcome of a backfill pass. `mutated` is true iff at
+/// least one record was rewritten OR demoted. `demoted_nodes` lists the
+/// nodes whose sentinel record was demoted to an internal_error failure
+/// (hash backfill failed). The caller is responsible for deleting the
+/// corresponding persisted JSON file under
+/// `<runtime_root>/checker-state/local-closure-records/`. Mirrors the
+/// `ProtocolCommand::DeleteLocalClosureRecord` semantic the engine emits
+/// for in-band invalidation, but expressed as a return value because
+/// backfill runs at the runtime-CLI layer (outside the engine).
+#[derive(Debug, Default)]
+struct BackfillOutcome {
+    mutated: bool,
+    demoted_nodes: Vec<NodeId>,
+}
+
+fn backfill_local_closure_record_hashes(
+    state: &mut ProtocolState,
+    repo: &Path,
+    current_cycle: u64,
+) -> BackfillOutcome {
+    let nodes_to_backfill: Vec<NodeId> = state
+        .local_closure_records
+        .iter()
+        .filter_map(|(node, record)| {
+            if record_needs_hash_backfill(record) {
+                Some(node.clone())
+            } else {
+                None
+            }
+        })
+        .collect();
+    if nodes_to_backfill.is_empty() {
+        return BackfillOutcome::default();
+    }
+    let mut outcome = BackfillOutcome::default();
+    for node in nodes_to_backfill {
+        if let Some(record) = state.local_closure_records.get(&node).cloned() {
+            // Patch C-O MEDIUM 1 — fail closed on hash-compute failure
+            // for sentinel records. Previously, if backfill failed
+            // (e.g. corrupted APPROVED_AXIOMS.json), the sentinel record
+            // remained in `local_closure_records` and satisfied
+            // `formalization_complete` (which only checks record
+            // presence) until the next restart rejected it. Now we
+            // demote the sentinel to an `internal_error` failure +
+            // unverified entry so the operator sees the problem and the
+            // completion gate stays closed.
+            // Audit H-4 — backfill preserves the original record's
+            // `axcheck_status`; backfill is purely about replacing
+            // sentinel hash fields with disk-fresh ones and must not
+            // upgrade a `Skipped` record to `Agreed`. The probe-time
+            // status is the source of truth.
+            match compute_local_closure_record_inputs(
+                repo,
+                &node,
+                &record.kernel_axioms,
+                &record.boundary_theorems,
+                &record.strict_theorem_deps,
+                &record.strict_definition_deps,
+                record.accepted_at_snapshot_id.clone(),
+                record.axcheck_status,
+            ) {
+                Ok(mut refreshed) => {
+                    refreshed.seed_support_definition_deps =
+                        record.seed_support_definition_deps.clone();
+                    trellis_kernel::model::populate_seed_support_binding(&mut refreshed, state);
+                    // Patch C-P HIGH 1 (b) — preserve the
+                    // probe-time-captured `kernel_semantic_hashes`
+                    // through backfill. The field is set at probe time
+                    // by the engine and is independent of the on-disk
+                    // hash inputs that backfill is replacing; copy it
+                    // forward so migration-time drift detection
+                    // continues to work for the refreshed record.
+                    refreshed.kernel_semantic_hashes = record.kernel_semantic_hashes.clone();
+                    state.local_closure_records.insert(node, refreshed);
+                    outcome.mutated = true;
+                }
+                Err(err) => {
+                    eprintln!(
+                        "[local-closure backfill] demoting {} to internal_error: {err}",
+                        node.as_str()
+                    );
+                    state.local_closure_records.remove(&node);
+                    let summary = ErrorSummary {
+                        status: "internal_error".to_string(),
+                        returncode: -1,
+                        timed_out: false,
+                        stderr_excerpt: {
+                            let raw = format!("backfill failed: {err}");
+                            if raw.len() > 1024 {
+                                raw[..1024].to_string()
+                            } else {
+                                raw
+                            }
+                        },
+                        axiom_violations: Vec::new(),
+                        strict_errors: Vec::new(),
+                        captured_at_cycle: current_cycle,
+                        retry_count: 0,
+                        last_attempt_cycle: current_cycle,
+                        next_retry_cycle: 0,
+                        retry_exhausted: false,
+                    };
+                    state.local_closure_failures.insert(node.clone(), summary);
+                    state.local_closure_unverified_nodes.insert(node.clone());
+                    outcome.mutated = true;
+                    // Patch C-Q Q6 — surface the demote so the caller
+                    // can remove the stale persisted JSON. Without
+                    // this, a rewind or state-file loss could reload
+                    // the sentinel from disk and clobber the
+                    // internal_error failure we just installed.
+                    outcome.demoted_nodes.push(node);
+                }
+            }
+        }
+    }
+    // Same-class sibling of the `apply_sidecar_closure` reverse-index
+    // fix: the demote arm above DELETES a record, and sentinel records
+    // are exactly the ones minted by the accept path's sorryd →
+    // sorry-free arm with `boundary_theorems` / strict dep maps copied
+    // from live probe output — routinely non-empty. Without this
+    // rebuild the in-memory state leaves this function with
+    // `boundary_statement_consumers` / `strict_dep_consumers` out of
+    // sync, and the NEXT `apply_event` fails its trailing `validate()`
+    // with "closure invariant: ... out of sync with records". (The
+    // refresh arm is index-neutral — `compute_local_closure_record_inputs`
+    // clones the dep maps verbatim and only replaces hash fields — but
+    // recomputing on any mutation is cheap and keeps the rule uniform:
+    // every writer of `local_closure_records` rebuilds.)
+    if outcome.mutated {
+        trellis_kernel::model::recompute_local_closure_reverse_indices(state);
+    }
+    outcome
+}
+
+/// Plan §7.0 / §7.4.1 — build an `ErrorSummary` from a transport-layer
+/// error. Increments the retry counter relative to any prior summary and
+/// computes the next retry cycle via exponential backoff capped at
+/// `TRANSPORT_BACKOFF_MAX_CYCLES`. Sets `retry_exhausted=true` when the
+/// post-increment count exceeds `TRANSPORT_RETRY_BUDGET`.
+fn build_transport_error_summary(
+    err: &str,
+    prior: Option<&ErrorSummary>,
+    current_cycle: u64,
+) -> ErrorSummary {
+    let retry_count = prior
+        .filter(|s| s.status == "transport_error")
+        .map(|s| s.retry_count.saturating_add(1))
+        .unwrap_or(0);
+    let backoff = (1u64.checked_shl(retry_count.min(63)).unwrap_or(u64::MAX))
+        .min(TRANSPORT_BACKOFF_MAX_CYCLES);
+    let next_retry_cycle = current_cycle.saturating_add(backoff);
+    ErrorSummary {
+        status: "transport_error".to_string(),
+        returncode: -1,
+        timed_out: false,
+        stderr_excerpt: if err.len() > 1024 {
+            err[..1024].to_string()
+        } else {
+            err.to_string()
+        },
+        axiom_violations: Vec::new(),
+        strict_errors: Vec::new(),
+        captured_at_cycle: current_cycle,
+        retry_count,
+        last_attempt_cycle: current_cycle,
+        next_retry_cycle,
+        retry_exhausted: retry_count > TRANSPORT_RETRY_BUDGET,
+    }
+}
+
+/// Plan §7.0 — build an `ErrorSummary` from a probe that completed but
+/// rejected (proof-shape failure, axiom violation, strict error, etc.).
+/// Non-transport probes retry on every revalidation pass; the backoff
+/// fields stay at their `Default` zeros.
+fn build_failure_summary(
+    probe: &LocalClosureProbeOutput,
+    approved: &BTreeSet<String>,
+    current_cycle: u64,
+) -> ErrorSummary {
+    let stderr_excerpt = if probe.raw_stderr.len() > 1024 {
+        probe.raw_stderr[..1024].to_string()
+    } else {
+        probe.raw_stderr.clone()
+    };
+    let axiom_violations: Vec<String> = probe
+        .kernel_axioms
+        .iter()
+        .filter(|a| !approved.contains(a.as_str()))
+        .cloned()
+        .collect();
+    ErrorSummary {
+        status: if probe.status.is_empty() {
+            "internal_error".to_string()
+        } else {
+            probe.status.clone()
+        },
+        returncode: probe.returncode,
+        timed_out: probe.timed_out,
+        stderr_excerpt,
+        axiom_violations,
+        strict_errors: probe.errors.clone(),
+        captured_at_cycle: current_cycle,
+        retry_count: 0,
+        last_attempt_cycle: current_cycle,
+        next_retry_cycle: 0,
+        retry_exhausted: false,
+    }
+}
+
+/// Audit MEDIUM (approved-axioms load errors) — build an
+/// `internal_error` summary for an approved-axioms file that failed to
+/// load (I/O or parse). The error message is preserved in
+/// `stderr_excerpt` (truncated to the standard 1024-byte cap) so the
+/// operator sees the load failure as a diagnostic rather than a silent
+/// "empty approved set" hash that would mislabel real axiom violations.
+fn build_approved_axioms_load_error_summary(load_err: &str, current_cycle: u64) -> ErrorSummary {
+    let stderr_excerpt = if load_err.len() > 1024 {
+        load_err[..1024].to_string()
+    } else {
+        load_err.to_string()
+    };
+    ErrorSummary {
+        status: "internal_error".to_string(),
+        returncode: -1,
+        timed_out: false,
+        stderr_excerpt,
+        axiom_violations: Vec::new(),
+        strict_errors: Vec::new(),
+        captured_at_cycle: current_cycle,
+        retry_count: 0,
+        last_attempt_cycle: current_cycle,
+        next_retry_cycle: 0,
+        retry_exhausted: false,
+    }
+}
+
+fn seed_support_definition_nodes_for_probe(
+    state: &ProtocolState,
+    repo: &Path,
+) -> Result<BTreeSet<NodeId>, String> {
+    if state.trust_base.seed_support_definitions.is_empty() {
+        return Ok(BTreeSet::new());
+    }
+    if !state.trust_base.required()
+        || state.trust_base.approved_evidence_tool_input_root.is_none()
+    {
+        return Err(
+            "seed support definitions are present without a complete required-v1 trust root"
+                .to_owned(),
+        );
+    }
+    if state.trust_base.active_revision_lane_id.is_some() {
+        return Err(
+            "seed support closure is unavailable while a trust-base revision is unapproved"
+                .to_owned(),
+        );
+    }
+    trellis_kernel::trust_base::verify_seed_support_definition_files(
+        &repo.join("Tablet"),
+        &state.trust_base.seed_support_definitions,
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(state
+        .trust_base
+        .seed_support_definitions
+        .keys()
+        .cloned()
+        .collect())
+}
+
+fn seed_support_failure_summary(error: &str, current_cycle: u64) -> ErrorSummary {
+    ErrorSummary {
+        status: "internal_error".to_owned(),
+        returncode: 0,
+        timed_out: false,
+        stderr_excerpt: String::new(),
+        axiom_violations: Vec::new(),
+        strict_errors: vec![format!(
+            "local-closure seed support verification failed: {error}"
+        )],
+        captured_at_cycle: current_cycle,
+        retry_count: 0,
+        last_attempt_cycle: current_cycle,
+        next_retry_cycle: 0,
+        retry_exhausted: false,
+    }
+}
+
+/// Plan §7.5 — deterministic-revalidation pass. Iterates the entire
+/// unverified set and runs the local-closure probe for each (subject to
+/// the transport-error backoff gate), producing a `RevalidationBatch`
+/// for the engine's `apply_revalidation_batch` API.
+///
+/// Patch C-M: the per-pass chunking cap was removed. Operator decision:
+/// deferring probe work across cycles only blocks `Cleanup` longer for
+/// no benefit; the total probing work is identical either way, so drain
+/// the full set in one call.
+///
+/// The probe runner is injected as a closure so tests can substitute a
+/// canned response set without depending on the checker socket. The
+/// production wrapper (`deterministic_revalidate_at_cli`) wires this to
+/// `run_local_closure_axioms`.
+fn deterministic_revalidate_at_cli_with_probe<F>(
+    state: &ProtocolState,
+    repo: &Path,
+    current_cycle: u64,
+    mut probe: F,
+) -> RevalidationBatch
+where
+    F: FnMut(&Path, &str) -> Result<LocalClosureProbeOutput, String>,
+{
+    let mut batch = RevalidationBatch::default();
+    let seed_support_definition_nodes = match seed_support_definition_nodes_for_probe(state, repo) {
+        Ok(nodes) => nodes,
+        Err(error) => {
+            for node in &state.local_closure_unverified_nodes {
+                batch.still_unverified.push((
+                    node.clone(),
+                    seed_support_failure_summary(&error, current_cycle),
+                ));
+            }
+            return batch;
+        }
+    };
+    let nodes: Vec<NodeId> = state
+        .local_closure_unverified_nodes
+        .iter()
+        .cloned()
+        .collect();
+    for node in nodes {
+        // Transport-error backoff gate (plan §7.0/§7.4.1).
+        if let Some(prior) = state.local_closure_failures.get(&node) {
+            if prior.status == "transport_error" {
+                if prior.retry_exhausted {
+                    continue;
+                }
+                if current_cycle < prior.next_retry_cycle {
+                    continue;
+                }
+            }
+        }
+        let mut result = match probe(repo, node.as_str()) {
+            Ok(r) => r,
+            Err(transport_err) => {
+                let summary = build_transport_error_summary(
+                    &transport_err,
+                    state.local_closure_failures.get(&node),
+                    current_cycle,
+                );
+                batch.still_unverified.push((node.clone(), summary));
+                continue;
+            }
+        };
+        // Patch C-Q Q1 — dep name/kind validation BEFORE record
+        // construction. The worker MCA path called this in
+        // `proof_worker_delta_step_result` (Patch C-K/C-N); this
+        // deterministic path was missing it. A probe whose dep map
+        // contains a node absent from `live.present_nodes` (or with a
+        // mismatched kind) would otherwise produce a refreshed record
+        // whose dep key is not tied to the kernel's lifecycle. The
+        // validator flips `status` to `internal_error` on failure;
+        // the existing `result.status == "ok"` gate then routes to
+        // `build_failure_summary` (still_unverified arm) and no record
+        // is persisted.
+        validate_probe_present_nodes_with_seed_support(
+            &mut result,
+            &state.live.present_nodes,
+            &state.node_kinds,
+            &seed_support_definition_nodes,
+        );
+        // Audit MEDIUM (approved-axioms load errors): a load failure
+        // is an infrastructure/config error, not a probe outcome. Skip
+        // any subset-check / record install and write an
+        // `internal_error` summary so the operator sees the load
+        // failure as a diagnostic rather than a silent "empty approved
+        // set" hash that would mislabel real axiom violations.
+        let approved = match load_approved_axioms(repo, node.as_str()) {
+            Ok(a) => a,
+            Err(load_err) => {
+                let summary = build_approved_axioms_load_error_summary(&load_err, current_cycle);
+                batch.still_unverified.push((node.clone(), summary));
+                continue;
+            }
+        };
+        let kernel_subset = result.kernel_axioms.is_subset(&approved);
+        if result.status == "ok" && kernel_subset && result.errors.is_empty() {
+            // Audit H-4 — derive axcheck status from the probe's
+            // `axiomization_check` sub-object so revalidation records
+            // carry the same telemetry as engine-installed records.
+            // Mirrors the engine derivation in
+            // `apply_local_closure_acceptance_bookkeeping`.
+            let axcheck_status = match &result.axiomization_check {
+                Some(ax) if ax.skipped => AxcheckStatus::Skipped,
+                Some(ax) if ax.agreed => AxcheckStatus::Agreed,
+                Some(_) => AxcheckStatus::Disagreed,
+                None => AxcheckStatus::Skipped,
+            };
+            match compute_local_closure_record_inputs(
+                repo,
+                &node,
+                &result.kernel_axioms,
+                &result.boundary_theorems,
+                &result.strict_theorem_deps,
+                &result.strict_definition_deps,
+                format!("revalidate-cycle-{}", current_cycle),
+                axcheck_status,
+            ) {
+                Ok(mut record) => {
+                    record.seed_support_definition_deps =
+                        result.seed_support_definition_deps.clone();
+                    trellis_kernel::model::populate_seed_support_binding(&mut record, state);
+                    // Patch C-P HIGH 1 (b) — stamp kernel_semantic_hashes
+                    // from live state so migration-time drift detection
+                    // works against any future stale persisted copy.
+                    populate_kernel_semantic_hashes_from_state(&mut record, state);
+                    batch.refreshed.push((node, record));
+                }
+                Err(load_err) => {
+                    // approved-axioms load failed between the subset
+                    // check and the record build — surface the load
+                    // error rather than installing a record with a
+                    // wrong hash.
+                    let summary =
+                        build_approved_axioms_load_error_summary(&load_err, current_cycle);
+                    batch.still_unverified.push((node, summary));
+                }
+            }
+        } else {
+            let summary = build_failure_summary(&result, &approved, current_cycle);
+            batch.still_unverified.push((node, summary));
+        }
+    }
+    batch
+}
+
+/// Production wrapper for `deterministic_revalidate_at_cli_with_probe`.
+/// Wires the probe runner to `run_local_closure_axioms`.
+fn deterministic_revalidate_at_cli(
+    state: &ProtocolState,
+    repo: &Path,
+    current_cycle: u64,
+) -> RevalidationBatch {
+    deterministic_revalidate_at_cli_with_probe(state, repo, current_cycle, run_local_closure_axioms)
+}
+
+fn same_burst_local_closure_backfill_batch(
+    state: &ProtocolState,
+    response: &WorkerResponse,
+    repo: &Path,
+    current_cycle: u64,
+) -> RevalidationBatch {
+    let mut batch = RevalidationBatch::default();
+    if response.status != ResponseStatus::Ok
+        || response.outcome != WorkerOutcome::Valid
+        || response.local_closure_results.is_empty()
+    {
+        return batch;
+    }
+
+    let seed_support_definition_nodes = match seed_support_definition_nodes_for_probe(state, repo) {
+        Ok(nodes) => nodes,
+        Err(error) => {
+            for node in response.local_closure_results.keys() {
+                batch.still_unverified.push((
+                    node.clone(),
+                    seed_support_failure_summary(&error, current_cycle),
+                ));
+            }
+            return batch;
+        }
+    };
+
+    let mut post_state = state.clone();
+    post_state.live = response.snapshot.clone();
+    post_state.apply_worker_structure_updates(response);
+
+    for (node, probe) in &response.local_closure_results {
+        let mut result = probe.clone();
+        validate_probe_present_nodes_with_seed_support(
+            &mut result,
+            &post_state.live.present_nodes,
+            &post_state.node_kinds,
+            &seed_support_definition_nodes,
+        );
+        let approved = match load_approved_axioms(repo, node.as_str()) {
+            Ok(a) => a,
+            Err(load_err) => {
+                batch.still_unverified.push((
+                    node.clone(),
+                    build_approved_axioms_load_error_summary(&load_err, current_cycle),
+                ));
+                continue;
+            }
+        };
+        let kernel_subset = result.kernel_axioms.is_subset(&approved);
+        if result.status != "ok" || !kernel_subset || !result.errors.is_empty() {
+            continue;
+        }
+        let axcheck_status = match &result.axiomization_check {
+            Some(ax) if ax.skipped => AxcheckStatus::Skipped,
+            Some(ax) if ax.agreed => AxcheckStatus::Agreed,
+            Some(_) => AxcheckStatus::Disagreed,
+            None => AxcheckStatus::Skipped,
+        };
+        let accepted_at_snapshot_id = format!(
+            "{}{}",
+            trellis_kernel::model::WORKER_RESULT_LOCAL_CLOSURE_BACKFILL_PREFIX,
+            current_cycle
+        );
+        match compute_local_closure_record_inputs(
+            repo,
+            node,
+            &result.kernel_axioms,
+            &result.boundary_theorems,
+            &result.strict_theorem_deps,
+            &result.strict_definition_deps,
+            accepted_at_snapshot_id,
+            axcheck_status,
+        ) {
+            Ok(mut record) => {
+                record.seed_support_definition_deps =
+                    result.seed_support_definition_deps.clone();
+                trellis_kernel::model::populate_seed_support_binding(
+                    &mut record,
+                    &post_state,
+                );
+                populate_kernel_semantic_hashes_from_state(&mut record, &post_state);
+                batch.refreshed.push((node.clone(), record));
+            }
+            Err(load_err) => {
+                batch.still_unverified.push((
+                    node.clone(),
+                    build_approved_axioms_load_error_summary(&load_err, current_cycle),
+                ));
+            }
+        }
+    }
+    batch
+}
+
+fn merge_revalidation_batch(
+    worker_response: &mut WorkerResponse,
+    shared_batch: &std::rc::Rc<std::cell::RefCell<Option<RevalidationBatch>>>,
+    batch: RevalidationBatch,
+) {
+    if batch.refreshed.is_empty() && batch.still_unverified.is_empty() {
+        return;
+    }
+
+    {
+        let mut shared = shared_batch.borrow_mut();
+        match shared.as_mut() {
+            Some(existing) => {
+                existing.refreshed.extend(batch.refreshed.clone());
+                existing
+                    .still_unverified
+                    .extend(batch.still_unverified.clone());
+            }
+            None => {
+                *shared = Some(batch.clone());
+            }
+        }
+    }
+
+    match worker_response.local_closure_revalidation.as_mut() {
+        Some(existing) => {
+            existing.refreshed.extend(batch.refreshed);
+            existing.still_unverified.extend(batch.still_unverified);
+        }
+        None => {
+            worker_response.local_closure_revalidation = Some(batch);
+        }
+    }
+}
+
+fn cleanup_post_delta_revalidation_batch(
+    state: &ProtocolState,
+    response: &WorkerResponse,
+    repo: &Path,
+    current_cycle: u64,
+) -> RevalidationBatch {
+    if response.status != ResponseStatus::Ok || response.outcome != WorkerOutcome::Valid {
+        return RevalidationBatch::default();
+    }
+    let post_state = trellis_kernel::engine::simulate_local_closure_state_after_worker_acceptance(
+        state, response,
+    );
+    if post_state.local_closure_unverified_nodes.is_empty() {
+        return RevalidationBatch::default();
+    }
+    deterministic_revalidate_at_cli(&post_state, repo, current_cycle)
+}
+
+/// Plan §7.10 — persist a fresh record to disk so a supervisor kill
+/// mid-migration loses no progress. JSON includes a `_persisted_at_cycle`
+/// diagnostic alongside the record fields.
+fn persist_record_to_disk(
+    records_dir: &Path,
+    record: &LocalClosureRecord,
+    cycle: u64,
+) -> Result<(), String> {
+    fs::create_dir_all(records_dir).map_err(|err| {
+        format!(
+            "failed to create local-closure records dir {}: {err}",
+            records_dir.display()
+        )
+    })?;
+    let mut value = serde_json::to_value(record)
+        .map_err(|err| format!("failed to serialize local-closure record: {err}"))?;
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert(
+            "_persisted_at_cycle".to_string(),
+            serde_json::Value::from(cycle),
+        );
+    }
+    // Patch C-Q Q5 — use the shared filename helper so the
+    // persistence side and `delete_persisted_local_closure_record`
+    // (runtime.rs) stay in lockstep. The helper escapes `/` in node
+    // IDs identically on both sides; even though current `NodeId`s
+    // don't contain `/`, centralizing the rule future-proofs the
+    // save/delete pair.
+    let path = records_dir.join(trellis_kernel::runtime::persisted_record_file_name(
+        &record.node,
+    ));
+    // Defensive belt-and-suspenders: keep the suffix constant in sync
+    // for visibility — the helper hard-codes `.json` (see runtime.rs);
+    // this assertion would fire if `LOCAL_CLOSURE_RECORDS_EXT` drifts
+    // away from "json" without updating the helper.
+    debug_assert_eq!(LOCAL_CLOSURE_RECORDS_EXT, "json");
+    let text = serde_json::to_string_pretty(&value)
+        .map_err(|err| format!("failed to serialize local-closure record JSON: {err}"))?;
+    fs::write(&path, text).map_err(|err| {
+        format!(
+            "failed to write local-closure record {}: {err}",
+            path.display()
+        )
+    })?;
+    Ok(())
+}
+
+/// Load a persisted record from disk. Strips the diagnostic
+/// `_persisted_at_cycle` field (if present) before deserializing.
+fn load_persisted_record(path: &Path) -> Result<LocalClosureRecord, String> {
+    let text = fs::read_to_string(path)
+        .map_err(|err| format!("failed to read {}: {err}", path.display()))?;
+    let mut value: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|err| format!("failed to parse {}: {err}", path.display()))?;
+    if let Some(obj) = value.as_object_mut() {
+        obj.remove("_persisted_at_cycle");
+    }
+    serde_json::from_value::<LocalClosureRecord>(value)
+        .map_err(|err| format!("failed to deserialize record at {}: {err}", path.display()))
+}
+
+/// Plan §7.10 step 3 — install-time hash revalidation. A persisted
+/// record is only installed if every input hash matches current state.
+///
+/// Audit HIGH 1 fix: also validates each stored dep hash
+/// (`boundary_theorems`, `strict_theorem_deps`, `strict_definition_deps`)
+/// against any cross-record evidence in `state`. The probe-derived hash
+/// formats (statement_hash / value_hash / semantic_hash) are produced by
+/// `scripts/lean_local_closure.lean` and cannot be recomputed Rust-side
+/// without re-running the probe; we therefore use the strongest check
+/// available without re-probing: if any OTHER in-state record references
+/// the same dep node under the same dep kind with a different hash, at
+/// least one of those records is stale, so we conservatively reject the
+/// candidate. This catches the audit's scenario where a boundary helper /
+/// strict dep changed and another consumer's record (refreshed via the
+/// engine's invalidation walk or a deterministic-revalidation pass) now
+/// disagrees on the dep's hash. Records without cross-references cannot
+/// be cross-checked this way; the deterministic-revalidation pass and
+/// engine invalidation walk remain the primary defenses there.
+fn record_hashes_match_current(
+    record: &LocalClosureRecord,
+    repo: &Path,
+    state: &ProtocolState,
+) -> bool {
+    if record.closure_version != CLOSURE_VERSION {
+        return false;
+    }
+    if record
+        .seed_support_binding_is_consistent_with_state(state)
+        .is_err()
+    {
+        return false;
+    }
+    let toolchain = hash_file_or_empty(&repo.join("lean-toolchain"));
+    if record.toolchain_hash != toolchain {
+        return false;
+    }
+    let (lean_executable, lake_executable, checker_script) =
+        local_closure_checker_identities(repo);
+    if record.lean_executable_hash != lean_executable
+        || record.lake_executable_hash != lake_executable
+        || record.checker_script_hash != checker_script
+    {
+        return false;
+    }
+    let manifest = hash_file_or_empty(&repo.join("lake-manifest.json"));
+    if record.lake_manifest_hash != manifest {
+        return false;
+    }
+    let preamble = hash_file_or_empty(&repo.join("Tablet/Preamble.lean"));
+    if record.preamble_hash != preamble {
+        return false;
+    }
+    for (node, recorded_hash) in &record.seed_support_file_hashes {
+        let path = repo
+            .join("Tablet")
+            .join(format!("{}.lean", node.as_str()));
+        match fs::symlink_metadata(&path) {
+            Ok(metadata) if metadata.file_type().is_file() => {}
+            _ => return false,
+        }
+        let bytes = match fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(_) => return false,
+        };
+        if trellis_kernel::trust_base::raw_sha256(&bytes) != *recorded_hash {
+            return false;
+        }
+    }
+    // Audit MEDIUM (approved-axioms load errors): a load failure means
+    // we cannot validate the record's axioms against current policy; fail
+    // closed (reject) rather than silently accepting against a wrong
+    // "empty approved set". Validity is MONOTONE (see the rescind pass):
+    // the record reinstalls iff every axiom it observed is still allowed —
+    // an allowlist that merely GREW since install keeps it valid.
+    let approved = match load_approved_axioms(repo, record.node.as_str()) {
+        Ok(set) => set,
+        Err(_) => return false,
+    };
+    if !record.kernel_axioms.iter().all(|a| approved.contains(a)) {
+        return false;
+    }
+    // Audit H-4 — startup/migration side of axcheck-policy rescission.
+    // If current config requires the secondary axcheck collector, a
+    // persisted record generated while axcheck was skipped must not
+    // reinstall as verified.
+    if local_closure_axcheck_required_for_repo(repo)
+        && record.axcheck_status != AxcheckStatus::Agreed
+    {
+        return false;
+    }
+    let active_decl = active_decl_hash_for_node(repo, record.node.as_str());
+    if record.active_decl_hash != active_decl {
+        return false;
+    }
+    let active_stmt = active_statement_hash_for_node(repo, record.node.as_str());
+    if record.active_statement_hash != active_stmt {
+        return false;
+    }
+    // Audit HIGH 1: validate every stored dep hash against any
+    // cross-record evidence currently in state.
+    if !record_dep_hashes_consistent_with_state(record, state) {
+        return false;
+    }
+    true
+}
+
+/// Audit HIGH 1 + Patch C-O HIGH 1 (b) + Patch C-P HIGH 1 (b) helper —
+/// true iff every stored dep on the record is corroborated by current
+/// state. Layered checks, in order of strictness:
+///
+///   * The dep MUST be in `state.live.present_nodes`. A ghost dep
+///     (referenced in the record but no longer present) is a stale
+///     record.
+///   * Patch C-P HIGH 1 (b): if the record carries a probe-time
+///     `kernel_semantic_hash` for the dep, it MUST equal the current
+///     `state.live.corr_current_fingerprints[dep]`. A mismatch (or a
+///     missing-from-state entry on a present dep) means the dep's
+///     meaning surface drifted since the record was written; reject.
+///     This is the canonical drift check: it catches silent dep drift
+///     where neither record's invalidation flag was set, mutual-stale
+///     pairs that would cross-validate under the old check, off-protocol
+///     edits between supervisor stops, and iteration-order dependent
+///     migrations.
+///   * Patch C-O strict-signal fallback (retained as a belt-and-
+///     suspenders layer for records persisted before Patch C-P added
+///     `kernel_semantic_hashes`): if the dep itself is in
+///     `state.local_closure_unverified_nodes` or
+///     `state.local_closure_failures`, the dep is in flux. Pre-Patch-C-P
+///     records have an empty `kernel_semantic_hashes` map (per
+///     `#[serde(default)]`), so the kernel-hash check above doesn't fire
+///     for them; this fallback still gives those records the C-O
+///     guarantee.
+///   * The existing cross-record agreement check is retained: if
+///     another record in state names the same dep under the same kind
+///     with a different hash, the candidate is stale.
+///
+/// Skips `record.node` itself so a record can be re-installed against
+/// an earlier in-state copy of itself.
+fn record_dep_hashes_consistent_with_state(
+    record: &LocalClosureRecord,
+    state: &ProtocolState,
+) -> bool {
+    let dep_groups: [&BTreeMap<NodeId, String>; 3] = [
+        &record.boundary_theorems,
+        &record.strict_theorem_deps,
+        &record.strict_definition_deps,
+    ];
+    for group in dep_groups {
+        for dep in group.keys() {
+            if !state.live.present_nodes.contains(dep) {
+                return false;
+            }
+        }
+    }
+    // Patch C-P HIGH 1 (b) — kernel `semantic_hash` drift check. Any
+    // dep whose recorded kernel hash disagrees with the current
+    // `corr_current_fingerprints` value (or whose entry has been
+    // deleted from current state) means the record is stale. Empty
+    // strings (rare: dep not yet fingerprinted at record-creation
+    // time) match against a current empty/missing entry.
+    for (dep, recorded_hash) in &record.kernel_semantic_hashes {
+        let current_hash = state.live.corr_current_fingerprints.get(dep);
+        match current_hash {
+            Some(current) if current == recorded_hash => continue,
+            _ => return false,
+        }
+    }
+    // Patch C-O HIGH 1 (b) strict-signal fallback — only fires for
+    // pre-Patch-C-P records (those with an empty `kernel_semantic_hashes`
+    // map). Post-Patch-C-P records carry hashes for every dep, so the
+    // check above is authoritative. Kept for back-compat with persisted
+    // records written before this deploy.
+    if record.kernel_semantic_hashes.is_empty() {
+        for group in dep_groups {
+            for dep in group.keys() {
+                if state.local_closure_unverified_nodes.contains(dep) {
+                    return false;
+                }
+                if state.local_closure_failures.contains_key(dep) {
+                    return false;
+                }
+            }
+        }
+    }
+    for (dep, recorded_hash) in &record.boundary_theorems {
+        for (other_node, other) in &state.local_closure_records {
+            if other_node == &record.node {
+                continue;
+            }
+            if let Some(other_hash) = other.boundary_theorems.get(dep) {
+                if other_hash != recorded_hash {
+                    return false;
+                }
+            }
+        }
+    }
+    for (dep, recorded_hash) in &record.strict_theorem_deps {
+        for (other_node, other) in &state.local_closure_records {
+            if other_node == &record.node {
+                continue;
+            }
+            if let Some(other_hash) = other.strict_theorem_deps.get(dep) {
+                if other_hash != recorded_hash {
+                    return false;
+                }
+            }
+        }
+    }
+    for (dep, recorded_hash) in &record.strict_definition_deps {
+        for (other_node, other) in &state.local_closure_records {
+            if other_node == &record.node {
+                continue;
+            }
+            if let Some(other_hash) = other.strict_definition_deps.get(dep) {
+                if other_hash != recorded_hash {
+                    return false;
+                }
+            }
+        }
+    }
+    true
+}
+
+/// Plan §7.10 — first-deploy migration. Idempotent: returns false on
+/// subsequent calls when no work remains, so safe to run at every
+/// supervisor startup. Returns true if any state mutation occurred.
+///
+/// Steps:
+/// 1. Scan persisted records, install those whose hashes match current state.
+/// 2. Identify sorry-free proof_nodes lacking a record; insert into unverified set.
+/// 3. Run a deterministic-revalidation pass; persist refreshed records.
+/// 4. Recompute reverse indices.
+///
+/// The probe runner is injected for testability; production calls pass
+/// `run_local_closure_axioms`.
+fn run_migration_if_needed_with_probe<F>(
+    state: &mut ProtocolState,
+    repo: &Path,
+    runtime_root: &Path,
+    current_cycle: u64,
+    probe: F,
+) -> Result<bool, String>
+where
+    F: FnMut(&Path, &str) -> Result<LocalClosureProbeOutput, String>,
+{
+    // Audit NR-1 — sentinel-record persistence window. The engine's
+    // `apply_local_closure_acceptance_bookkeeping` installs
+    // sentinel-hashed records into in-memory state at the sorry-free
+    // arm; the runtime CLI's post-step `backfill_local_closure_record_hashes`
+    // replaces sentinels with real hashes BEFORE the next step. But
+    // there's a persistence window: `step_with_checkpoint_sink` calls
+    // `persist_state` (writing state.json with the sentinel record)
+    // BEFORE `backfill_local_closure_record_hashes` runs. If the
+    // process dies in that window, the persisted state.json has a
+    // sentinel record. On restart, migration's `record-load` loop at
+    // line 3828 skips re-loading the disk record because
+    // `state.local_closure_records.contains_key` is true; the
+    // `needs_probe` filter at line 3870 also excludes the node. The
+    // sentinel record survives until the NEXT step's backfill — and
+    // during that window `formalization_complete()` sees a
+    // present-but-sentinel record and may incorrectly allow phase
+    // advancement.
+    //
+    // Fix: at migration entry, sweep `state.local_closure_records`
+    // and demote any sentinel-shaped record into the
+    // `local_closure_unverified_nodes` set. This forces the
+    // deterministic-revalidation pass below to re-probe the node,
+    // producing a real-hashed record.
+    let sentinel_demotion_count = {
+        let sentinels: Vec<NodeId> = state
+            .local_closure_records
+            .iter()
+            .filter_map(|(node, record)| {
+                if record_needs_hash_backfill(record) {
+                    Some(node.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let count = sentinels.len();
+        for node in sentinels {
+            state.local_closure_records.remove(&node);
+            state.local_closure_unverified_nodes.insert(node);
+        }
+        count
+    };
+    if sentinel_demotion_count > 0 {
+        eprintln!(
+            "[local-closure migration] NR-1 sentinel sweep: demoted {} sentinel record(s) to \
+             unverified so deterministic revalidation re-probes them",
+            sentinel_demotion_count
+        );
+    }
+    let records_dir = local_closure_records_dir(runtime_root);
+    let mut mutated_by_load = sentinel_demotion_count > 0;
+    if records_dir.exists() {
+        if let Ok(entries) = fs::read_dir(&records_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() {
+                    if let Ok(record) = load_persisted_record(&path) {
+                        if state.local_closure_records.contains_key(&record.node) {
+                            continue;
+                        }
+                        // Patch C-O HIGH 1 (a): tombstone-respect. The
+                        // in-memory `local_closure_unverified_nodes` and
+                        // `local_closure_failures` are authoritative
+                        // tombstones — they explicitly mark the prior
+                        // record as invalidated and force a re-probe.
+                        // A persisted disk record must not override
+                        // those tombstones; let the probe pass decide.
+                        if state.local_closure_unverified_nodes.contains(&record.node) {
+                            continue;
+                        }
+                        if state.local_closure_failures.contains_key(&record.node) {
+                            continue;
+                        }
+                        // Audit NR-1 — reject sentinel-shaped persisted
+                        // records at disk-load time too. Belt-and-braces
+                        // with the in-memory sweep at the top of this
+                        // function: in the typical case the per-node
+                        // disk file is written by `step_runtime`'s
+                        // post-step backfill sweep AFTER the engine has
+                        // already replaced sentinels with real hashes,
+                        // so sentinels on disk are rare. But a future
+                        // refactor that persists records earlier (or a
+                        // hand-edited state file used for testing) could
+                        // surface them; reject here too so the migration
+                        // forces a re-probe rather than blessing
+                        // sentinel hashes as legitimate.
+                        if record_needs_hash_backfill(&record) {
+                            eprintln!(
+                                "[local-closure migration] NR-1: rejecting persisted sentinel \
+                                 record for {} ({}); deterministic revalidation will re-probe",
+                                record.node.as_str(),
+                                path.display(),
+                            );
+                            state
+                                .local_closure_unverified_nodes
+                                .insert(record.node.clone());
+                            mutated_by_load = true;
+                            continue;
+                        }
+                        if !record_hashes_match_current(&record, repo, state) {
+                            continue;
+                        }
+                        let node = record.node.clone();
+                        state.local_closure_records.insert(node.clone(), record);
+                        state.local_closure_unverified_nodes.remove(&node);
+                        state.local_closure_failures.remove(&node);
+                        mutated_by_load = true;
+                    }
+                }
+            }
+        }
+    }
+    // Patch C-Q Q4 (defense in depth): require `present_nodes`
+    // membership too. Without this check, a node listed in
+    // `proof_nodes` but no longer in `live.present_nodes` would
+    // transiently land in `local_closure_unverified_nodes` (the insert
+    // below) before `apply_revalidation_batch` later drops the
+    // resulting batch entry via the present-only filter. That window
+    // breaks the §7.0 invariant `unverified ⊆ present_nodes`; this
+    // filter prevents the insert in the first place.
+    let needs_probe: Vec<NodeId> = state
+        .proof_nodes
+        .iter()
+        .filter(|n| state.live.present_nodes.contains(n.as_str()))
+        .filter(|n| !state.live.open_nodes.contains(n.as_str()))
+        .filter(|n| !state.local_closure_records.contains_key(n.as_str()))
+        .cloned()
+        .collect();
+    let mut mutated = mutated_by_load || !needs_probe.is_empty();
+    for n in needs_probe {
+        state.local_closure_unverified_nodes.insert(n);
+    }
+    if !state.local_closure_unverified_nodes.is_empty() {
+        let batch = deterministic_revalidate_at_cli_with_probe(state, repo, current_cycle, probe);
+        for (_, record) in &batch.refreshed {
+            let _ = persist_record_to_disk(&records_dir, record, current_cycle);
+        }
+        if !batch.refreshed.is_empty() || !batch.still_unverified.is_empty() {
+            mutated = true;
+        }
+        trellis_kernel::engine::apply_revalidation_batch(state, batch);
+    }
+    if mutated {
+        trellis_kernel::model::recompute_local_closure_reverse_indices(state);
+    }
+    Ok(mutated)
+}
+
+/// Production migration wrapper — wires the probe runner to
+/// `run_local_closure_axioms`.
+fn run_migration_if_needed(
+    state: &mut ProtocolState,
+    repo: &Path,
+    runtime_root: &Path,
+    current_cycle: u64,
+) -> Result<bool, String> {
+    run_migration_if_needed_with_probe(
+        state,
+        repo,
+        runtime_root,
+        current_cycle,
+        run_local_closure_axioms,
+    )
+}
+
+/// Audit guard — true iff the current state is at a safe lifecycle
+/// point for running the local-closure migration. Returns
+/// `Some(skip_reason)` when the migration should NOT run.
+///
+/// Skip when (post-Patch-C-O tightening):
+///   1. `phase == Cleanup`: migration introduces unverified nodes that
+///      would block Cleanup completion (`formalization_complete`'s
+///      records_present clause); defer until the next phase transition.
+///   2. **Any** request is in flight (Worker / Review / Corr / Paper /
+///      Sound). Worker-in-flight has the original "disk may contain
+///      unaccepted edits" hazard. Review/Corr/Paper/Sound in flight
+///      means the kernel already dispatched a prompt to an external
+///      agent; mutating local-closure state behind that prompt would
+///      drift the agent's view from the post-state the response will
+///      be checked against (the audit's prompt/legality-drift hazard).
+///
+/// The earlier C-H pass only skipped on Worker; C-O tightened to any
+/// in-flight kind. See `CLAUDES_NOTES_deploy_playbook.md` §8 for the
+/// operator-visible consequence: startup migration only runs when the
+/// supervisor was deliberately stopped at a no-in-flight-request
+/// boundary. Naturally-occurring no-request gaps don't exist between
+/// cycles in a normal run.
+///
+/// Returns `None` when migration is safe to run: no Cleanup, no
+/// in-flight request of any kind.
+fn local_closure_migration_skip_reason(state: &ProtocolState) -> Option<String> {
+    if state.phase == trellis_kernel::Phase::Cleanup {
+        return Some(
+            "skipping migration in Cleanup phase; defer until next phase transition.".to_string(),
+        );
+    }
+    if let Some(req) = state.in_flight_request.as_ref() {
+        // Patch C-O MEDIUM 2: tighten from "Worker only" to "any in-flight
+        // request." A Review/Corr/Sound prompt already references the
+        // current blocker/legality snapshot; silently mutating state under
+        // it (e.g. via migration installing new records or clearing
+        // unverified entries) drifts the prompt away from the post-state
+        // the response will be checked against.
+        return Some(format!(
+            "in-flight {:?} request; defer migration until next request boundary.",
+            req.kind
+        ));
+    }
+    None
+}
+
+/// Run the migration once on supervisor startup. Errors propagate as
+/// transient diagnostics — the supervisor must be able to make progress
+/// even when migration fails to capture some nodes (e.g. a probe
+/// transport hiccup leaves them in `local_closure_unverified_nodes`,
+/// which the per-step revalidator drains on subsequent steps).
+///
+/// Patch C-M: the per-pass chunking cap was removed — the revalidator
+/// now drains the entire unverified set in a single call, so nothing is
+/// deferred between cycles.
+///
+/// Audit HIGH 5: gated to safe request-lifecycle points only; see
+/// `local_closure_migration_skip_reason`.
+fn run_local_closure_migration_if_configured(
+    runtime: &mut SupervisorRuntime,
+) -> Result<(), String> {
+    let Some(repo) = runtime.metadata().repo_path.clone() else {
+        return Ok(());
+    };
+    if !repo.join("Tablet").is_dir() {
+        return Ok(());
+    }
+    // Audit HIGH 5: skip migration at unsafe times (Cleanup phase or
+    // pending Worker response). Avoids capturing unaccepted-edit disk
+    // state in persisted records and prevents migration from blocking
+    // Cleanup completion via newly-introduced unverified nodes.
+    if let Some(reason) = local_closure_migration_skip_reason(runtime.state()) {
+        eprintln!("[local-closure migration] {reason}");
+        return Ok(());
+    }
+    let runtime_root = runtime.paths().root.clone();
+    let current_cycle = runtime.state().cycle as u64;
+    runtime
+        .try_post_load_state_migration(|state| {
+            run_migration_if_needed(state, &repo, &runtime_root, current_cycle)
+        })
+        .map_err(|err| format!("local-closure migration failed: {err}"))?;
+    Ok(())
+}
+
+/// Test/production split of the pre-step revalidation flow.
+///
+/// Patch C-Q Q8 (doc refresh): this hook is gated. It fires only when
+/// (a) the unverified set is non-empty AND (b) either no request is in
+/// flight at all, or the in-flight request is `Review`. All other
+/// in-flight request kinds (Worker/Paper/Corr/Sound/HumanGate/...) skip
+/// the hook outright — see the explicit `if req.kind != RequestKind::Review`
+/// short-circuit below for the reasoning. Returns `None` when the gate
+/// blocks; otherwise mutates `state` in place via
+/// `apply_revalidation_batch` and returns the batch for the caller to
+/// persist/observe. Persistence to disk happens at the caller for the
+/// production path; tests can elide that.
+///
+/// History (kept short on purpose):
+/// * Patch C-F generalized the trigger from Review-only to "every
+///   step where unverified is non-empty" so cold-start probes don't
+///   wait for the next Review.
+/// * Patch C-O HIGH 2 re-tightened that to "no in-flight OR Review"
+///   so a Worker/Paper/Corr/Sound prompt-in-flight can't probe against
+///   unaccepted WIP on disk.
+/// * Patch C-M: the per-pass chunking cap was removed — every naked
+///   unverified node is probed in a single call.
+fn run_pre_step_revalidation_if_needed_pure<F>(
+    state: &mut ProtocolState,
+    repo: &Path,
+    runtime_root: &Path,
+    current_cycle: u64,
+    probe: F,
+) -> Option<RevalidationBatch>
+where
+    F: FnMut(&Path, &str) -> Result<LocalClosureProbeOutput, String>,
+{
+    if state.local_closure_unverified_nodes.is_empty() {
+        return None;
+    }
+    // Patch C-O HIGH 2 — fire only when the next request to be
+    // generated is a Review (or no request is in flight at all). The
+    // unverified set is only consulted for reviewer decisions; workers
+    // don't care, and the auto-scheduler post-C-F only schedules nodes
+    // with failure records, not naked-unverified. Firing during a
+    // Worker/Paper/Corr/Sound request in flight has two hazards:
+    //   1. The repo may contain unaccepted Worker WIP; probing/persisting
+    //      records against that disk state would capture a snapshot the
+    //      kernel may later reject.
+    //   2. Mutating an already-dispatched request's
+    //      `local_closure_unverified` (Patch C-J regeneration path) drifts
+    //      legality context from what the agent actually saw.
+    //
+    // Wrapper-level gate (vs. engine-level injection just before Review
+    // prompt construction): keep the hook in `step_runtime` and skip
+    // when the in-flight request is a non-Review kind. Patch C-J's
+    // in-flight regeneration is no longer needed because we never run
+    // under a Worker/Corr/Paper/Sound prompt, so this version drops it.
+    if let Some(req) = state.in_flight_request.as_ref() {
+        if req.kind != RequestKind::Review {
+            return None;
+        }
+    }
+    let batch = deterministic_revalidate_at_cli_with_probe(state, repo, current_cycle, probe);
+    let records_dir = local_closure_records_dir(runtime_root);
+    for (_, record) in &batch.refreshed {
+        let _ = persist_record_to_disk(&records_dir, record, current_cycle);
+    }
+    let batch_clone = batch.clone();
+    let batch_mutated_unverified =
+        !batch_clone.refreshed.is_empty() || !batch_clone.still_unverified.is_empty();
+    trellis_kernel::engine::apply_revalidation_batch(state, batch);
+    // Patch C-Q Q3 — limited regeneration scope. If the in-flight
+    // request is `Review`, the request was constructed (carrying a
+    // snapshot of `local_closure_unverified` / blocker context) before
+    // this hook fired. `apply_revalidation_batch` may have mutated the
+    // unverified set; without regeneration, the dispatched Review
+    // prompt would reference state that no longer matches the kernel.
+    // `apply_request_dispatch_hints` (runtime.rs) does not rebuild
+    // state-derived request fields, so we have to call
+    // `expected_request` here.
+    //
+    // Scope is intentionally narrow:
+    //   * Only regenerate for `Review` (the case the auditor flagged).
+    //   * Skip if the batch didn't actually refresh / fail anything
+    //     (the hook ran but produced no state delta).
+    //   * Skip when no request is in flight (nothing to regenerate).
+    //
+    // This is the limited form of C-J's universal regeneration. Other
+    // request kinds (Worker/Paper/Corr/Sound) cannot reach this code:
+    // the gate above returned early.
+    if batch_mutated_unverified {
+        if let Some(prev) = state.in_flight_request.clone() {
+            if prev.kind == RequestKind::Review {
+                let refreshed_request = state.expected_request(prev.id, RequestKind::Review);
+                state.in_flight_request = Some(refreshed_request);
+            }
+        }
+    }
+    Some(batch_clone)
+}
+
+/// Pre-step hook (plan §7.5 trigger 1, generalized by Patch C-F, gated
+/// by Patch C-O HIGH 2). When the unverified set is non-empty AND
+/// either no request is in flight or the in-flight request is Review,
+/// runs a deterministic pass and applies the batch via
+/// `apply_revalidation_batch`. The gate prevents probing/persisting
+/// records while a Worker/Corr/Paper/Sound prompt is in flight — those
+/// don't consult the unverified set anyway, and Worker in particular
+/// may have unaccepted WIP on disk. Persists any refreshed records so
+/// migration progress carries across restarts.
+fn run_pre_step_revalidation_if_needed(runtime: &mut SupervisorRuntime) -> Result<(), String> {
+    let Some(repo) = runtime.metadata().repo_path.clone() else {
+        return Ok(());
+    };
+    if !repo.join("Tablet").is_dir() {
+        return Ok(());
+    }
+    let runtime_root = runtime.paths().root.clone();
+    let current_cycle = runtime.state().cycle as u64;
+    runtime
+        .try_post_load_state_migration(|state| {
+            let result = run_pre_step_revalidation_if_needed_pure(
+                state,
+                &repo,
+                &runtime_root,
+                current_cycle,
+                run_local_closure_axioms,
+            );
+            Ok(result.is_some())
+        })
+        .map_err(|err| format!("pre-step revalidation failed: {err}"))?;
+    Ok(())
+}
+
+/// Audit H-2 — approved-axiom rescission. Recompute each closure
+/// record's `approved_axioms_hash` against current
+/// `APPROVED_AXIOMS.json` and demote any record whose hash no longer
+/// matches. The migration-time hash check (`record_hashes_match_current`)
+/// catches drift on supervisor restart; this per-step hook catches
+/// operators who flip the policy mid-run without restarting.
+///
+/// Demote = drop from `local_closure_records`, push the node into
+/// `local_closure_unverified_nodes`, write a synthetic `axiom_violation`
+/// failure summary. The next deterministic-revalidation pass will
+/// re-probe with the new policy.
+///
+/// Skipped when no Tablet repo exists (synthetic / minimal runs).
+/// Note: this hook is intentionally NOT gated on `in_flight_request`.
+/// The policy change is an environmental fact that survives in-flight
+/// prompts; defending against a worker prompt drifting under a policy
+/// shift is the rescission's job, not a reason to defer it.
+/// Audit H-2 — pure-state inner of the approved-axiom rescission
+/// hook. Returns a list of nodes that were demoted (so the caller
+/// can delete their persisted disk JSON in lockstep). Read-only on
+/// disk; all state mutations land on the supplied `&mut ProtocolState`.
+fn rescind_records_with_stale_approved_axioms_hash_pure(
+    state: &mut ProtocolState,
+    repo: &Path,
+    current_cycle: u64,
+) -> Vec<NodeId> {
+    let mut to_demote: Vec<NodeId> = Vec::new();
+    let mut to_refresh: Vec<(NodeId, String)> = Vec::new();
+    for (node, record) in &state.local_closure_records {
+        // MONOTONE allowlist validity (dec2flt 2026-07-04): a record stays
+        // valid while every axiom it OBSERVED (`kernel_axioms`) is still
+        // allowed. Growing the allowlist — a lane pass or a gate
+        // ratification adding an assumption — can never invalidate a
+        // verified closure; only REVOCATION of an axiom the record relies
+        // on demotes it. The previous hash-equality check demoted every
+        // record whenever the effective set changed in either direction:
+        // the domain-claim lane pass GREW the set and flipped long-closed
+        // nodes to closure-unverified — the exact quarantine provisional
+        // admission exists to prevent.
+        match load_approved_axioms(repo, node.as_str()) {
+            Ok(approved) => {
+                if record.kernel_axioms.iter().all(|a| approved.contains(a)) {
+                    let current = hash_axioms_set(&approved);
+                    if record.approved_axioms_hash != current {
+                        // Kept under a changed allowlist: refresh the
+                        // recorded hash so the diagnostic field tracks the
+                        // policy the record was last validated against.
+                        to_refresh.push((node.clone(), current));
+                    }
+                } else {
+                    to_demote.push(node.clone());
+                }
+            }
+            Err(_) => {
+                // Treat policy-file load failure as a policy-shift
+                // indication: we cannot prove the record's axioms are
+                // still allowed, so demote defensively.
+                to_demote.push(node.clone());
+            }
+        }
+    }
+    for (node, hash) in to_refresh {
+        if let Some(record) = state.local_closure_records.get_mut(&node) {
+            record.approved_axioms_hash = hash;
+        }
+    }
+    if to_demote.is_empty() {
+        return to_demote;
+    }
+    for node in &to_demote {
+        let summary = ErrorSummary {
+            status: "axiom_violation".to_string(),
+            returncode: -1,
+            timed_out: false,
+            stderr_excerpt: "approved-axioms revocation: an axiom this record's closure relies on is no longer in the effective allowlist — record demoted, re-probe pending".to_string(),
+            axiom_violations: Vec::new(),
+            strict_errors: Vec::new(),
+            captured_at_cycle: current_cycle,
+            retry_count: 0,
+            last_attempt_cycle: current_cycle,
+            next_retry_cycle: 0,
+            retry_exhausted: false,
+        };
+        state.local_closure_records.remove(node);
+        state.local_closure_failures.insert(node.clone(), summary);
+        state.local_closure_unverified_nodes.insert(node.clone());
+    }
+    trellis_kernel::model::recompute_local_closure_reverse_indices(state);
+    state.ensure_local_closure_coverage();
+    to_demote
+}
+
+fn rescind_records_with_stale_approved_axioms_hash(
+    runtime: &mut SupervisorRuntime,
+) -> Result<(), String> {
+    let Some(repo) = runtime.metadata().repo_path.clone() else {
+        return Ok(());
+    };
+    if !repo.join("Tablet").is_dir() {
+        return Ok(());
+    }
+    let runtime_root = runtime.paths().root.clone();
+    let current_cycle = runtime.state().cycle as u64;
+    let mut demoted_nodes: Vec<NodeId> = Vec::new();
+    runtime
+        .try_post_load_state_migration(|state| {
+            let demoted =
+                rescind_records_with_stale_approved_axioms_hash_pure(state, &repo, current_cycle);
+            let mutated = !demoted.is_empty();
+            demoted_nodes = demoted;
+            Ok(mutated)
+        })
+        .map_err(|err| format!("approved-axiom rescission failed: {err}"))?;
+    // Delete persisted JSON for demoted records so disk state matches
+    // the in-memory tombstone (same lockstep pattern as the cleanup-
+    // batch persistence sweep and the hash backfill).
+    if !demoted_nodes.is_empty() {
+        remove_persisted_local_closure_record_files(
+            &runtime_root,
+            &demoted_nodes,
+            "approved-axiom rescission",
+        );
+    }
+    Ok(())
+}
+
+/// Audit H-4 — axcheck policy rescission. If current runtime policy
+/// requires the secondary axcheck collector, any record captured while
+/// axcheck was skipped or disagreed is stale. Demote it so the next
+/// deterministic revalidation pass reruns the local-closure probe under
+/// the current policy.
+fn rescind_records_with_stale_axcheck_status_pure(
+    state: &mut ProtocolState,
+    axcheck_required: bool,
+    current_cycle: u64,
+) -> Vec<NodeId> {
+    if !axcheck_required {
+        return Vec::new();
+    }
+    let to_demote: Vec<NodeId> = state
+        .local_closure_records
+        .iter()
+        .filter_map(|(node, record)| {
+            (record.axcheck_status != AxcheckStatus::Agreed).then(|| node.clone())
+        })
+        .collect();
+    if to_demote.is_empty() {
+        return to_demote;
+    }
+    for node in &to_demote {
+        let summary = ErrorSummary {
+            status: "internal_error".to_string(),
+            returncode: -1,
+            timed_out: false,
+            stderr_excerpt: "axcheck_status is not Agreed while local_closure_axcheck_enabled requires secondary axcheck — record demoted, re-probe pending".to_string(),
+            axiom_violations: Vec::new(),
+            strict_errors: Vec::new(),
+            captured_at_cycle: current_cycle,
+            retry_count: 0,
+            last_attempt_cycle: current_cycle,
+            next_retry_cycle: 0,
+            retry_exhausted: false,
+        };
+        state.local_closure_records.remove(node);
+        state.local_closure_failures.insert(node.clone(), summary);
+        state.local_closure_unverified_nodes.insert(node.clone());
+    }
+    trellis_kernel::model::recompute_local_closure_reverse_indices(state);
+    state.ensure_local_closure_coverage();
+    to_demote
+}
+
+fn rescind_records_with_stale_axcheck_status(
+    runtime: &mut SupervisorRuntime,
+) -> Result<(), String> {
+    let Some(repo) = runtime.metadata().repo_path.clone() else {
+        return Ok(());
+    };
+    if !repo.join("Tablet").is_dir() {
+        return Ok(());
+    }
+    let axcheck_required = local_closure_axcheck_required_for_repo(&repo);
+    if !axcheck_required {
+        return Ok(());
+    }
+    let runtime_root = runtime.paths().root.clone();
+    let current_cycle = runtime.state().cycle as u64;
+    let mut demoted_nodes: Vec<NodeId> = Vec::new();
+    runtime
+        .try_post_load_state_migration(|state| {
+            let demoted = rescind_records_with_stale_axcheck_status_pure(
+                state,
+                axcheck_required,
+                current_cycle,
+            );
+            let mutated = !demoted.is_empty();
+            demoted_nodes = demoted;
+            Ok(mutated)
+        })
+        .map_err(|err| format!("axcheck-status rescission failed: {err}"))?;
+    if !demoted_nodes.is_empty() {
+        remove_persisted_local_closure_record_files(
+            &runtime_root,
+            &demoted_nodes,
+            "axcheck-status rescission",
+        );
+    }
+    Ok(())
+}
+
+/// Adapter wrapper that injects `local_closure_revalidation` into a
+/// cleanup-flavored Worker response BEFORE the engine processes it.
+///
+/// Plan §7.7: the cleanup-burst engine path checks
+/// `formalization_complete()` after applying bookkeeping. Records
+/// invalidated by this delta need fresh probes BEFORE that check; the
+/// engine consumes `WorkerResponse.local_closure_revalidation` inside
+/// `apply_local_closure_acceptance_bookkeeping`.
+///
+/// Patch C-Q Q2 — the adapter does NOT persist records to disk inside
+/// the dispatch. If the engine subsequently rejects the cleanup response
+/// (cleanup invariant violation, validation failure, ...), the records
+/// must not survive on disk. Instead, the batch is stashed in
+/// `WorkerResponse.local_closure_revalidation` and a shared cell
+/// (`shared_batch`); after the engine returns Ok, `step_runtime`
+/// persists the refreshed entries that survived the engine's eligibility
+/// filter (i.e. that are still in `state.local_closure_records`).
+struct CleanupRevalidationAdapter<'a, A: WrapperAdapter> {
+    inner: A,
+    state: &'a ProtocolState,
+    repo: PathBuf,
+    current_cycle: u64,
+    /// Patch C-Q Q2 — shared with `step_runtime` so the post-acceptance
+    /// persistence sweep can see the batch the adapter built. `None`
+    /// means no cleanup batch was produced (either the request wasn't a
+    /// cleanup kind, or the unverified set was empty).
+    shared_batch: std::rc::Rc<std::cell::RefCell<Option<RevalidationBatch>>>,
+}
+
+impl<'a, A: WrapperAdapter> WrapperAdapter for CleanupRevalidationAdapter<'a, A> {
+    fn dispatch(&mut self, request: &WrapperRequest) -> Result<WrapperResponse, String> {
+        let mut response = self.inner.dispatch(request)?;
+        let is_cleanup_request = matches!(
+            request.worker_context.validation_kind,
+            WorkerValidationKind::Cleanup | WorkerValidationKind::FinalCleanup
+        );
+        if let WrapperResponse::Worker(ref mut worker_response) = response {
+            if (request.phase == trellis_kernel::Phase::ProofFormalization || is_cleanup_request)
+                && !worker_response.local_closure_results.is_empty()
+            {
+                let batch = same_burst_local_closure_backfill_batch(
+                    self.state,
+                    worker_response,
+                    &self.repo,
+                    self.current_cycle,
+                );
+                merge_revalidation_batch(worker_response, &self.shared_batch, batch);
+            }
+            if is_cleanup_request {
+                let batch = cleanup_post_delta_revalidation_batch(
+                    self.state,
+                    worker_response,
+                    &self.repo,
+                    self.current_cycle,
+                );
+                merge_revalidation_batch(worker_response, &self.shared_batch, batch);
+            }
+        }
+        Ok(response)
+    }
+}
+
+/// Helper: invoke `step_with_checkpoint_sink` with an adapter, picking
+/// up the checkpoint sink from env. Centralizes the "match on env-sink"
+/// pattern so the cleanup-wrap and non-wrap step paths share one body.
+fn run_step_with_sink<A: WrapperAdapter>(
+    runtime: &mut SupervisorRuntime,
+    adapter: &mut A,
+) -> Result<RuntimeStepOutcome, String> {
+    match checkpoint_sink_from_env()? {
+        Some(mut sink) => runtime
+            .step_with_checkpoint_sink(adapter, &mut sink)
+            .map_err(|err| format!("runtime step failed: {err}")),
+        None => {
+            let mut sink = NoopCheckpointSink;
+            runtime
+                .step_with_checkpoint_sink(adapter, &mut sink)
+                .map_err(|err| format!("runtime step failed: {err}"))
+        }
+    }
+}
+
+fn step_runtime(
+    runtime: &mut SupervisorRuntime,
+    response: Option<WrapperResponse>,
+) -> Result<RuntimeStepOutcome, String> {
+    // Audit H-2 — approved-axiom rescission hook. Recompute each
+    // record's `approved_axioms_hash` against current
+    // `APPROVED_AXIOMS.json` and demote any record whose hash no
+    // longer matches. Idempotent and cheap: hashing the policy file
+    // and comparing strings, no probes. The migration-time check
+    // (`record_hashes_match_current`) catches this on supervisor
+    // restart; this hook catches operators who edit the policy
+    // file mid-run without restarting.
+    //
+    // Skipped when no Tablet repo present (synthetic / minimal
+    // test runs); skipped also when the in-flight request is
+    // mid-cycle (per the same prompt/drift contract as the
+    // pre-step revalidator) so we don't shift records under an
+    // in-flight verifier prompt.
+    rescind_records_with_stale_approved_axioms_hash(runtime)?;
+    // Audit H-4 — paired policy hook for records captured while
+    // local-closure axcheck was disabled/skipped. The H-2 hook above
+    // handles approved-axiom hash drift; this one handles axcheck policy
+    // drift.
+    rescind_records_with_stale_axcheck_status(runtime)?;
+    // Plan §7.5 trigger 1 — deterministic-revalidation pass before the
+    // step when the unverified set is non-empty.
+    //
+    // Patch C-Q Q8 (doc refresh): the hook is gated. It fires only when
+    // there's no in-flight request OR the in-flight request is
+    // `Review`. Worker/Paper/Corr/Sound prompts in flight skip it so we
+    // don't probe against unaccepted WIP on disk. See
+    // `run_pre_step_revalidation_if_needed_pure` for the full gate
+    // (C-F generalized the trigger; C-O HIGH 2 re-tightened to the
+    // current Review-or-idle shape).
+    run_pre_step_revalidation_if_needed(runtime)?;
+    // Crash recovery for the narrow journal-ahead window: profile selection is
+    // durable before candidate materialization and before the already-created
+    // next request is returned to the supervisor.  If the process dies in that
+    // interval, reconstruct only the journal-selected graph projection before
+    // dispatch.  This path deliberately does not inspect source sidecars or
+    // append semantic events, so an unaccepted worker workspace cannot advance
+    // trust authority.
+    if runtime.state().in_flight_request.is_some()
+        && reconcile_journal_selected_conditional_candidates(runtime)?
+    {
+        runtime
+            .refresh_in_flight_after_external_state_change()
+            .map_err(|error| {
+                format!(
+                    "failed to refresh recovered request after journal-selected candidate activation: {error}"
+                )
+            })?;
+    }
+    // On an idle/recovered checkpoint, reconcile the trust journal before
+    // the kernel is allowed to test `formalization_complete`.  This closes
+    // the restart window in which an old checkpoint could omit the derived
+    // pending-witness marker and enter Cleanup before the post-step drain.
+    // Never do this while a request is in flight: a worker may already have
+    // written an unaccepted sidecar into its WIP worktree, and journal
+    // authority must follow (not precede) acceptance of that response.
+    if runtime.state().in_flight_request.is_none() {
+        let _ = drain_finalized_trust_results(runtime)?;
+    }
+    let inner_adapter = make_adapter(runtime, response)?;
+    let cleanup_wrap = runtime
+        .metadata()
+        .repo_path
+        .as_deref()
+        .is_some_and(|p| p.join("Tablet").is_dir());
+    // Patch C-Q Q2 — shared cell for the cleanup adapter's batch. The
+    // adapter populates this before returning the WorkerResponse; the
+    // post-acceptance persistence sweep below reads it and writes only
+    // the refreshed entries that survived the engine's eligibility
+    // filter (i.e. that are now in `state.local_closure_records`).
+    let shared_cleanup_batch: std::rc::Rc<std::cell::RefCell<Option<RevalidationBatch>>> =
+        std::rc::Rc::new(std::cell::RefCell::new(None));
+    let outcome = if cleanup_wrap {
+        // The wrapper holds an immutable reference to a cloned snapshot of
+        // `runtime.state()` for the duration of the dispatch, since the
+        // mutable `step_with_checkpoint_sink` call below needs sole
+        // ownership of `runtime`.
+        let repo = runtime.metadata().repo_path.clone().unwrap();
+        let current_cycle = runtime.state().cycle as u64;
+        let state_snapshot = runtime.state().clone();
+        let mut wrapper = CleanupRevalidationAdapter {
+            inner: inner_adapter,
+            state: &state_snapshot,
+            repo,
+            current_cycle,
+            shared_batch: shared_cleanup_batch.clone(),
+        };
+        run_step_with_sink(runtime, &mut wrapper)
+    } else {
+        let mut adapter = inner_adapter;
+        run_step_with_sink(runtime, &mut adapter)
+    };
+    let mut outcome = outcome?;
+    // Patch C-Q Q2 — post-acceptance persistence sweep for the cleanup
+    // adapter's batch. Disk writes are deferred until after the engine
+    // accepts the cleanup response so a rejection doesn't leave orphan
+    // persisted records on disk. By this point, `step_with_checkpoint_sink`
+    // returned Ok, so the engine accepted; `apply_local_closure_acceptance_bookkeeping`
+    // routed the batch through `apply_revalidation_batch` (filters by
+    // present + proof + not-open). We only persist entries that survived
+    // that filter — `state.local_closure_records.contains_key(node)`
+    // means the engine kept the entry, so the on-disk copy is justified.
+    if let Some(repo) = runtime.metadata().repo_path.clone() {
+        if repo.join("Tablet").is_dir() {
+            if let Some(batch) = shared_cleanup_batch.borrow_mut().take() {
+                let runtime_root = runtime.paths().root.clone();
+                let current_cycle = runtime.state().cycle as u64;
+                let records_dir = local_closure_records_dir(&runtime_root);
+                let state = runtime.state();
+                for (node, record) in &batch.refreshed {
+                    // Engine acceptance filter: only persist entries
+                    // that the engine kept in
+                    // `state.local_closure_records`. If
+                    // `apply_revalidation_batch` dropped the entry
+                    // (e.g. node opened during the cleanup delta), do
+                    // NOT write a persisted file — the on-disk state
+                    // would otherwise diverge from the kernel's view.
+                    if let Some(accepted) = state.local_closure_records.get(node) {
+                        // Persist the engine's accepted record, not
+                        // the adapter's pre-acceptance candidate. They
+                        // should match for the typical case, but the
+                        // engine may have substituted (e.g. via
+                        // backfill running concurrently). Defer to
+                        // the in-memory canonical copy.
+                        let _ = persist_record_to_disk(&records_dir, accepted, current_cycle);
+                        let _ = record; // mute unused-binding warning
+                    }
+                }
+            }
+        }
+    }
+    // C-D hash backfill (plan §7.0): replace any C-B sentinel hashes the
+    // engine wrote during this step with real on-disk hashes. Records
+    // also persisted to disk so migration progress carries forward.
+    //
+    // Patch C-Q Q6: track demoted nodes so we can delete their stale
+    // persisted JSON. Without this, a future rewind or state-file loss
+    // could reload the sentinel from disk and clobber the
+    // internal_error failure we just installed.
+    if let Some(repo) = runtime.metadata().repo_path.clone() {
+        if repo.join("Tablet").is_dir() {
+            let runtime_root = runtime.paths().root.clone();
+            let current_cycle = runtime.state().cycle as u64;
+            // Capture demoted_nodes out of the migration closure so we
+            // can delete their persisted JSON files after the closure
+            // returns (the closure mutates `state` and must return
+            // `Result<bool, String>`).
+            let mut demoted_nodes: Vec<NodeId> = Vec::new();
+            runtime
+                .try_post_load_state_migration(|state| {
+                    let result = backfill_local_closure_record_hashes(state, &repo, current_cycle);
+                    demoted_nodes = result.demoted_nodes;
+                    if result.mutated {
+                        let records_dir = local_closure_records_dir(&runtime_root);
+                        for (_, record) in state.local_closure_records.iter() {
+                            let _ = persist_record_to_disk(&records_dir, record, current_cycle);
+                        }
+                    }
+                    Ok(result.mutated)
+                })
+                .map_err(|err| format!("local-closure hash backfill failed: {err}"))?;
+            // Q6: delete the persisted JSON for any demoted record so
+            // the on-disk state matches the in-memory tombstone.
+            // Uses the shared filename helper for save/delete
+            // lockstep (Patch C-Q Q5).
+            let records_dir = local_closure_records_dir(&runtime_root);
+            for node in &demoted_nodes {
+                let path =
+                    records_dir.join(trellis_kernel::runtime::persisted_record_file_name(node));
+                match fs::remove_file(&path) {
+                    Ok(()) => {}
+                    Err(err) if err.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(err) => {
+                        eprintln!(
+                            "[local-closure backfill] failed to remove demoted record {}: {err}",
+                            path.display()
+                        );
+                    }
+                }
+            }
+        }
+    }
+    let trust_graph_changed = drain_finalized_trust_results(runtime)?;
+    if trust_graph_changed {
+        let refreshed = runtime
+            .refresh_in_flight_after_external_state_change()
+            .map_err(|error| {
+                format!(
+                    "failed to refresh request after journal-authorized trust graph change: {error}"
+                )
+            })?;
+        let mut issued = 0usize;
+        for command in &mut outcome.commands {
+            if let trellis_kernel::ProtocolCommand::IssueRequest { request } = command {
+                let replacement = refreshed.as_ref().ok_or_else(|| {
+                    "step returned IssueRequest after trust graph activation, but runtime has no in-flight request"
+                        .to_owned()
+                })?;
+                if request.id != replacement.id || request.kind != replacement.kind {
+                    return Err(
+                        "journal-authorized trust graph activation changed the identity or kind of the already-issued request"
+                            .to_owned(),
+                    );
+                }
+                *request = replacement.clone();
+                issued += 1;
+            }
+        }
+        if refreshed.is_some() && issued != 1 {
+            return Err(format!(
+                "trust graph activation refreshed an in-flight request, but the step returned {issued} IssueRequest commands"
+            ));
+        }
+    }
+    Ok(outcome)
+}
+
+/// Parallel-closure sidecar boundary hook (SIDECAR plan §4). Called by
+/// the `Run` loop only at the inter-cycle quiescent point (stage
+/// `Start`, no in-flight request). Order:
+///   0. Journal recovery + orphaned-claim sweep — UNCONDITIONAL
+///      (amendments A5/A4): a crash must be recovered even if the
+///      operator has since removed the `sidecar` config block. Both
+///      are strict no-ops (no directory creation) when the journal /
+///      spool don't exist.
+///   1. Lazy config parse (the `resolve_request_verifier_bindings`
+///      precedent — `metadata.config_path` is read fresh, so
+///      enablement is a config edit, never a binary swap). Absent /
+///      disabled block ⇒ done. Malformed block ⇒ loud error.
+///   2. Claim + apply at most `max_applies_per_boundary` spooled
+///      attempts through the §4 gate sequence.
+///   3. Export `candidates.json` AFTER any same-boundary apply
+///      (amendment A9) so the daemon always sees post-apply
+///      eligibility.
+///
+/// Re-run behavior: the `Run` loop's human-gate poll `continue`s back
+/// through the hook gate, so a poll-heavy stretch may re-run the hook
+/// (export and/or apply) on each iteration — accepted: every apply is
+/// fully gated and the export is an idempotent atomic rewrite.
+fn run_sidecar_boundary_hook(runtime: &mut SupervisorRuntime) -> Result<(), String> {
+    use trellis_kernel::sidecar as sc;
+    let config_path = runtime.metadata().config_path.clone();
+    let Some(repo_path) = runtime.metadata().repo_path.clone() else {
+        return Ok(());
+    };
+    let runtime_root = runtime.paths().root.clone();
+
+    // (0) Unconditional recovery.
+    sc::run_journal_recovery(&runtime_root, &repo_path)?;
+    let spool = sc::spool_dirs(&runtime_root);
+    let swept = sc::sweep_orphaned_claims(&spool, runtime.state().cycle)?;
+    for (name, outcome) in &swept {
+        eprintln!("trellis sidecar: orphaned claim {name} swept: {outcome:?}");
+    }
+    let swept_outcomes = sc::sweep_orphaned_outcome_claims(&spool, runtime.state().cycle)?;
+    for (name, returned) in &swept_outcomes {
+        eprintln!(
+            "trellis sidecar: orphaned outcome claim {name} swept: {}",
+            if *returned { "returned" } else { "dropped" }
+        );
+    }
+
+    // (1) Config gate.
+    let Some(config_path) = config_path else {
+        return Ok(());
+    };
+    let Some(cfg) = sc::load_sidecar_runtime_config(&config_path)? else {
+        return Ok(());
+    };
+
+    // (2) Ingest.
+    let kernel_rejections = run_sidecar_ingest(runtime, &cfg, &spool, &runtime_root, &repo_path)?;
+
+    // (2b) Spent-generation ingest — AFTER the closure ingest (so a
+    // closure's dequeue is already reflected and its attempt file has
+    // left `pending/`) and BEFORE the export (so the reviewer's next
+    // prompt never shows an entry this boundary already expired).
+    run_sidecar_outcome_ingest(runtime, &cfg, &spool, kernel_rejections)?;
+
+    // (3) Export (post-apply state).
+    let export = sc::build_candidates_export(&repo_path, runtime.state(), &cfg);
+    sc::write_candidates_export(&runtime_root, &export)?;
+    Ok(())
+}
+
+/// Drive a sidecar event through the runtime step machinery with the
+/// same checkpoint sink the ordinary loop uses (git hook when
+/// configured, noop otherwise).
+fn step_sidecar_event(
+    runtime: &mut SupervisorRuntime,
+    event: trellis_kernel::ProtocolEvent,
+) -> Result<RuntimeStepOutcome, String> {
+    match checkpoint_sink_from_env()? {
+        Some(mut sink) => runtime
+            .step_injected_event_with_checkpoint_sink(event, &mut sink)
+            .map_err(|err| format!("sidecar apply step failed: {err}")),
+        None => {
+            let mut sink = NoopCheckpointSink;
+            runtime
+                .step_injected_event_with_checkpoint_sink(event, &mut sink)
+                .map_err(|err| format!("sidecar apply step failed: {err}"))
+        }
+    }
+}
+
+enum SidecarAttemptOutcome {
+    Applied,
+    Rejected,
+    Deferred,
+}
+
+/// Claim + apply loop: at most `max_applies_per_boundary` CLAIMS per
+/// boundary (a rejected claim consumes its slot — keeps boundary
+/// latency bounded regardless of outcome mix). One shared
+/// `apply_budget_seconds` deadline wall-clocks the whole boundary; a
+/// trip mid-gates restores the worktree and defers the attempt
+/// (settled D2: defer once, then reject).
+fn run_sidecar_ingest(
+    runtime: &mut SupervisorRuntime,
+    cfg: &trellis_kernel::sidecar::SidecarRuntimeConfig,
+    spool: &trellis_kernel::sidecar::SidecarSpool,
+    runtime_root: &Path,
+    repo_path: &Path,
+) -> Result<Vec<trellis_kernel::SidecarAttemptOutcome>, String> {
+    use trellis_kernel::sidecar as sc;
+    sc::ensure_spool_dirs(spool)?;
+    // §1.5: terminal rejections of SUCCESSFUL attempts spend the
+    // generation the daemon already recorded, but produce no daemon
+    // outcome — the daemon's record says `success`. Accumulated here
+    // and drained by the outcome ingest immediately after.
+    let mut kernel_rejections: Vec<trellis_kernel::SidecarAttemptOutcome> = Vec::new();
+    let deadline =
+        std::time::Instant::now() + Duration::from_secs(cfg.apply_budget_seconds.max(1));
+    for _slot in 0..cfg.max_applies_per_boundary {
+        let Some(pending) = sc::next_pending_attempt(spool) else {
+            break;
+        };
+        let claimed = match sc::claim_attempt(spool, &pending) {
+            Ok(path) => path,
+            Err(err) => {
+                eprintln!("trellis sidecar: claim skipped: {err}");
+                break;
+            }
+        };
+        let rejection: std::cell::RefCell<Option<trellis_kernel::SidecarAttemptOutcome>> =
+            std::cell::RefCell::new(None);
+        let result = apply_claimed_sidecar_attempt(
+            runtime,
+            cfg,
+            spool,
+            runtime_root,
+            repo_path,
+            &claimed,
+            deadline,
+            &rejection,
+        );
+        if let Some(outcome) = rejection.borrow_mut().take() {
+            kernel_rejections.push(outcome);
+        }
+        match result {
+            Ok(SidecarAttemptOutcome::Applied) => {}
+            Ok(SidecarAttemptOutcome::Rejected) => {}
+            Ok(SidecarAttemptOutcome::Deferred) => {}
+            Err(err) => {
+                // Fail-loud: an infrastructure error inside the apply
+                // path aborts the boundary (the journal, if written,
+                // recovers at the next boundary/startup).
+                return Err(err);
+            }
+        }
+        if std::time::Instant::now() >= deadline {
+            break;
+        }
+    }
+    Ok(kernel_rejections)
+}
+
+/// Step 2b of the boundary hook: turn SPENT grunt-attempt generations
+/// into queue expiries.
+///
+/// Claims up to `max_outcomes_per_boundary` records from the
+/// `outcomes/` lane, pre-filters each against CURRENT state
+/// (`classify_outcome`), merges this boundary's terminal kernel
+/// rejections, and — only if anything survives — feeds ONE batched
+/// `SidecarAttemptOutcomes` event through the ordinary step machinery.
+/// An idle boundary emits nothing at all, so an enabled-but-quiet
+/// sidecar leaves the event log byte-identical to a disabled one.
+fn run_sidecar_outcome_ingest(
+    runtime: &mut SupervisorRuntime,
+    cfg: &trellis_kernel::sidecar::SidecarRuntimeConfig,
+    spool: &trellis_kernel::sidecar::SidecarSpool,
+    kernel_rejections: Vec<trellis_kernel::SidecarAttemptOutcome>,
+) -> Result<(), String> {
+    use trellis_kernel::sidecar as sc;
+    let cycle = runtime.state().cycle;
+    let awaiting = sc::nodes_awaiting_closure_ingest(spool);
+    // Each batch element remembers the file it came from (`None` for a
+    // kernel rejection, which has no outcome file) so the second
+    // awaiting pass below can RETURN a record rather than consume it.
+    let mut batch: Vec<(trellis_kernel::SidecarAttemptOutcome, Option<PathBuf>)> = Vec::new();
+    let mut claimed_count = 0u32;
+    for path in sc::pending_outcome_files(spool) {
+        if claimed_count >= cfg.max_outcomes_per_boundary {
+            break;
+        }
+        let claimed = match sc::claim_outcome(spool, &path) {
+            Ok(path) => path,
+            Err(err) => {
+                eprintln!("trellis sidecar: outcome claim skipped: {err}");
+                break;
+            }
+        };
+        claimed_count += 1;
+        let record = match fs::read_to_string(&claimed)
+            .map_err(|err| format!("sidecar: read outcome failed: {err}"))
+            .and_then(|text| sc::parse_outcome_record(&text))
+        {
+            Ok(record) => record,
+            Err(err) => {
+                eprintln!("trellis sidecar: outcome dropped (malformed): {err}");
+                sc::finalize_outcome(&claimed, spool, "dropped:malformed", cycle)?;
+                continue;
+            }
+        };
+        match sc::classify_outcome(runtime.state(), &record, &awaiting) {
+            // The engine refuses a payload that repeats a generation,
+            // and a refused batch would bounce through
+            // `claimed_outcomes/` forever. Two reports for one
+            // generation say the same thing, so keep the first and
+            // consume the rest with a named verdict.
+            sc::SidecarOutcomeDisposition::Expire
+                if batch.iter().any(|(other, _)| {
+                    other.node == record.node && other.entry_seq == record.entry_seq
+                }) =>
+            {
+                sc::finalize_outcome(&claimed, spool, "dropped:duplicate_generation", cycle)?;
+            }
+            sc::SidecarOutcomeDisposition::Expire => {
+                batch.push((
+                    trellis_kernel::SidecarAttemptOutcome {
+                        node: record.node.clone(),
+                        entry_seq: record.entry_seq,
+                        attempt_id: record.attempt_id.clone(),
+                        status: record.status.clone(),
+                        detail: record.detail.chars().take(200).collect(),
+                        source: trellis_kernel::SidecarAttemptOutcomeSource::Daemon,
+                    },
+                    Some(claimed),
+                ));
+            }
+            sc::SidecarOutcomeDisposition::Requeue => {
+                eprintln!(
+                    "trellis sidecar: outcome for {} returned to the lane (closure awaiting ingest)",
+                    record.node.as_str()
+                );
+                sc::return_outcome_to_lane(&claimed, spool)?;
+            }
+            sc::SidecarOutcomeDisposition::Drop { reason } => {
+                eprintln!(
+                    "trellis sidecar: outcome for {} dropped ({reason})",
+                    record.node.as_str()
+                );
+                sc::finalize_outcome(&claimed, spool, &format!("dropped:{reason}"), cycle)?;
+            }
+        }
+    }
+    // Kernel-side rejections ride the SAME generation match. A
+    // rejection whose node/generation no longer matches contributes
+    // nothing (the engine would no-op on it anyway); dropping it here
+    // keeps the payload minimal and the dedupe below trivial.
+    for rejection in kernel_rejections {
+        let record = sc::SidecarOutcomeRecord {
+            schema: 1,
+            attempt_id: rejection.attempt_id.clone(),
+            node: rejection.node.clone(),
+            entry_seq: rejection.entry_seq,
+            status: rejection.status.clone(),
+            detail: rejection.detail.clone(),
+            export_cycle: 0,
+        };
+        if sc::classify_outcome(runtime.state(), &record, &awaiting)
+            != sc::SidecarOutcomeDisposition::Expire
+        {
+            continue;
+        }
+        // The engine refuses a payload that repeats a generation.
+        if batch
+            .iter()
+            .any(|(other, _)| other.node == rejection.node && other.entry_seq == rejection.entry_seq)
+        {
+            continue;
+        }
+        batch.push((rejection, None));
+    }
+    if batch.is_empty() {
+        return Ok(());
+    }
+    // SECOND awaiting pass, immediately before the step. The snapshot
+    // above is already stale by the time we get here: `publish_attempt`
+    // runs in the ATTEMPT CHILD, so a closure lands in `pending/` before
+    // its result file exists — a stop-sentinel cancel or a crash-streak
+    // burn can publish an outcome for a generation whose proof is
+    // arriving in the very window this loop spans. Neither
+    // success-never-publishes (the daemon saw no success) nor the
+    // generation match (the closure is for that exact generation) covers
+    // that race; this pass is the only thing that does, so it must read
+    // the lane as late as possible.
+    let awaiting_now = sc::nodes_awaiting_closure_ingest(spool);
+    let split = sc::partition_batch_against_awaiting(batch, &awaiting_now);
+    for (node, claimed) in &split.withheld {
+        eprintln!(
+            "trellis sidecar: outcome for {} withheld (closure arrived during ingest)",
+            node.as_str()
+        );
+        // Returned UNCONSUMED, exactly as the first filter does: the
+        // next boundary re-evaluates it, by which time the closure has
+        // applied (and the entry is gone, so the outcome no-ops) or
+        // been rejected (and the generation is genuinely spent).
+        if let Some(claimed) = claimed {
+            sc::return_outcome_to_lane(claimed, spool)?;
+        }
+    }
+    let sc::SidecarOutcomeBatch {
+        outcomes,
+        consumable,
+        withheld: _,
+    } = split;
+    if outcomes.is_empty() {
+        return Ok(());
+    }
+    let payload = trellis_kernel::SidecarAttemptOutcomesPayload { outcomes };
+    let expired = payload.outcomes.len();
+    match step_sidecar_event(
+        runtime,
+        trellis_kernel::ProtocolEvent::SidecarAttemptOutcomes { payload },
+    ) {
+        Ok(_) => {
+            for claimed in &consumable {
+                sc::finalize_outcome(claimed, spool, "expired", cycle)?;
+            }
+            eprintln!("trellis sidecar: expired {expired} spent queue generation(s)");
+        }
+        Err(err) => {
+            // Queue hygiene must never take the primary loop down: the
+            // claimed records stay in `claimed_outcomes/` and the next
+            // boundary's sweep returns them for a fresh evaluation.
+            eprintln!("trellis sidecar: attempt-outcome event refused: {err}");
+        }
+    }
+    Ok(())
+}
+
+/// The §4 gate sequence for one claimed attempt. Every rejection is
+/// invisible to the event stream (settled D8); "restore" = write the
+/// held pre-image bytes back (byte-exact undo of the splice) + mirror
+/// to the worker repo + clear the journal.
+fn apply_claimed_sidecar_attempt(
+    runtime: &mut SupervisorRuntime,
+    cfg: &trellis_kernel::sidecar::SidecarRuntimeConfig,
+    spool: &trellis_kernel::sidecar::SidecarSpool,
+    runtime_root: &Path,
+    repo_path: &Path,
+    claimed_path: &Path,
+    deadline: std::time::Instant,
+    rejection_sink: &std::cell::RefCell<Option<trellis_kernel::SidecarAttemptOutcome>>,
+) -> Result<SidecarAttemptOutcome, String> {
+    use trellis_kernel::sidecar as sc;
+    let cycle = runtime.state().cycle;
+    // §1.5 identity: populated once the record parses AND claims
+    // `success`. A daemon `success` means the daemon already wrote its
+    // attempted-set row, so any TERMINAL rejection below spends the
+    // generation with no daemon outcome to publish — this is the only
+    // producer of that half. Left `None` for an unparseable record
+    // (no generation to name) and for a non-`success` record (the
+    // daemon publishes its own outcome for those).
+    let identity: std::cell::RefCell<Option<(NodeId, u64, String)>> =
+        std::cell::RefCell::new(None);
+    let reject = |path: &Path, reason: &str| -> Result<SidecarAttemptOutcome, String> {
+        eprintln!("trellis sidecar: attempt rejected ({reason})");
+        if let Some((node, entry_seq, attempt_id)) = identity.borrow().clone() {
+            *rejection_sink.borrow_mut() = Some(trellis_kernel::SidecarAttemptOutcome {
+                node,
+                entry_seq,
+                attempt_id,
+                status: format!("rejected:{}", sidecar_reject_gate(reason)),
+                detail: reason.chars().take(200).collect(),
+                source: trellis_kernel::SidecarAttemptOutcomeSource::KernelReject,
+            });
+        }
+        sc::finalize_attempt(path, spool, "rejected", reason, cycle, 0)?;
+        Ok(SidecarAttemptOutcome::Rejected)
+    };
+
+    // Parse.
+    let text = match fs::read_to_string(claimed_path) {
+        Ok(text) => text,
+        Err(err) => return reject(claimed_path, &format!("malformed (unreadable: {err})")),
+    };
+    let record = match sc::parse_attempt_record(&text) {
+        Ok(record) => record,
+        Err(err) => return reject(claimed_path, &format!("malformed ({err})")),
+    };
+    if record.status == "success" && !record.node.as_str().is_empty() {
+        *identity.borrow_mut() = Some((
+            record.node.clone(),
+            record.entry_seq,
+            record.attempt_id.clone(),
+        ));
+    }
+    let node = record.node.clone();
+
+    // Gates 2–3b (pure preflight: eligibility recheck, HARD pre-image
+    // content gate, A3 ban scan).
+    let node_rel = format!("Tablet/{}.lean", node.as_str());
+    let pre_image = fs::read_to_string(repo_path.join(&node_rel)).ok();
+    match sc::preflight_claimed_attempt(runtime.state(), cfg, &record, pre_image.as_deref()) {
+        sc::SidecarPreflight::Proceed => {}
+        sc::SidecarPreflight::Reject { reason } => return reject(claimed_path, &reason),
+    }
+    let pre_image = pre_image.expect("preflight proved the pre-image readable");
+    let pre_image_sha = record.base.node_file_sha256.clone();
+    let pre_decl_hash = match trellis_kernel::filespec_split::declaration_hash_strict(
+        repo_path,
+        &pre_image,
+        node.as_str(),
+    ) {
+        Ok(hash) => hash,
+        Err(err) => return reject(claimed_path, &format!("filespec (pre-image: {err})")),
+    };
+
+    if std::time::Instant::now() >= deadline {
+        eprintln!("trellis sidecar: apply budget tripped before splice; deferring");
+        return defer_claimed(
+            claimed_path,
+            spool,
+            cycle,
+            "pre-splice deadline",
+            identity.borrow().clone(),
+            rejection_sink,
+        );
+    }
+
+    // Gate 4: write-ahead journal, BEFORE the worktree write.
+    sc::write_apply_journal(
+        runtime_root,
+        &sc::SidecarApplyJournal {
+            attempt_id: record.attempt_id.clone(),
+            node: node.clone(),
+            file: node_rel.clone(),
+            pre_image_sha: pre_image_sha.clone(),
+        },
+    )?;
+
+    // Gate 5: splice + write + supervisor-workspace mirror (the
+    // checker compiles there; gates 7-8 must see the new bytes).
+    let new_content = match sc::splice_proof_body(&pre_image, node.as_str(), &record.artifact.proof_body)
+    {
+        Ok(content) => content,
+        Err(err) => {
+            sc::clear_apply_journal(runtime_root);
+            return reject(claimed_path, &format!("filespec (splice: {err})"));
+        }
+    };
+    fs::write(repo_path.join(&node_rel), &new_content)
+        .map_err(|err| format!("sidecar: splice write failed: {err}"))?;
+    sc::mirror_node_file_to_supervisor_workspace(repo_path, node.as_str(), &new_content)?;
+
+    let restore = |runtime_root: &Path| -> Result<(), String> {
+        fs::write(repo_path.join(&node_rel), &pre_image)
+            .map_err(|err| format!("sidecar: restore write failed: {err}"))?;
+        sc::mirror_node_file_to_supervisor_workspace(repo_path, node.as_str(), &pre_image)?;
+        sc::clear_apply_journal(runtime_root);
+        Ok(())
+    };
+    let restore_and_reject = |reason: &str| -> Result<SidecarAttemptOutcome, String> {
+        restore(runtime_root)?;
+        reject(claimed_path, reason)
+    };
+
+    // Gate 6: FILESPEC shape + statement byte-identity. Prefix
+    // identity holds by construction of the splice; the checks below
+    // are the belt (a body smuggling `-- BODY` fails validate_filespec
+    // on the two-marker rule).
+    if let Err(err) = trellis_kernel::filespec_split::validate_filespec(&new_content, node.as_str())
+    {
+        return restore_and_reject(&format!("filespec ({err})"));
+    }
+    let new_decl_hash = match trellis_kernel::filespec_split::declaration_hash_strict(
+        repo_path,
+        &new_content,
+        node.as_str(),
+    ) {
+        Ok(hash) => hash,
+        Err(err) => return restore_and_reject(&format!("filespec (post-splice: {err})")),
+    };
+    if new_decl_hash != pre_decl_hash {
+        return restore_and_reject("filespec (declaration_hash_strict drift)");
+    }
+    debug_assert!(new_content.starts_with(
+        &pre_image[..trellis_kernel::filespec_split::split(&pre_image, node.as_str())
+            .expect("pre-image split validated")
+            .body_marker_end_byte]
+    ));
+
+    if std::time::Instant::now() >= deadline {
+        restore(runtime_root)?;
+        eprintln!("trellis sidecar: apply budget tripped before compile probe; deferring");
+        return defer_claimed(
+            claimed_path,
+            spool,
+            cycle,
+            "pre-compile deadline",
+            identity.borrow().clone(),
+            rejection_sink,
+        );
+    }
+
+    // Gate 7: compile + node evaluation through the RUN checker socket.
+    let pre_corr_fp = runtime
+        .state()
+        .live
+        .corr_current_fingerprints
+        .get(&node)
+        .cloned();
+    let observation = match observe_node(repo_path, node.as_str()) {
+        Ok(observation) => observation,
+        Err(err) => {
+            // Transport-class failure: transiently busy/broken checker.
+            // Defer (D2) rather than burn the attempt.
+            restore(runtime_root)?;
+            eprintln!("trellis sidecar: observe_node transport failure ({err}); deferring");
+            return defer_claimed(
+            claimed_path,
+            spool,
+            cycle,
+            "observe_node transport",
+            identity.borrow().clone(),
+            rejection_sink,
+        );
+        }
+    };
+    let evaluated = evaluate_node_observation(repo_path, &observation, Some(&pre_decl_hash));
+    let evaluate_ok = evaluated.compiles
+        && evaluated.shallow_ok
+        && !evaluated.sorry_in_source
+        && evaluated.keyword_clean
+        && evaluated.imports_valid
+        && evaluated.declaration_intact
+        && evaluated.marker_valid
+        && evaluated.declaration_name_matches
+        && evaluated.tex_format_valid
+        && evaluated.axioms_valid;
+    if !evaluate_ok {
+        let mut details: Vec<String> = Vec::new();
+        if !evaluated.compiles {
+            details.push("compiles=false".to_string());
+        }
+        if !evaluated.shallow_ok || evaluated.sorry_in_source {
+            details.push("sorry present".to_string());
+        }
+        if !evaluated.keyword_clean {
+            details.push(format!("forbidden keywords: {:?}", evaluated.forbidden_hits));
+        }
+        if !evaluated.imports_valid {
+            details.push(format!("import violations: {:?}", evaluated.import_violations));
+        }
+        if !evaluated.axioms_valid {
+            details.push(format!("axiom violations: {:?}", evaluated.axiom_violations));
+        }
+        if !evaluated.declaration_intact {
+            details.push("declaration hash drift".to_string());
+        }
+        return restore_and_reject(&format!("evaluate_node ({})", details.join("; ")));
+    }
+
+    if std::time::Instant::now() >= deadline {
+        restore(runtime_root)?;
+        eprintln!("trellis sidecar: apply budget tripped before closure probe; deferring");
+        return defer_claimed(
+            claimed_path,
+            spool,
+            cycle,
+            "pre-probe deadline",
+            identity.borrow().clone(),
+            rejection_sink,
+        );
+    }
+
+    // Gate 8: env-authoritative local-closure probe.
+    let mut probe = match run_local_closure_axioms(repo_path, node.as_str()) {
+        Ok(probe) => probe,
+        Err(err) => {
+            restore(runtime_root)?;
+            eprintln!("trellis sidecar: closure probe transport failure ({err}); deferring");
+            return defer_claimed(
+            claimed_path,
+            spool,
+            cycle,
+            "closure_probe transport",
+            identity.borrow().clone(),
+            rejection_sink,
+        );
+        }
+    };
+    validate_probe_present_nodes(
+        &mut probe,
+        &runtime.state().live.present_nodes,
+        &runtime.state().node_kinds,
+    );
+    if probe.timed_out || probe.returncode != 0 || probe.status != "ok" || !probe.errors.is_empty()
+    {
+        return restore_and_reject(&format!(
+            "closure_probe (status={} rc={} timed_out={} errors={:?})",
+            probe.status, probe.returncode, probe.timed_out, probe.errors
+        ));
+    }
+    let approved = match load_approved_axioms(repo_path, node.as_str()) {
+        Ok(approved) => approved,
+        Err(err) => {
+            restore(runtime_root)?;
+            eprintln!("trellis sidecar: approved-axioms load failed ({err}); deferring");
+            return defer_claimed(
+            claimed_path,
+            spool,
+            cycle,
+            "approved_axioms load",
+            identity.borrow().clone(),
+            rejection_sink,
+        );
+        }
+    };
+    let axiom_violations: Vec<String> = probe
+        .kernel_axioms
+        .iter()
+        .filter(|axiom| !approved.contains(*axiom))
+        .cloned()
+        .collect();
+    if !axiom_violations.is_empty() {
+        return restore_and_reject(&format!("closure_probe (axioms {axiom_violations:?})"));
+    }
+
+    // Gate 9: correspondence no-drift postcondition. A body-only
+    // splice must not move the node's corr current fingerprint (the
+    // fingerprint excludes proof bodies by design; this is the cheap
+    // belt that turns "argued impossible" into "gated impossible").
+    let post_corr = match sidecar_gate9_corr_recompute(repo_path, &node, runtime.state()) {
+        Ok(fingerprint) => fingerprint,
+        Err(err) => {
+            restore(runtime_root)?;
+            eprintln!("trellis sidecar: corr fingerprint observation failed ({err}); deferring");
+            return defer_claimed(
+            claimed_path,
+            spool,
+            cycle,
+            "corr observation",
+            identity.borrow().clone(),
+            rejection_sink,
+        );
+        }
+    };
+    if post_corr != pre_corr_fp {
+        return restore_and_reject(&format!(
+            "corr_drift (pre={pre_corr_fp:?} post={post_corr:?})"
+        ));
+    }
+
+    // Gate 10: build the COMPLETE record (real hashes — the same
+    // builder the backfill/revalidation passes use) + feed the event
+    // through the full step machinery (sink-first durability,
+    // rollback on sink failure, event-log append).
+    let axcheck_status = match &probe.axiomization_check {
+        Some(ax) if ax.skipped => AxcheckStatus::Skipped,
+        Some(ax) if ax.agreed => AxcheckStatus::Agreed,
+        Some(_) => AxcheckStatus::Disagreed,
+        None => AxcheckStatus::Skipped,
+    };
+    let mut closure_record = match compute_local_closure_record_inputs(
+        repo_path,
+        &node,
+        &probe.kernel_axioms,
+        &probe.boundary_theorems,
+        &probe.strict_theorem_deps,
+        &probe.strict_definition_deps,
+        format!("sidecar-{}-cycle-{}", record.attempt_id, cycle),
+        axcheck_status,
+    ) {
+        Ok(closure_record) => closure_record,
+        Err(err) => return restore_and_reject(&format!("record_build ({err})")),
+    };
+    populate_kernel_semantic_hashes_from_state(&mut closure_record, runtime.state());
+    let wall_ms = (record.provenance.wall_secs * 1000.0).max(0.0) as u64;
+    let payload = trellis_kernel::SidecarClosurePayload {
+        node: node.clone(),
+        attempt_id: record.attempt_id.clone(),
+        provider: record.provenance.provider.clone(),
+        model: record.provenance.model.clone(),
+        wall_ms,
+        iterations: record.provenance.iterations,
+        declaration_hash_strict: new_decl_hash,
+        node_file_sha256: hash_text(&new_content),
+        record: closure_record.clone(),
+    };
+    match step_sidecar_event(
+        runtime,
+        trellis_kernel::ProtocolEvent::SidecarClosure { payload },
+    ) {
+        Ok(_) => {}
+        Err(err) => {
+            // Fail-loud posture: a TransitionError here means the
+            // deterministic re-assertion disagreed with the gates —
+            // restore and surface the rejection reason.
+            restore(runtime_root)?;
+            eprintln!("trellis sidecar: event apply refused: {err}");
+            return reject(claimed_path, &format!("transition_error ({err})"));
+        }
+    }
+    // Journal cleared only after the step persisted (state + event
+    // log durably reflect the closure).
+    sc::clear_apply_journal(runtime_root);
+    // Persist the record JSON (migration coherence — the same file the
+    // primary persistence sweep writes).
+    if let Err(err) = persist_record_to_disk(
+        &local_closure_records_dir(runtime_root),
+        &closure_record,
+        u64::from(cycle),
+    ) {
+        eprintln!("trellis sidecar: record persist failed (non-fatal): {err}");
+    }
+    sc::finalize_attempt(claimed_path, spool, "applied", "ok", cycle, wall_ms)?;
+    eprintln!(
+        "trellis sidecar: APPLIED closure for node {} (attempt {})",
+        node.as_str(),
+        record.attempt_id
+    );
+    Ok(SidecarAttemptOutcome::Applied)
+}
+
+/// The GATE name out of a rejection reason: everything up to the first
+/// space or `(`. Rejection reasons are `"<gate>"` or
+/// `"<gate> (<detail>)"` by construction at every reject site, so this
+/// keeps the outcome `status` (and therefore the prune-log reason the
+/// reviewer reads) a small stable vocabulary — `rejected:stale_content`,
+/// `rejected:evaluate_node`, `rejected:closure_probe`, … — while the
+/// full reason survives in `detail`.
+fn sidecar_reject_gate(reason: &str) -> &str {
+    let end = reason
+        .find(|c: char| c == ' ' || c == '(')
+        .unwrap_or(reason.len());
+    let gate = reason[..end].trim();
+    if gate.is_empty() {
+        "unknown"
+    } else {
+        gate
+    }
+}
+
+/// Gate-9 corr recompute with the SAME under-model-assumption set every
+/// primary observation site passes (`under_model_assumption_nodes_from_state`).
+/// An empty set here would recompute a PV `Assumptions` node with the
+/// ordinary fingerprint shape and spuriously reject the apply as
+/// `corr_drift`; on all-math runs the set is empty and this is
+/// byte-identical to the plain observation.
+fn sidecar_gate9_corr_recompute(
+    repo_path: &Path,
+    node: &NodeId,
+    state: &trellis_kernel::ProtocolState,
+) -> Result<Option<String>, String> {
+    let under_model_assumption_nodes =
+        runtime_cli_observations::under_model_assumption_nodes_from_state(state);
+    Ok(
+        observe_correspondence_fingerprints_with_under_model_assumptions(
+            repo_path,
+            &[node.clone()].into_iter().collect(),
+            &under_model_assumption_nodes,
+        )?
+        .get(node)
+        .cloned(),
+    )
+}
+
+/// Defer one claimed attempt through the D2 mechanics, routing the
+/// TERMINAL ceiling into the boundary's spent-generation batch.
+///
+/// An ordinary deferral contributes nothing — the attempt is back in
+/// `pending/` and may still land. The ceiling (`apply_timeout`) is a
+/// terminal rejection of an attempt the daemon already recorded as
+/// `success`, so it spends the generation exactly like the gate
+/// rejections do; `defer_outcome_contribution` owns that distinction.
+fn defer_claimed(
+    claimed_path: &Path,
+    spool: &trellis_kernel::sidecar::SidecarSpool,
+    cycle: u32,
+    context: &str,
+    identity: Option<(NodeId, u64, String)>,
+    rejection_sink: &std::cell::RefCell<Option<trellis_kernel::SidecarAttemptOutcome>>,
+) -> Result<SidecarAttemptOutcome, String> {
+    let deferred = trellis_kernel::sidecar::defer_attempt(claimed_path, spool, cycle, context)?;
+    if let Some(outcome) =
+        trellis_kernel::sidecar::defer_outcome_contribution(&deferred, identity, context)
+    {
+        eprintln!(
+            "trellis sidecar: defer ceiling on {} (seq {}); the generation is spent",
+            outcome.node.as_str(),
+            outcome.entry_seq
+        );
+        *rejection_sink.borrow_mut() = Some(outcome);
+    }
+    match deferred {
+        trellis_kernel::sidecar::DeferOutcome::Deferred { .. } => {
+            Ok(SidecarAttemptOutcome::Deferred)
+        }
+        trellis_kernel::sidecar::DeferOutcome::Rejected => Ok(SidecarAttemptOutcome::Rejected),
+    }
+}
+
+/// Reconstruct the runtime projection of already-committed current-epoch
+/// profile selections without consuming repository evidence or appending a
+/// journal event.  This is safe to run in front of an in-flight request and is
+/// the only trust reconciliation allowed there.
+fn reconcile_journal_selected_conditional_candidates(
+    runtime: &mut SupervisorRuntime,
+) -> Result<bool, String> {
+    if !runtime.state().trust_base.required()
+        || runtime
+            .state()
+            .trust_base
+            .current_human_approval_event_hash
+            .is_none()
+        || runtime.state().trust_base.active_revision_lane_id.is_some()
+    {
+        return Ok(false);
+    }
+    let mut metadata = runtime.metadata().clone();
+    let registry = trellis_kernel::trust_base::SchemaRegistry::v1()
+        .map_err(|error| error.to_string())?;
+    let actor_keys = load_trust_actor_keys(&metadata)?;
+    let journal_path = metadata
+        .trust_journal_path
+        .as_ref()
+        .ok_or_else(|| "trust activation recovery requires trust_journal_path".to_owned())?;
+    let journal = trellis_kernel::trust_base::TrustJournal::open(journal_path, actor_keys)
+        .map_err(|error| error.to_string())?;
+    if journal.active_revision_lane_id().is_some() {
+        return Err(
+            "trust activation recovery refuses an in-flight request while the journal has an active exceptional revision lane"
+                .to_owned(),
+        );
+    }
+    let (seed_closure, evidence_closure) =
+        load_effective_runtime_trust_closure(&mut metadata, &journal, &registry)?;
+    let pipeline = trellis_kernel::trust_base::TrustDerivationPipeline::open(
+        journal,
+        seed_closure,
+        evidence_closure,
+    )
+    .map_err(|error| error.to_string())?;
+    let approval = pipeline
+        .journal()
+        .current_approval()
+        .ok_or_else(|| "trust activation recovery lost the current approval".to_owned())?;
+    if runtime.state().trust_base.current_human_approval_event_hash != Some(approval.event_hash) {
+        return Err(
+            "trust activation recovery found approval drift while an operational request is in flight"
+                .to_owned(),
+        );
+    }
+    let selected_nodes = pipeline
+        .active_selected_conditional_candidates()
+        .map_err(|error| error.to_string())?
+        .iter()
+        .map(conditional_candidate_node_id)
+        .collect::<Result<BTreeSet<_>, _>>()?;
+    for candidate in runtime
+        .state()
+        .trust_base
+        .conditional_theorem_candidates
+        .values()
+    {
+        let active = runtime
+            .state()
+            .configured_challenge_targets
+            .contains_key(&candidate.candidate_id)
+            || runtime
+                .state()
+                .live
+                .present_nodes
+                .contains(&candidate.node_id)
+            || runtime
+                .state()
+                .committed
+                .present_nodes
+                .contains(&candidate.node_id);
+        if active && !selected_nodes.contains(&candidate.node_id) {
+            return Err(format!(
+                "trust conditional candidate {} is active without a current-epoch ApprovedProfileSelected journal event",
+                candidate.candidate_id
+            ));
+        }
+    }
+    let binding = pipeline
+        .journal()
+        .checkpoint_binding()
+        .map_err(|error| error.to_string())?;
+    let package = pipeline
+        .journal()
+        .current_package_authorization_event_hash();
+    let repo_path = metadata
+        .repo_path
+        .as_ref()
+        .ok_or_else(|| "trust activation recovery requires runtime repo_path".to_owned())?
+        .clone();
+    runtime
+        .try_post_load_state_migration(|state| {
+            let mut changed = state.trust_base.journal_checkpoint.as_ref() != Some(&binding)
+                || state.trust_base.package_authorization_event_hash != package;
+            state.trust_base.journal_checkpoint = Some(binding.clone());
+            state.trust_base.package_authorization_event_hash = package;
+            for node in &selected_nodes {
+                changed |= activate_trust_conditional_candidate_obligation(
+                    state,
+                    &repo_path,
+                    node,
+                )?;
+            }
+            Ok(changed)
+        })
+        .map_err(|error| format!("trust activation recovery failed: {error}"))
+}
+
+/// Drain journal-derived trust work and return whether the live proof graph was
+/// changed after the pure engine step.  Callers must refresh any request that
+/// was issued by that step before exposing it to an agent.
+fn drain_finalized_trust_results(runtime: &mut SupervisorRuntime) -> Result<bool, String> {
+    if !runtime.state().trust_base.required() {
+        return Ok(false);
+    }
+    if runtime.state().in_flight_request.is_none() {
+        runtime
+            .reconcile_external_trust_authority()
+            .map_err(|error| format!("trust authority reconciliation failed: {error}"))?;
+    }
+    if runtime
+        .state()
+        .trust_base
+        .current_human_approval_event_hash
+        .is_none()
+    {
+        return Ok(false);
+    }
+    // An open exceptional lane may expose provisional statement/worktree
+    // bytes to the restricted authoring workflow, but none of those bytes may
+    // enter the authoritative proof/evidence journal before protected
+    // reapproval.  The terminal recovery will select either the immutable
+    // revised closure (approval) or the prior closure (feedback).
+    if runtime.state().trust_base.active_revision_lane_id.is_some() {
+        return Ok(false);
+    }
+    let mut metadata = runtime.metadata().clone();
+    let registry = trellis_kernel::trust_base::SchemaRegistry::v1()
+        .map_err(|error| error.to_string())?;
+    let actor_keys = load_trust_actor_keys(&metadata)?;
+    let journal_path = metadata
+        .trust_journal_path
+        .as_ref()
+        .ok_or_else(|| "trust drain requires trust_journal_path".to_owned())?;
+    let mut journal = trellis_kernel::trust_base::TrustJournal::open(journal_path, actor_keys)
+        .map_err(|error| error.to_string())?;
+    if journal.active_revision_lane_id().is_some() {
+        return Err(
+            "trust journal advanced into an exceptional revision lane while an operational request was in flight; refusing to derive trust evidence from that request"
+                .into(),
+        );
+    }
+    let (seed_closure, evidence_closure) =
+        load_effective_runtime_trust_closure(&mut metadata, &journal, &registry)?;
+    trellis_kernel::trust_base::register_seed_lineages(&mut journal, &seed_closure)
+        .map_err(|error| error.to_string())?;
+    let mut pipeline = trellis_kernel::trust_base::TrustDerivationPipeline::open(
+        journal,
+        seed_closure,
+        evidence_closure,
+    )
+    .map_err(|error| error.to_string())?;
+    let approval = pipeline
+        .journal()
+        .current_approval()
+        .ok_or_else(|| "trust drain lost the current approval".to_owned())?;
+    let epoch = approval.event_hash.to_string();
+    let selected_conditional_nodes = pipeline
+        .active_selected_conditional_candidates()
+        .map_err(|error| error.to_string())?
+        .iter()
+        .map(conditional_candidate_node_id)
+        .collect::<Result<BTreeSet<_>, _>>()?;
+    for candidate in runtime
+        .state()
+        .trust_base
+        .conditional_theorem_candidates
+        .values()
+    {
+        let active = runtime
+            .state()
+            .configured_challenge_targets
+            .contains_key(&candidate.candidate_id)
+            || runtime
+                .state()
+                .live
+                .present_nodes
+                .contains(&candidate.node_id)
+            || runtime
+                .state()
+                .committed
+                .present_nodes
+                .contains(&candidate.node_id);
+        if active && !selected_conditional_nodes.contains(&candidate.node_id) {
+            return Err(format!(
+                "trust conditional candidate {} is active without a current-epoch ApprovedProfileSelected journal event",
+                candidate.candidate_id
+            ));
+        }
+    }
+    let targets = pipeline
+        .seed_target_contracts()
+        .map_err(|error| error.to_string())?;
+    for target in &targets {
+        pipeline
+            .ensure_seed_contract_classified(
+                &format!("trust:{epoch}:{}:classify", target.target_id),
+                target.contract_sha256,
+            )
+            .map_err(|error| error.to_string())?;
+    }
+    let state = runtime.state().clone();
+    // Recompute this projection from the authoritative campaign state on
+    // every drain.  It is deliberately not inferred from file existence:
+    // only `record_campaign_witness_report` can validate the exact canonical
+    // report and join it to both finalized Lean closures.
+    let mut pending_trust_witness_reports = BTreeSet::new();
+    // Replay can observe the durable selection one process before the runtime
+    // checkpoint materialized its proof node.  Re-activating the exact
+    // journal-derived set is idempotent and closes that crash window.
+    let mut conditional_candidates_to_activate = selected_conditional_nodes;
+    'campaign_targets: for target in targets {
+        loop {
+            use trellis_kernel::trust_base::CampaignTargetStatus;
+            match pipeline
+                .campaign_target_status(&target.target_id)
+                .map_err(|error| error.to_string())?
+            {
+                CampaignTargetStatus::Complete => break,
+                CampaignTargetStatus::AwaitingFormalResult => {
+                    let primary =
+                        trellis_kernel::ChallengeTargetId::from(target.target_id.as_str());
+                    let polarity = state.live_polarity(&primary);
+                    if polarity == trellis_kernel::ChallengePolarity::Disprove
+                        && campaign_target_requires_witness_report(&target)
+                    {
+                        let refutation_node = state
+                            .decide_pair_node_for_polarity(
+                                &primary,
+                                trellis_kernel::ChallengePolarity::Disprove,
+                            )
+                            .ok_or_else(|| {
+                                format!(
+                                    "trust target {} has no live refutation node",
+                                    target.target_id
+                                )
+                            })?;
+                        let refutation_node_id = NodeId::from(refutation_node.as_str());
+                        pending_trust_witness_reports.insert(refutation_node_id.clone());
+                        let repo = metadata.repo_path.as_ref().ok_or_else(|| {
+                            "trust witness drain requires runtime repo_path".to_owned()
+                        })?;
+                        let report_path = repo
+                            .join("Tablet")
+                            .join(format!("{}.trust-witness.json", refutation_node.as_str()));
+                        let Some(report) =
+                            load_canonical_campaign_witness_report(&report_path)?
+                        else {
+                            break;
+                        };
+                        pipeline
+                            .record_campaign_witness_report(
+                                &format!("trust:{epoch}:{}:formal", target.target_id),
+                                &state,
+                                &target.target_id,
+                                report,
+                            )
+                            .map_err(|error| error.to_string())?;
+                        pending_trust_witness_reports.remove(&refutation_node_id);
+                        continue;
+                    }
+                    match pipeline.record_campaign_local_closure_result(
+                        &format!("trust:{epoch}:{}:formal", target.target_id),
+                        &state,
+                        &target.target_id,
+                    ) {
+                        Ok(_) => continue,
+                        Err(error) if error.code == "campaign_local_closure_missing" => break,
+                        Err(error) => return Err(error.to_string()),
+                    }
+                }
+                CampaignTargetStatus::PositiveAwaitingClaims => {
+                    pipeline
+                        .generate_positive_external_claim_rows(
+                            &format!("trust:{epoch}:{}:claims", target.target_id),
+                            &target.target_id,
+                        )
+                        .map_err(|error| error.to_string())?;
+                }
+                CampaignTargetStatus::NonWitnessNegative {
+                    negative_proof_sha256,
+                    history_summary_sha256,
+                    source_outcome_recorded,
+                    terminal_recorded,
+                    method,
+                } => {
+                    if !source_outcome_recorded {
+                        match method {
+                            trellis_kernel::trust_base::SourceValidationMethod::CheckedRefutationReflectionV1 => {
+                                execute_campaign_source_validation(
+                                    &mut pipeline,
+                                    &metadata,
+                                    &epoch,
+                                    &target,
+                                    negative_proof_sha256,
+                                    method,
+                                )?;
+                            }
+                            trellis_kernel::trust_base::SourceValidationMethod::NotDefinedForClaimShapeV1 => {
+                                pipeline
+                                    .record_undefined_source_validation(
+                                        &format!("trust:{epoch}:{}:undefined", target.target_id),
+                                        target.contract_sha256,
+                                        &format!(
+                                            "{}-source-validation-not-defined",
+                                            target.target_id
+                                        ),
+                                    )
+                                    .map_err(|error| error.to_string())?;
+                            }
+                            trellis_kernel::trust_base::SourceValidationMethod::ExactRustExecutionV1 => {
+                                return Err(format!(
+                                    "trust target {} has a witness-free model refutation but its frozen contract requires exact Rust execution",
+                                    target.target_id
+                                ));
+                            }
+                        }
+                        continue;
+                    }
+                    let history = match history_summary_sha256 {
+                        Some(history) => history,
+                        None => {
+                            summarize_campaign_source_history(
+                                &mut pipeline,
+                                &epoch,
+                                &target.target_id,
+                                target.contract_sha256,
+                            )?
+                        }
+                    };
+                    if !terminal_recorded {
+                        pipeline
+                            .record_negative_proof_no_qualified_result(
+                                &format!("trust:{epoch}:{}:no-qualified", target.target_id),
+                                &target.target_id,
+                                history,
+                            )
+                            .map_err(|error| error.to_string())?;
+                        continue;
+                    }
+                    pipeline
+                        .generate_negative_proof_external_claim_rows(
+                            &format!("trust:{epoch}:{}:claims", target.target_id),
+                            &target.target_id,
+                            history,
+                        )
+                        .map_err(|error| error.to_string())?;
+                }
+                CampaignTargetStatus::WitnessNegative {
+                    formal_refutation_sha256,
+                    history_summary_sha256,
+                    source_validation_recorded,
+                    terminal_recorded,
+                    qualification_selection,
+                    conditional_statement,
+                    qualification_bundle_sha256,
+                    applicability_recorded,
+                    method,
+                } => {
+                    if !source_validation_recorded {
+                        execute_campaign_source_validation(
+                            &mut pipeline,
+                            &metadata,
+                            &epoch,
+                            &target,
+                            formal_refutation_sha256,
+                            method,
+                        )?;
+                        continue;
+                    }
+                    let history = match history_summary_sha256 {
+                        Some(history) => history,
+                        None => summarize_campaign_source_history(
+                            &mut pipeline,
+                            &epoch,
+                            &target.target_id,
+                            target.contract_sha256,
+                        )?,
+                    };
+                    if let Some(bundle) = qualification_bundle_sha256 {
+                        if !applicability_recorded {
+                            pipeline
+                                .record_unestablished_applicability(
+                                    &format!(
+                                        "trust:{epoch}:{}:applicability",
+                                        target.target_id
+                                    ),
+                                    bundle,
+                                )
+                                .map_err(|error| error.to_string())?;
+                            continue;
+                        }
+                    }
+                    if !terminal_recorded {
+                        match advance_campaign_qualification(
+                            &mut pipeline,
+                            &state,
+                            &metadata,
+                            &epoch,
+                            &target,
+                            formal_refutation_sha256,
+                            history,
+                            method,
+                            qualification_selection,
+                            conditional_statement,
+                        )? {
+                            CampaignQualificationAdvance::Advanced => continue,
+                            CampaignQualificationAdvance::PendingConditionalProof(node) => {
+                                // The history summary is now the durable journal
+                                // tail and has established that this route is
+                                // eligible for profile evaluation.  Activate
+                                // exactly its seed-frozen theorem, then stop the
+                                // entire drain: no unrelated target may append
+                                // past the summary while ordinary PF work closes
+                                // the candidate.  A decisive exact Rust outcome
+                                // takes the prohibited branch above and can never
+                                // reach this activation point.
+                                conditional_candidates_to_activate.insert(node);
+                                break 'campaign_targets;
+                            }
+                        }
+                    }
+                    pipeline
+                        .generate_external_claim_rows(
+                            &format!("trust:{epoch}:{}:claims", target.target_id),
+                            formal_refutation_sha256,
+                            history,
+                        )
+                        .map_err(|error| error.to_string())?;
+                }
+            }
+        }
+    }
+    let journal = pipeline.into_journal();
+    let binding = journal
+        .checkpoint_binding()
+        .map_err(|error| error.to_string())?;
+    let current_approval = journal.current_approval();
+    let package = journal.current_package_authorization_event_hash();
+    let repo_path = metadata
+        .repo_path
+        .as_ref()
+        .ok_or_else(|| "trust drain requires runtime repo_path".to_owned())?
+        .clone();
+    let mut graph_changed = false;
+    runtime
+        .try_post_load_state_migration(|state| {
+            let mut changed = state.trust_base.journal_checkpoint.as_ref() != Some(&binding)
+                || state.trust_base.package_authorization_event_hash != package
+                || state.trust_base.pending_trust_witness_reports
+                    != pending_trust_witness_reports;
+            state.trust_base.journal_checkpoint = Some(binding.clone());
+            state.trust_base.package_authorization_event_hash = package;
+            state.trust_base.pending_trust_witness_reports =
+                pending_trust_witness_reports.clone();
+            if let Some(approval) = current_approval {
+                changed |= state.trust_base.current_human_approval_event_hash
+                    != Some(approval.event_hash)
+                    || state.trust_base.authored_semantic_root
+                        != Some(approval.authored_semantic_root)
+                    || state.trust_base.approved_evidence_tool_input_root
+                        != Some(approval.approved_evidence_tool_input_root);
+                state.trust_base.current_human_approval_event_hash = Some(approval.event_hash);
+                state.trust_base.authored_semantic_root = Some(approval.authored_semantic_root);
+                state.trust_base.approved_evidence_tool_input_root =
+                    Some(approval.approved_evidence_tool_input_root);
+            }
+            for candidate_node in &conditional_candidates_to_activate {
+                let activated = activate_trust_conditional_candidate_obligation(
+                    state,
+                    &repo_path,
+                    candidate_node,
+                )?;
+                graph_changed |= activated;
+                changed |= activated;
+            }
+            Ok(changed)
+        })
+        .map_err(|error| format!("trust journal checkpoint update failed: {error}"))?;
+    Ok(graph_changed)
+}
+
+fn campaign_target_requires_witness_report(
+    target: &trellis_kernel::trust_base::SeedTargetContract,
+) -> bool {
+    target.method.model_negative_carrier_requirement()
+        == trellis_kernel::trust_base::ModelNegativeCarrierRequirement::WitnessSpecific
+}
+
+/// Resolve the closure selected by the current journal approval.  Initial
+/// metadata paths remain fixed forever; a protected revision is loaded from
+/// its digest-derived external store path and only the local operational copy
+/// of metadata is repointed for tool execution during this drain.
+fn load_effective_runtime_trust_closure(
+    metadata: &mut trellis_kernel::runtime::RuntimeMetadata,
+    journal: &trellis_kernel::trust_base::TrustJournal,
+    registry: &trellis_kernel::trust_base::SchemaRegistry,
+) -> Result<
+    (
+        trellis_kernel::trust_base::VerifiedSeedDefinitionClosure,
+        trellis_kernel::trust_base::VerifiedEvidenceClosure,
+    ),
+    String,
+> {
+    if let Some(revision) = journal
+        .current_approval()
+        .and_then(|approval| approval.revision_closure)
+    {
+        let journal_path = metadata
+            .trust_journal_path
+            .as_ref()
+            .ok_or_else(|| "trust drain requires trust_journal_path".to_owned())?;
+        let stored = trellis_kernel::trust_base::load_revision_closure(journal_path, &revision)
+            .map_err(|error| error.to_string())?;
+        metadata.trust_seed_manifest_path = Some(stored.paths.seed_manifest_path.clone());
+        metadata.trust_seed_definition_bundle_path =
+            Some(stored.paths.seed_definition_bundle_path.clone());
+        metadata.trust_evidence_tool_manifest_path =
+            Some(stored.paths.evidence_manifest_path.clone());
+        metadata.trust_evidence_tool_root_path = Some(stored.paths.evidence_root_path.clone());
+        return Ok((stored.seed, stored.evidence));
+    }
+
+    let seed_path = metadata
+        .trust_seed_manifest_path
+        .as_ref()
+        .ok_or_else(|| "trust drain requires trust_seed_manifest_path".to_owned())?;
+    let seed = trellis_kernel::trust_base::AuthoritativeRecord::parse(
+        registry,
+        trellis_kernel::trust_base::parse_json_strict(
+            &fs::read(seed_path).map_err(|error| {
+                format!("failed to read trust seed {}: {error}", seed_path.display())
+            })?,
+        )
+        .map_err(|error| error.to_string())?,
+    )
+    .map_err(|error| error.to_string())?;
+    let seed_bundle_path = metadata
+        .trust_seed_definition_bundle_path
+        .as_ref()
+        .ok_or_else(|| "trust drain requires trust_seed_definition_bundle_path".to_owned())?;
+    let seed_closure = trellis_kernel::trust_base::verify_seed_definition_bundle(
+        &seed,
+        &fs::read(seed_bundle_path).map_err(|error| {
+            format!(
+                "failed to read trust seed bundle {}: {error}",
+                seed_bundle_path.display()
+            )
+        })?,
+    )
+    .map_err(|error| error.to_string())?;
+    let evidence_manifest_path = metadata
+        .trust_evidence_tool_manifest_path
+        .as_ref()
+        .ok_or_else(|| "trust drain requires trust_evidence_tool_manifest_path".to_owned())?;
+    let evidence_root_path = metadata
+        .trust_evidence_tool_root_path
+        .as_ref()
+        .ok_or_else(|| "trust drain requires trust_evidence_tool_root_path".to_owned())?;
+    let evidence_closure = trellis_kernel::trust_base::verify_evidence_tool_manifest(
+        evidence_root_path,
+        &fs::read(evidence_manifest_path).map_err(|error| {
+            format!(
+                "failed to read trust evidence manifest {}: {error}",
+                evidence_manifest_path.display()
+            )
+        })?,
+    )
+    .map_err(|error| error.to_string())?;
+    Ok((seed_closure, evidence_closure))
+}
+
+fn load_canonical_campaign_witness_report(
+    report_path: &Path,
+) -> Result<Option<serde_json::Value>, String> {
+    let report_bytes = match fs::read(report_path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => {
+            return Err(format!(
+                "failed to read witness report {}: {error}",
+                report_path.display()
+            ))
+        }
+    };
+    let report = trellis_kernel::trust_base::parse_json_strict(&report_bytes).map_err(|error| {
+        format!(
+            "invalid witness report {}: {error}",
+            report_path.display()
+        )
+    })?;
+    if trellis_kernel::trust_base::canonical_json_value(&report)
+        .map_err(|error| error.to_string())?
+        != report_bytes
+    {
+        return Err(format!(
+            "witness report {} must be exact canonical JSON",
+            report_path.display()
+        ));
+    }
+    Ok(Some(report))
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum CampaignQualificationAdvance {
+    Advanced,
+    PendingConditionalProof(NodeId),
+}
+
+fn conditional_candidate_node_id(
+    candidate: &trellis_kernel::trust_base::AuthoritativeRecord,
+) -> Result<NodeId, String> {
+    candidate
+        .value()
+        .get("node_id")
+        .and_then(serde_json::Value::as_str)
+        .filter(|node| !node.is_empty())
+        .map(NodeId::from)
+        .ok_or_else(|| "seed conditional theorem candidate lacks node_id".to_owned())
+}
+
+fn conditional_proof_is_pending(error: &trellis_kernel::trust_base::TrustError) -> bool {
+    error.code == "conditional_candidate_local_closure_missing"
+}
+
+fn summarize_campaign_source_history(
+    pipeline: &mut trellis_kernel::trust_base::TrustDerivationPipeline,
+    epoch: &str,
+    target_id: &str,
+    contract_sha256: trellis_kernel::trust_base::Sha256Digest,
+) -> Result<trellis_kernel::trust_base::Sha256Digest, String> {
+    let summarizer = pipeline
+        .approved_evidence_leaf_digest("trellis-trust-kernel")
+        .map_err(|error| error.to_string())?;
+    pipeline
+        .summarize_source_history(
+            &format!("trust:{epoch}:{target_id}:history"),
+            contract_sha256,
+            "trellis-trust-kernel",
+            summarizer,
+        )
+        .map(|history| history.digest())
+        .map_err(|error| error.to_string())
+}
+
+fn trust_json_digest(
+    value: &serde_json::Value,
+    field: &str,
+) -> Result<trellis_kernel::trust_base::Sha256Digest, String> {
+    value
+        .get(field)
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| format!("trust record lacks digest field {field}"))?
+        .parse()
+        .map_err(|error: trellis_kernel::trust_base::TrustError| error.to_string())
+}
+
+fn execute_campaign_source_validation(
+    pipeline: &mut trellis_kernel::trust_base::TrustDerivationPipeline,
+    metadata: &trellis_kernel::runtime::RuntimeMetadata,
+    epoch: &str,
+    target: &trellis_kernel::trust_base::SeedTargetContract,
+    model_negative_result_sha256: trellis_kernel::trust_base::Sha256Digest,
+    method: trellis_kernel::trust_base::SourceValidationMethod,
+) -> Result<(), String> {
+    use trellis_kernel::trust_base::{ExecutionLimits, SourceToolInvocation};
+
+    let evidence_root = metadata
+        .trust_evidence_tool_root_path
+        .as_ref()
+        .ok_or_else(|| "source validation requires trust_evidence_tool_root_path".to_owned())?;
+    let contract = pipeline
+        .source_contract_value(target.contract_sha256)
+        .map_err(|error| error.to_string())?;
+    let model_negative = pipeline
+        .model_negative_evidence_value(model_negative_result_sha256)
+        .map_err(|error| error.to_string())?;
+    let environment = BTreeMap::new();
+    match method {
+        trellis_kernel::trust_base::SourceValidationMethod::ExactRustExecutionV1 => {
+            let runner_sha256 = trust_json_digest(&contract, "runner_sha256")?;
+            let runner_id = pipeline
+                .approved_evidence_logical_id_for_digest(runner_sha256)
+                .map_err(|error| error.to_string())?;
+            let runner_path = pipeline
+                .approved_evidence_leaf_path(evidence_root, &runner_id)
+                .map_err(|error| error.to_string())?;
+            let runner_input = serde_json::json!({
+                "schema": "trellis-exact-rust-run-request/v1",
+                "target_id": target.target_id,
+                "formal_refutation_sha256": model_negative_result_sha256,
+                "formal_refutation": model_negative,
+                "validation_contract_sha256": target.contract_sha256,
+                "validation_contract": contract,
+            });
+            let attempt = pipeline
+                .execute_and_record_source_attempt(
+                    &format!("trust:{epoch}:{}:source-attempt", target.target_id),
+                    target.contract_sha256,
+                    SourceToolInvocation {
+                        tool_logical_id: &runner_id,
+                        runner_path: &runner_path,
+                        command_id: "trellis-exact-rust-source-runner-v1",
+                        working_directory: evidence_root,
+                        environment: &environment,
+                        input: &runner_input,
+                        limits: ExecutionLimits::default(),
+                    },
+                )
+                .map_err(|error| error.to_string())?;
+            let attempt_value = pipeline
+                .source_attempt_value(attempt.record_sha256)
+                .map_err(|error| error.to_string())?;
+            let oracle_sha256 = trust_json_digest(&contract, "observation_oracle_sha256")?;
+            let oracle_id = pipeline
+                .approved_evidence_logical_id_for_digest(oracle_sha256)
+                .map_err(|error| error.to_string())?;
+            let oracle_path = pipeline
+                .approved_evidence_leaf_path(evidence_root, &oracle_id)
+                .map_err(|error| error.to_string())?;
+            let oracle_input = serde_json::json!({
+                "schema": "trellis-source-observation-request/v1",
+                "target_id": target.target_id,
+                "formal_refutation_sha256": model_negative_result_sha256,
+                "validation_contract_sha256": target.contract_sha256,
+                "validation_contract": contract,
+                "attempt_sha256": attempt.record_sha256,
+                "attempt": attempt_value,
+            });
+            pipeline
+                .execute_and_record_source_outcome(
+                    &format!("trust:{epoch}:{}:source-outcome", target.target_id),
+                    target.contract_sha256,
+                    SourceToolInvocation {
+                        tool_logical_id: &oracle_id,
+                        runner_path: &oracle_path,
+                        command_id: "trellis-exact-rust-observation-oracle-v1",
+                        working_directory: evidence_root,
+                        environment: &environment,
+                        input: &oracle_input,
+                        limits: ExecutionLimits::default(),
+                    },
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        trellis_kernel::trust_base::SourceValidationMethod::CheckedRefutationReflectionV1 => {
+            let checker_sha256 = trust_json_digest(&contract, "reflection_checker_sha256")?;
+            let checker_id = pipeline
+                .approved_evidence_logical_id_for_digest(checker_sha256)
+                .map_err(|error| error.to_string())?;
+            let checker_path = pipeline
+                .approved_evidence_leaf_path(evidence_root, &checker_id)
+                .map_err(|error| error.to_string())?;
+            let negative_result_kind = match model_negative
+                .get("schema")
+                .and_then(serde_json::Value::as_str)
+            {
+                Some("trellis-formal-refutation/v1") => "formal_witness_refutation",
+                Some("trellis-checked-negative-proof/v1") => "checked_negative_proof",
+                _ => {
+                    return Err(
+                        "checked reflection received an unknown model-negative carrier".to_owned(),
+                    )
+                }
+            };
+            let checker_input = serde_json::json!({
+                "schema": "trellis-checked-reflection-request/v1",
+                "target_id": target.target_id,
+                "model_negative_result_kind": negative_result_kind,
+                "model_negative_result_sha256": model_negative_result_sha256,
+                "model_negative_result": model_negative,
+                "validation_contract_sha256": target.contract_sha256,
+                "validation_contract": contract,
+            });
+            pipeline
+                .execute_and_record_reflection_validation_result(
+                    &format!("trust:{epoch}:{}:reflection", target.target_id),
+                    target.contract_sha256,
+                    model_negative_result_sha256,
+                    SourceToolInvocation {
+                        tool_logical_id: &checker_id,
+                        runner_path: &checker_path,
+                        command_id: "trellis-checked-refutation-reflection-v1",
+                        working_directory: evidence_root,
+                        environment: &environment,
+                        input: &checker_input,
+                        limits: ExecutionLimits::default(),
+                    },
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        trellis_kernel::trust_base::SourceValidationMethod::NotDefinedForClaimShapeV1 => {
+            return Err(
+                "witness-specific source validation cannot use the unsupported-shape route"
+                    .to_owned(),
+            );
+        }
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn advance_campaign_qualification(
+    pipeline: &mut trellis_kernel::trust_base::TrustDerivationPipeline,
+    runtime_state: &trellis_kernel::model::ProtocolState,
+    metadata: &RuntimeMetadata,
+    epoch: &str,
+    target: &trellis_kernel::trust_base::SeedTargetContract,
+    formal_refutation_sha256: trellis_kernel::trust_base::Sha256Digest,
+    history_sha256: trellis_kernel::trust_base::Sha256Digest,
+    method: trellis_kernel::trust_base::SourceValidationMethod,
+    selection: Option<trellis_kernel::trust_base::QualificationSelection>,
+    conditional: Option<trellis_kernel::trust_base::RecordedConditionalStatement>,
+) -> Result<CampaignQualificationAdvance, String> {
+    use trellis_kernel::trust_base::{
+        ExecutionLimits, QualificationRoute, SourceToolInvocation,
+    };
+
+    let route = pipeline
+        .campaign_qualification_route(history_sha256)
+        .map_err(|error| error.to_string())?;
+    match route {
+        QualificationRoute::HaltSourceModelMismatch => {
+            return Err(format!(
+                "trust target {} halted: exact Rust and extracted-model observations disagree",
+                target.target_id
+            ));
+        }
+        QualificationRoute::CorrectBoundaryOrAdmissibility => {
+            return Err(format!(
+                "trust target {} requires an audit-authorized boundary/admissibility correction",
+                target.target_id
+            ));
+        }
+        QualificationRoute::EligibleForProfileEvaluation => {}
+        QualificationRoute::ProhibitedCheckedReflection
+        | QualificationRoute::ProhibitedDecisiveSourceRefutation
+        | QualificationRoute::ProhibitedUnsupportedClaimShape
+        | QualificationRoute::ProhibitedInvalidContract
+        | QualificationRoute::NoIndependentQualificationBasis => {
+            pipeline
+                .record_no_qualified_result(
+                    &format!("trust:{epoch}:{}:no-qualified", target.target_id),
+                    formal_refutation_sha256,
+                    history_sha256,
+                )
+                .map_err(|error| error.to_string())?;
+            return Ok(CampaignQualificationAdvance::Advanced);
+        }
+    }
+    if method != trellis_kernel::trust_base::SourceValidationMethod::ExactRustExecutionV1 {
+        return Err("only exact-execution witnesses may enter profile evaluation".to_owned());
+    }
+    let profiles = pipeline
+        .seed_qualification_profiles(&target.target_id, target.contract_sha256)
+        .map_err(|error| error.to_string())?;
+    let selected = match selection {
+        Some(selection) => profiles
+            .into_iter()
+            .find(|candidate| candidate.profile.digest() == selection.profile_sha256)
+            .ok_or_else(|| {
+                "active qualification selection names no seed-frozen profile".to_owned()
+            })?,
+        None => profiles
+            .into_iter()
+            .next()
+            .ok_or_else(|| "eligible qualification route has no seed profile".to_owned())?,
+    };
+    let conditional_node =
+        conditional_candidate_node_id(&selected.conditional_theorem_candidate)?;
+    let evidence_root = metadata
+        .trust_evidence_tool_root_path
+        .as_ref()
+        .ok_or_else(|| "qualification requires trust_evidence_tool_root_path".to_owned())?;
+    let environment = BTreeMap::new();
+
+    if selection.is_none() {
+        let (demand, admissibility) = execute_campaign_qualification_prerequisites(
+            pipeline,
+            evidence_root,
+            target,
+            formal_refutation_sha256,
+            history_sha256,
+            &selected,
+            &environment,
+        )?;
+        pipeline
+            .select_qualification_profile(
+                &format!("trust:{epoch}:{}:profile", target.target_id),
+                formal_refutation_sha256,
+                history_sha256,
+                selected.independent_basis,
+                demand,
+                admissibility,
+                selected.profile,
+            )
+            .map_err(|error| error.to_string())?;
+        return Ok(CampaignQualificationAdvance::PendingConditionalProof(
+            conditional_node,
+        ));
+    }
+    let selection = selection.expect("selection branch checked above");
+    match pipeline.checked_conditional_candidate_proof_receipt(runtime_state, &selected.profile) {
+        Ok(_) => {}
+        Err(error) if conditional_proof_is_pending(&error) => {
+            return Ok(CampaignQualificationAdvance::PendingConditionalProof(
+                conditional_node,
+            ));
+        }
+        Err(error) => return Err(error.to_string()),
+    }
+    if conditional.is_none() {
+        if pipeline.qualification_context_value(selection).is_err() {
+            let (demand, admissibility) = execute_campaign_qualification_prerequisites(
+                pipeline,
+                evidence_root,
+                target,
+                formal_refutation_sha256,
+                history_sha256,
+                &selected,
+                &environment,
+            )?;
+            pipeline
+                .resume_qualification_selection_with_evidence(
+                    selection,
+                    runtime_state,
+                    formal_refutation_sha256,
+                    selected.independent_basis.clone(),
+                    demand,
+                    admissibility,
+                    selected.profile.clone(),
+                )
+                .map_err(|error| error.to_string())?;
+        }
+        let input = pipeline
+            .qualification_context_value(selection)
+            .map_err(|error| error.to_string())?;
+        let generator_sha256 =
+            trust_json_digest(selected.profile.value(), "conditional_statement_generator_sha256")?;
+        let generator_id = pipeline
+            .approved_evidence_logical_id_for_digest(generator_sha256)
+            .map_err(|error| error.to_string())?;
+        let generator_path = pipeline
+            .approved_evidence_leaf_path(evidence_root, &generator_id)
+            .map_err(|error| error.to_string())?;
+        pipeline
+            .execute_and_record_conditional_statement(
+                &format!("trust:{epoch}:{}:conditional", target.target_id),
+                selection,
+                SourceToolInvocation {
+                    tool_logical_id: &generator_id,
+                    runner_path: &generator_path,
+                    command_id: "trellis-conditional-statement-generator-v1",
+                    working_directory: evidence_root,
+                    environment: &environment,
+                    input: &input,
+                    limits: ExecutionLimits::default(),
+                },
+            )
+            .map_err(|error| error.to_string())?;
+        return Ok(CampaignQualificationAdvance::Advanced);
+    }
+    let conditional = conditional.expect("conditional branch checked above");
+    let input = pipeline
+        .qualification_context_value(selection)
+        .map_err(|error| error.to_string())?;
+    let checker_sha256 =
+        trust_json_digest(selected.profile.value(), "conditional_proof_checker_sha256")?;
+    let checker_id = pipeline
+        .approved_evidence_logical_id_for_digest(checker_sha256)
+        .map_err(|error| error.to_string())?;
+    let checker_path = pipeline
+        .approved_evidence_leaf_path(evidence_root, &checker_id)
+        .map_err(|error| error.to_string())?;
+    pipeline
+        .execute_and_record_active_qualification_bundle(
+            &format!("trust:{epoch}:{}:qualification", target.target_id),
+            conditional,
+            SourceToolInvocation {
+                tool_logical_id: &checker_id,
+                runner_path: &checker_path,
+                command_id: "trellis-qualification-conditional-proof-checker-v1",
+                working_directory: evidence_root,
+                environment: &environment,
+                input: &input,
+                limits: ExecutionLimits::default(),
+            },
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(CampaignQualificationAdvance::Advanced)
+}
+
+fn execute_campaign_qualification_prerequisites(
+    pipeline: &trellis_kernel::trust_base::TrustDerivationPipeline,
+    evidence_root: &Path,
+    target: &trellis_kernel::trust_base::SeedTargetContract,
+    formal_refutation_sha256: trellis_kernel::trust_base::Sha256Digest,
+    history_sha256: trellis_kernel::trust_base::Sha256Digest,
+    selected: &trellis_kernel::trust_base::SeedQualificationProfile,
+    environment: &BTreeMap<String, String>,
+) -> Result<
+    (
+        trellis_kernel::trust_base::AuthoritativeRecord,
+        trellis_kernel::trust_base::AuthoritativeRecord,
+    ),
+    String,
+> {
+    use trellis_kernel::trust_base::{ExecutionLimits, SourceToolInvocation};
+
+    let contract = pipeline
+        .source_contract_value(target.contract_sha256)
+        .map_err(|error| error.to_string())?;
+    let formal = pipeline
+        .formal_refutation_value(formal_refutation_sha256)
+        .map_err(|error| error.to_string())?;
+    let history = pipeline
+        .source_history_value(history_sha256)
+        .map_err(|error| error.to_string())?;
+    let demand_input = serde_json::json!({
+        "schema": "trellis-witness-resource-demand-request/v1",
+        "target_id": target.target_id,
+        "formal_refutation_sha256": formal_refutation_sha256,
+        "formal_refutation": formal,
+        "history_summary_sha256": history_sha256,
+        "history_summary": history,
+        "validation_contract_sha256": target.contract_sha256,
+        "validation_contract": contract,
+        "independent_basis": selected.independent_basis.value(),
+        "profile": selected.profile.value(),
+    });
+    let demand_checker =
+        trust_json_digest(selected.profile.value(), "witness_demand_checker_sha256")?;
+    let demand_id = pipeline
+        .approved_evidence_logical_id_for_digest(demand_checker)
+        .map_err(|error| error.to_string())?;
+    let demand_path = pipeline
+        .approved_evidence_leaf_path(evidence_root, &demand_id)
+        .map_err(|error| error.to_string())?;
+    let demand = pipeline
+        .execute_witness_resource_demand(
+            formal_refutation_sha256,
+            history_sha256,
+            &selected.independent_basis,
+            &selected.profile,
+            SourceToolInvocation {
+                tool_logical_id: &demand_id,
+                runner_path: &demand_path,
+                command_id: "trellis-witness-resource-demand-checker-v1",
+                working_directory: evidence_root,
+                environment,
+                input: &demand_input,
+                limits: ExecutionLimits::default(),
+            },
+        )
+        .map_err(|error| error.to_string())?;
+    let admissibility_input = serde_json::json!({
+        "schema": "trellis-source-witness-admissibility-request/v1",
+        "target_id": target.target_id,
+        "formal_refutation_sha256": formal_refutation_sha256,
+        "formal_refutation": formal,
+        "history_summary_sha256": history_sha256,
+        "history_summary": history,
+        "validation_contract_sha256": target.contract_sha256,
+        "validation_contract": contract,
+        "independent_basis": selected.independent_basis.value(),
+        "profile": selected.profile.value(),
+        "witness_resource_demand": demand.value(),
+    });
+    let admissibility_checker = trust_json_digest(
+        selected.profile.value(),
+        "source_admissibility_checker_sha256",
+    )?;
+    let admissibility_id = pipeline
+        .approved_evidence_logical_id_for_digest(admissibility_checker)
+        .map_err(|error| error.to_string())?;
+    let admissibility_path = pipeline
+        .approved_evidence_leaf_path(evidence_root, &admissibility_id)
+        .map_err(|error| error.to_string())?;
+    let admissibility = pipeline
+        .execute_source_witness_admissibility(
+            formal_refutation_sha256,
+            history_sha256,
+            &selected.independent_basis,
+            &demand,
+            &selected.profile,
+            SourceToolInvocation {
+                tool_logical_id: &admissibility_id,
+                runner_path: &admissibility_path,
+                command_id: "trellis-source-witness-admissibility-checker-v1",
+                working_directory: evidence_root,
+                environment,
+                input: &admissibility_input,
+                limits: ExecutionLimits::default(),
+            },
+        )
+        .map_err(|error| error.to_string())?;
+    Ok((demand, admissibility))
+}
+
+const HUMAN_GATE_POLL_INTERVAL: Duration = Duration::from_secs(1);
+const HUMAN_GATE_MISSING_RESPONSE_DETAIL: &str = "missing human gate response file";
+
+fn should_poll_for_human_gate_response(runtime: &SupervisorRuntime, err: &str) -> bool {
+    if runtime.state().stage != trellis_kernel::Stage::HumanGate {
+        return false;
+    }
+    let Some(request) = runtime.state().in_flight_request.as_ref() else {
+        return false;
+    };
+    request.kind == RequestKind::HumanGate && err.contains(HUMAN_GATE_MISSING_RESPONSE_DETAIL)
+}
+
+fn configured_targets_from_config(config_path: &PathBuf) -> Result<BTreeSet<TargetId>, String> {
+    let text = fs::read_to_string(config_path)
+        .map_err(|err| format!("failed to read config {}: {err}", config_path.display()))?;
+    let raw: Value = serde_json::from_str(&text)
+        .map_err(|err| format!("failed to parse config {}: {err}", config_path.display()))?;
+    let workflow = raw
+        .as_object()
+        .and_then(|obj| obj.get("workflow"))
+        .and_then(Value::as_object)
+        .ok_or_else(|| {
+            format!(
+                "config.workflow must be an object in {}",
+                config_path.display()
+            )
+        })?;
+    let raw_targets = workflow
+        .get("main_result_targets")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let mut targets: BTreeSet<TargetId> = BTreeSet::new();
+    for item in raw_targets {
+        let Some(obj) = item.as_object() else {
+            continue;
+        };
+        let start_line = obj.get("start_line").and_then(Value::as_i64).unwrap_or(0);
+        let end_line = obj.get("end_line").and_then(Value::as_i64).unwrap_or(0);
+        if start_line <= 0 || end_line <= 0 {
+            continue;
+        }
+        let (start_line, end_line) = if start_line <= end_line {
+            (start_line, end_line)
+        } else {
+            (end_line, start_line)
+        };
+        let label = obj
+            .get("tex_label")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string);
+        targets.insert(TargetId::from(
+            label.unwrap_or_else(|| format!("lines:{start_line}-{end_line}")),
+        ));
+    }
+    Ok(targets)
+}
+
+/// The repo-relative paper manuscript path from `config.workflow.paper_tex_path`
+/// (`None` when absent or empty). Kept raw as configured: the initial-planning
+/// packet points the planner at the same repo-relative path the prompt
+/// fragments render via `{{paper_tex_path}}`.
+fn paper_tex_path_from_config(config_path: &PathBuf) -> Result<Option<String>, String> {
+    let text = fs::read_to_string(config_path)
+        .map_err(|err| format!("failed to read config {}: {err}", config_path.display()))?;
+    let raw: Value = serde_json::from_str(&text)
+        .map_err(|err| format!("failed to parse config {}: {err}", config_path.display()))?;
+    Ok(raw
+        .as_object()
+        .and_then(|obj| obj.get("workflow"))
+        .and_then(Value::as_object)
+        .and_then(|workflow| workflow.get("paper_tex_path"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string))
+}
+
+/// The run's goal file from top-level `config.goal_file`, defaulting to
+/// `GOAL.md`. KEEP IN SYNC: `trellis/config.py` (`load_config`) owns this
+/// default; the kernel mirrors it here for the PV mode-A initial-planning
+/// packet, and the two must agree on both the key and the default.
+fn goal_file_from_config(config_path: &PathBuf) -> Result<String, String> {
+    let text = fs::read_to_string(config_path)
+        .map_err(|err| format!("failed to read config {}: {err}", config_path.display()))?;
+    let raw: Value = serde_json::from_str(&text)
+        .map_err(|err| format!("failed to parse config {}: {err}", config_path.display()))?;
+    Ok(raw
+        .as_object()
+        .and_then(|obj| obj.get("goal_file"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("GOAL.md")
+        .to_string())
+}
+
+/// The tablet's proof-assistant backend, read from
+/// `config.workflow.default_target` (Phase IV step 11). Mirrors
+/// `configured_targets_from_config`'s read/parse error propagation. An ABSENT
+/// key (no `workflow` object, or no `default_target` within it) ⇒
+/// `BackendId::Lean` — the documented default, so every existing config (incl.
+/// the live run's) seeds `Lean` and behavior is unchanged. A PRESENT but
+/// unrecognized value is a typed `Err` (fail-loud at init only). The
+/// `BackendId` serde (`rename_all = "snake_case"`) owns the string mapping, so
+/// `"lean"` ⇒ `Lean` and any future variant string is accepted automatically.
+fn target_from_config(config_path: &PathBuf) -> Result<trellis_kernel::backend::BackendId, String> {
+    let text = fs::read_to_string(config_path)
+        .map_err(|err| format!("failed to read config {}: {err}", config_path.display()))?;
+    let raw: Value = serde_json::from_str(&text)
+        .map_err(|err| format!("failed to parse config {}: {err}", config_path.display()))?;
+    let Some(target_str) = raw
+        .as_object()
+        .and_then(|obj| obj.get("workflow"))
+        .and_then(Value::as_object)
+        .and_then(|workflow| workflow.get("default_target"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return Ok(trellis_kernel::backend::BackendId::Lean);
+    };
+    serde_json::from_value::<trellis_kernel::backend::BackendId>(Value::String(
+        target_str.to_string(),
+    ))
+    .map_err(|_| {
+        format!(
+            "config {} has unknown workflow.default_target {:?}; expected \"lean\" or \"isabelle_hol\"",
+            config_path.display(),
+            target_str
+        )
+    })
+}
+
+/// Parse the imported challenge-target registry referenced by
+/// `config.workflow.challenge_targets_path`. Returns an empty map when
+/// the config doesn't name a registry (paper-only runs). The path is
+/// resolved against the configured repo (the importer's
+/// `challenge_targets.json` is copied into the run repo by
+/// `setup_repo.sh --challenge-targets`), falling back to the config's
+/// directory.
+fn challenge_targets_from_config(
+    config_path: &PathBuf,
+) -> Result<BTreeMap<trellis_kernel::ChallengeTargetId, trellis_kernel::ChallengeTargetSpec>, String>
+{
+    let text = fs::read_to_string(config_path)
+        .map_err(|err| format!("failed to read config {}: {err}", config_path.display()))?;
+    let raw: Value = serde_json::from_str(&text)
+        .map_err(|err| format!("failed to parse config {}: {err}", config_path.display()))?;
+    let Some(rel_path) = raw
+        .as_object()
+        .and_then(|obj| obj.get("workflow"))
+        .and_then(Value::as_object)
+        .and_then(|workflow| workflow.get("challenge_targets_path"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return Ok(BTreeMap::new());
+    };
+    let candidate = PathBuf::from(rel_path);
+    let resolved = if candidate.is_absolute() {
+        candidate
+    } else {
+        let base = repo_path_from_config(config_path).unwrap_or_else(|_| {
+            config_path
+                .parent()
+                .unwrap_or_else(|| Path::new("."))
+                .to_path_buf()
+        });
+        base.join(candidate)
+    };
+    let registry_text = fs::read_to_string(&resolved).map_err(|err| {
+        format!(
+            "failed to read challenge targets file {} (from workflow.challenge_targets_path): {err}",
+            resolved.display()
+        )
+    })?;
+    let registry_raw: Value = serde_json::from_str(&registry_text).map_err(|err| {
+        format!(
+            "failed to parse challenge targets file {}: {err}",
+            resolved.display()
+        )
+    })?;
+    let entries = registry_raw
+        .as_object()
+        .and_then(|obj| obj.get("targets"))
+        .and_then(Value::as_array)
+        .ok_or_else(|| {
+            format!(
+                "challenge targets file {} must contain a `targets` array",
+                resolved.display()
+            )
+        })?;
+    let mut targets = BTreeMap::new();
+    for (idx, entry) in entries.iter().enumerate() {
+        let spec: trellis_kernel::ChallengeTargetSpec = serde_json::from_value(entry.clone())
+            .map_err(|err| {
+                format!(
+                    "challenge targets file {}: targets[{idx}] is malformed: {err}",
+                    resolved.display()
+                )
+            })?;
+        let id = entry
+            .as_object()
+            .and_then(|obj| obj.get("id"))
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                format!(
+                    "challenge targets file {}: targets[{idx}] is missing a non-empty `id`",
+                    resolved.display()
+                )
+            })?;
+        if spec.name.trim().is_empty() || spec.lean.trim().is_empty() {
+            return Err(format!(
+                "challenge targets file {}: target `{id}` must carry non-empty `name` and `lean` fields",
+                resolved.display()
+            ));
+        }
+        if targets
+            .insert(trellis_kernel::ChallengeTargetId::from(id), spec)
+            .is_some()
+        {
+            return Err(format!(
+                "challenge targets file {}: duplicate target id `{id}`",
+                resolved.display()
+            ));
+        }
+    }
+    Ok(targets)
+}
+
+use trellis_kernel::PvGoalMode;
+
+/// PV Phase 1 Slice 2: the parsed `pv_tablet` config block — the
+/// ExtractionModel definitions that ride the existing challenge byte-pin
+/// (`configured_challenge_targets`) plus the per-node role seeds
+/// (`node_role`). Empty when the config has no `pv_tablet` block (the
+/// existing non-PV/all-math path).
+#[derive(Default)]
+struct PvTabletConfig {
+    /// The run's goal mode (`pv_tablet.goal_mode`; default `Spec` = mode B).
+    /// Read at seed time only — it selects WHICH registry the goals land in
+    /// (mode B: challenge `Theorem`s in `configured_challenge_targets`; mode A:
+    /// functions in `configured_targets`). Not persisted in protocol state: the
+    /// seeding decision is re-derived from config on every resume (the seed
+    /// blocks are init-only, guarded by empty registries), so there is no
+    /// contract-wire surface for it.
+    goal_mode: PvGoalMode,
+    /// The raw `pv_tablet.extractor_stack` list, verbatim. Beyond feeding the
+    /// canonical toolchain fingerprint, it is surfaced (with
+    /// `extraction_toolchain` and the deduped model source digests) into
+    /// `tcb_manifest.json` `extraction_provenance` so the disclosed TCB
+    /// carries the extraction byte-pins, not just their hash.
+    extractor_stack: Vec<String>,
+    /// The raw `pv_tablet.extraction_toolchain` value, verbatim (`Null` when
+    /// absent). Same surfacing as `extractor_stack`.
+    extraction_toolchain: Value,
+    /// Generated-model defs registered as byte-pinned challenge targets.
+    extraction_targets:
+        BTreeMap<trellis_kernel::ChallengeTargetId, trellis_kernel::ChallengeTargetSpec>,
+    /// Role seeds: each claiming node ⇒ `PvRole::ExtractionModel`. Mode B also
+    /// adds a goal-statement role per `verification_target_statements` entry
+    /// (`Spec`/`Safety`/`Correctness`/`Invariant`).
+    node_roles: BTreeMap<NodeId, trellis_kernel::PvRole>,
+    /// PV verification GOALS — the operator-declared functions whose
+    /// Correctness/Safety/… is the goal of the run (the PV analog of
+    /// `workflow.main_result_labels`). MODE A ONLY. Explicit declaration, NOT
+    /// inferred from the model signature: only the functions the author wants
+    /// verified appear here (e.g. `montgomery_reduce`); intentionally-omitted
+    /// constants (`FIELD_MODULUS`) do not. Each becomes a `configured_targets`
+    /// entry that the orphan detector roots on, and the goal theorems named
+    /// `<fn>_<Role>` claim coverage of `<fn>` so the goal DAG-tops become orphan
+    /// roots. In mode B this stays empty (the goal STATEMENTS, not the
+    /// functions, are the targets — they ride `configured_challenge_targets`).
+    verification_targets: BTreeSet<TargetId>,
+    /// PV verification GOAL STATEMENTS — MODE B ONLY. Each is the pinned
+    /// Spec/Safety/Correctness/Invariant `Theorem` statement the run must
+    /// reproduce verbatim and PROVE, registered into `configured_challenge_targets`
+    /// (`kind: Theorem`) alongside the ExtractionModel `def` leaves. The pinned
+    /// statement IS the spec (no faithfulness check vs GOAL.md); trust sits with
+    /// whoever authored these. Mirrors how `extraction_models` are read into
+    /// `extraction_targets`, but with `kind: Theorem` (statement-only slice).
+    verification_target_statements:
+        BTreeMap<trellis_kernel::ChallengeTargetId, trellis_kernel::ChallengeTargetSpec>,
+    /// Role seed per goal-statement node (mode B): `Spec`/`Safety`/
+    /// `Correctness`/`Invariant` from the statement's declared `role`, so the
+    /// substantiveness Spec-Critic still selects on the goal nodes.
+    goal_statement_node_roles: BTreeMap<NodeId, trellis_kernel::PvRole>,
+    /// PV CONTRACT-PREDICATE DEFINITIONS — MODE B ONLY. The `Spec`/precondition
+    /// predicate `def`s the goal `Theorem`s reference (e.g.
+    /// `montgomery_reduce_Spec`, `MontgomeryReduceInputPre`). Each is a
+    /// WHOLE-DECLARATION byte-pin (`kind: Def`, `include_body=true` slice through
+    /// EOF — `challenge_conformance_errors`), registered into
+    /// `configured_challenge_targets` alongside the extraction-model `def`s. The
+    /// Montgomery contract is MODULAR: the pinned theorem's postcondition is
+    /// `montgomery_reduce_Spec value ret` and its precond hypothesis is
+    /// `MontgomeryReduceInputPre value`. If those predicate defs were worker-
+    /// authored a worker could weaken them (`Spec := True` / `Pre := False`) and
+    /// vacuously discharge the pinned theorem. Byte-pinning the whole def text
+    /// makes the predicate UNWEAKENABLE — exactly like the extraction-model
+    /// leaves. Mirrors `verification_target_statements` but forces `kind: Def`.
+    verification_target_definitions:
+        BTreeMap<trellis_kernel::ChallengeTargetId, trellis_kernel::ChallengeTargetSpec>,
+    /// Role seed per contract-predicate-def node (mode B): `Spec` (the
+    /// postcondition/spec predicate) or `Precondition` (the input-precondition
+    /// predicate) from the entry's declared `role`. Records the def node's PV
+    /// role alongside the goal-statement and model roles.
+    definition_node_roles: BTreeMap<NodeId, trellis_kernel::PvRole>,
+}
+
+/// PV Phase 2 (D1 / Slice 2): the canonical extraction-toolchain fingerprint.
+/// A deterministic hash of the SORTED `pv_tablet.extractor_stack` list plus the
+/// `extraction_toolchain` object (already key-ordered via `serde_json::Value`'s
+/// `BTreeMap` backing — the crate's `preserve_order` feature is off, so object
+/// keys serialize sorted). Empty inputs hash to a fixed value; the acceptance
+/// gate treats an empty toolchain config as "no chain" and fails CLOSED for an
+/// ExtractionModel node. Pure function of the config text ⇒ the same config
+/// always produces the same hash, and a toolchain edit (a new aeneas version, a
+/// reordered-then-resorted stack is identical, a changed extraction_toolchain
+/// field) produces a different one — the change `reconcile_pv_provenance`
+/// detects.
+fn pv_extraction_toolchain_sha256(
+    extractor_stack: &[String],
+    extraction_toolchain: &Value,
+) -> String {
+    use sha2::{Digest, Sha256};
+    let mut sorted_stack = extractor_stack.to_vec();
+    sorted_stack.sort();
+    // `serde_json` (no `preserve_order`) serializes object keys in sorted
+    // order, so this canonical form is stable regardless of config key order.
+    let canonical = serde_json::json!({
+        "extraction_toolchain": extraction_toolchain,
+        "extractor_stack": sorted_stack,
+    });
+    let serialized = serde_json::to_string(&canonical).unwrap_or_else(|_| String::from("{}"));
+    let mut hasher = Sha256::new();
+    hasher.update(serialized.as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+/// Read the optional top-level `pv_tablet` block (the plan §6.3 tablet
+/// metadata). Mirrors `target_from_config`: ABSENT ⇒ an empty config (no-op,
+/// existing non-PV behavior). Each `extraction_models[]` def becomes a
+/// `ChallengeTargetSpec{kind: Def, ...}` (reusing the existing struct + byte-pin
+/// VERBATIM, no new pin machinery) and seeds `node_role[node] = ExtractionModel`.
+/// Phase 2 additionally stamps the canonical extraction-toolchain fingerprint
+/// (`pv_extraction_toolchain_sha256` over `extractor_stack` +
+/// `extraction_toolchain`) onto each model's `provenance.extractor_toolchain_sha256`,
+/// so acceptance and reconcile can gate on it. `language`/`verification_backend`
+/// are validated against the Phase-1 invariant (Rust source, Lean backend — the
+/// backend never changes in this axis).
+/// PV prompt-tree gate seed: TRUE iff the config carries a `pv_tablet` object
+/// block — the dedicated, durable signal `ProtocolState::pv_tablet_configured`
+/// records (independent of whether `node_role`/`verification_targets` happen to
+/// be populated this resume). All-math configs have no block ⇒ false ⇒ every PV
+/// prompt branch stays inert (byte-identical baseline).
+fn config_has_pv_tablet(config_path: &PathBuf) -> Result<bool, String> {
+    let text = fs::read_to_string(config_path)
+        .map_err(|err| format!("failed to read config {}: {err}", config_path.display()))?;
+    let raw: Value = serde_json::from_str(&text)
+        .map_err(|err| format!("failed to parse config {}: {err}", config_path.display()))?;
+    Ok(raw
+        .as_object()
+        .and_then(|obj| obj.get("pv_tablet"))
+        .and_then(Value::as_object)
+        .is_some())
+}
+
+fn pv_tablet_from_config(config_path: &PathBuf) -> Result<PvTabletConfig, String> {
+    let text = fs::read_to_string(config_path)
+        .map_err(|err| format!("failed to read config {}: {err}", config_path.display()))?;
+    let raw: Value = serde_json::from_str(&text)
+        .map_err(|err| format!("failed to parse config {}: {err}", config_path.display()))?;
+    let Some(block) = raw
+        .as_object()
+        .and_then(|obj| obj.get("pv_tablet"))
+        .and_then(Value::as_object)
+    else {
+        return Ok(PvTabletConfig::default());
+    };
+    // Phase-1 invariant: a PV tablet is a Rust source verified on the Lean
+    // backend (no `BackendDescriptor` change — pure axis-B). Reject a config
+    // that asserts otherwise so a future multi-language/backend block can't
+    // silently slip through this reader.
+    if let Some(language) = block
+        .get("language")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        if language != "rust" {
+            return Err(format!(
+                "config {}: pv_tablet.language is {language:?}; Phase 1 supports only \"rust\"",
+                config_path.display()
+            ));
+        }
+    }
+    if let Some(backend) = block
+        .get("verification_backend")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        if backend != "lean" {
+            return Err(format!(
+                "config {}: pv_tablet.verification_backend is {backend:?}; Phase 1 stays on the Lean backend (\"lean\")",
+                config_path.display()
+            ));
+        }
+    }
+    let mut pv = PvTabletConfig::default();
+    // PV Phase 2: the canonical extraction-toolchain fingerprint, computed once
+    // from the block's `extractor_stack` + `extraction_toolchain` and stamped on
+    // every model below. `extractor_stack` defaults to empty (acceptance fails
+    // CLOSED for an ExtractionModel node when the resulting toolchain is empty);
+    // `extraction_toolchain` defaults to JSON null.
+    let extractor_stack: Vec<String> = block
+        .get("extractor_stack")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|v| v.as_str())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    let extraction_toolchain = block
+        .get("extraction_toolchain")
+        .cloned()
+        .unwrap_or(Value::Null);
+    // The toolchain fingerprint is empty exactly when NO chain is configured
+    // (no stack AND no toolchain object): keep it empty so the acceptance gate
+    // can fail CLOSED, rather than hashing the empty canonical form to a
+    // non-empty digest. By design the AND is intentional: an empty
+    // `extractor_stack` with a PRESENT `extraction_toolchain` object still
+    // hashes to a non-empty fingerprint (a pinned toolchain with no extra stack
+    // is a legitimate chain); only the both-empty case is treated as "no chain".
+    let toolchain_sha256 = if extractor_stack.is_empty() && extraction_toolchain.is_null() {
+        String::new()
+    } else {
+        pv_extraction_toolchain_sha256(&extractor_stack, &extraction_toolchain)
+    };
+    // Keep the raw stack + toolchain (not just their hash) so the manifest's
+    // `extraction_provenance` section can disclose the actual pins.
+    pv.extractor_stack = extractor_stack.clone();
+    pv.extraction_toolchain = extraction_toolchain.clone();
+    // PV verification GOALS: the explicit `verification_targets` list (the PV
+    // analog of `workflow.main_result_labels`). An array of function names; each
+    // becomes a `configured_targets` entry. Absent/empty ⇒ no paper-style
+    // targets (the byte-pin challenge gate is still the run's correctness floor,
+    // but the orphan detector would have no goal roots — so a real PV tablet
+    // must declare these). Validated as non-empty strings.
+    if let Some(raw_targets) = block.get("verification_targets") {
+        let arr = raw_targets.as_array().ok_or_else(|| {
+            format!(
+                "config {}: pv_tablet.verification_targets must be an array of function names",
+                config_path.display()
+            )
+        })?;
+        for (idx, item) in arr.iter().enumerate() {
+            let name = item
+                .as_str()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| {
+                    format!(
+                        "config {}: pv_tablet.verification_targets[{idx}] must be a non-empty string",
+                        config_path.display()
+                    )
+                })?;
+            pv.verification_targets.insert(TargetId::from(name));
+        }
+    }
+    // PV goal mode: `pv_tablet.goal_mode` ∈ {"spec","prose"}. Default "spec"
+    // (mode B — the primary, end-to-end-correct path). Selects which registry
+    // the goals land in at seed time; absent ⇒ Spec.
+    if let Some(raw_mode) = block.get("goal_mode") {
+        let mode = raw_mode
+            .as_str()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                format!(
+                    "config {}: pv_tablet.goal_mode must be a non-empty string (\"spec\" or \"prose\")",
+                    config_path.display()
+                )
+            })?;
+        pv.goal_mode = match mode {
+            "spec" => PvGoalMode::Spec,
+            "prose" => PvGoalMode::Prose,
+            other => {
+                return Err(format!(
+                    "config {}: pv_tablet.goal_mode is {other:?}; expected \"spec\" or \"prose\"",
+                    config_path.display()
+                ));
+            }
+        };
+    }
+    // PV verification GOAL STATEMENTS (mode B): the pinned Spec/Safety/
+    // Correctness/Invariant `Theorem` statements. Each entry mirrors an
+    // `extraction_models` entry (an object that deserializes into a
+    // `ChallengeTargetSpec`) but is forced to `kind: Theorem` (statement-only
+    // byte-pin) and carries a `role` selecting the PV goal role of its node.
+    // Read independent of `extraction_models` so a config may declare either or
+    // both. Only consumed in mode B (the seed block gates on the mode); parsing
+    // them in mode A is harmless (they simply go unused), but reject the
+    // ambiguous combination up front.
+    if let Some(raw_statements) = block.get("verification_target_statements") {
+        let statements = raw_statements.as_array().ok_or_else(|| {
+            format!(
+                "config {}: pv_tablet.verification_target_statements must be an array",
+                config_path.display()
+            )
+        })?;
+        if pv.goal_mode == PvGoalMode::Prose && !statements.is_empty() {
+            return Err(format!(
+                "config {}: pv_tablet.verification_target_statements is set but goal_mode is \"prose\"; statements are a mode-B (\"spec\") construct — declare verification_targets for prose mode",
+                config_path.display()
+            ));
+        }
+        for (idx, entry) in statements.iter().enumerate() {
+            let obj = entry.as_object().ok_or_else(|| {
+                format!(
+                    "config {}: pv_tablet.verification_target_statements[{idx}] must be an object",
+                    config_path.display()
+                )
+            })?;
+            let id = obj
+                .get("id")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| {
+                    format!(
+                        "config {}: pv_tablet.verification_target_statements[{idx}] is missing a non-empty `id`",
+                        config_path.display()
+                    )
+                })?;
+            let mut spec: trellis_kernel::ChallengeTargetSpec =
+                serde_json::from_value(entry.clone()).map_err(|err| {
+                    format!(
+                        "config {}: pv_tablet.verification_target_statements[{idx}] (`{id}`) is malformed: {err}",
+                        config_path.display()
+                    )
+                })?;
+            // Goal statements are statement-only theorem pins (the worker
+            // proves below `-- BODY`). Force the kind so a config typo can't
+            // turn one into a whole-declaration def pin.
+            spec.kind = trellis_kernel::ChallengeTargetKind::Theorem;
+            if spec.name.trim().is_empty() || spec.lean.trim().is_empty() {
+                return Err(format!(
+                    "config {}: pv_tablet.verification_target_statements[{idx}] (`{id}`) must carry non-empty `name` and `lean`",
+                    config_path.display()
+                ));
+            }
+            // PV "prove OR disprove" (F1/F2): a `Decide` primary must have a
+            // shape the kernel can negate FAIL-LOUD — no universe annotation on
+            // the name (`.{…}`, which the `__Refutation` suffix can't follow),
+            // and no implicit `{…}` / instance `[…]` binders (which the
+            // disprove-side `∀`-lift cannot close under `autoImplicit = false`).
+            // Reject up front rather than emit a broken byte-pinned node that
+            // can only fail at proof time. Mirrors the `resolution`-on-`Def`
+            // rejection in the definitions loop below.
+            if spec.resolution == trellis_kernel::ChallengeResolution::Decide {
+                if let Some(reason) = trellis_kernel::refutation_unsupported_reason(&spec) {
+                    return Err(format!(
+                        "config {}: pv_tablet.verification_target_statements[{idx}] (`{id}`) is `resolution: decide` but cannot be refuted: {reason}",
+                        config_path.display()
+                    ));
+                }
+            }
+            // The goal role (`spec`/`safety`/`correctness`/`invariant`) drives
+            // the substantiveness Spec-Critic on the goal node; default `Spec`.
+            let role = match obj
+                .get("role")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or("spec")
+            {
+                "spec" => trellis_kernel::PvRole::Spec,
+                "safety" => trellis_kernel::PvRole::Safety,
+                "correctness" => trellis_kernel::PvRole::Correctness,
+                "invariant" => trellis_kernel::PvRole::Invariant,
+                other => {
+                    return Err(format!(
+                        "config {}: pv_tablet.verification_target_statements[{idx}] (`{id}`) has role {other:?}; expected one of spec/safety/correctness/invariant",
+                        config_path.display()
+                    ));
+                }
+            };
+            let node = obj
+                .get("node")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or(spec.name.as_str())
+                .to_string();
+            if pv
+                .verification_target_statements
+                .insert(trellis_kernel::ChallengeTargetId::from(id), spec)
+                .is_some()
+            {
+                return Err(format!(
+                    "config {}: duplicate pv_tablet.verification_target_statements id `{id}`",
+                    config_path.display()
+                ));
+            }
+            pv.goal_statement_node_roles
+                .insert(NodeId::from(node), role);
+        }
+    }
+    // PV CONTRACT-PREDICATE DEFINITIONS (mode B): the Spec/precondition predicate
+    // `def`s the pinned goal `Theorem`s reference. Each entry mirrors a
+    // `verification_target_statements` entry but is forced to `kind: Def` so the
+    // WHOLE declaration (through EOF, `include_body=true`) is byte-pinned —
+    // making the predicate UNWEAKENABLE (a worker cannot redefine `Spec := True`
+    // / `Pre := False` to vacuously discharge the theorem). Reject in prose mode
+    // (mode-A goals are worker-authored prose; there is no pinned-predicate
+    // contract to trust).
+    if let Some(raw_defs) = block.get("verification_target_definitions") {
+        let defs = raw_defs.as_array().ok_or_else(|| {
+            format!(
+                "config {}: pv_tablet.verification_target_definitions must be an array",
+                config_path.display()
+            )
+        })?;
+        if pv.goal_mode == PvGoalMode::Prose && !defs.is_empty() {
+            return Err(format!(
+                "config {}: pv_tablet.verification_target_definitions is set but goal_mode is \"prose\"; pinned contract-predicate defs are a mode-B (\"spec\") construct",
+                config_path.display()
+            ));
+        }
+        for (idx, entry) in defs.iter().enumerate() {
+            let obj = entry.as_object().ok_or_else(|| {
+                format!(
+                    "config {}: pv_tablet.verification_target_definitions[{idx}] must be an object",
+                    config_path.display()
+                )
+            })?;
+            let id = obj
+                .get("id")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| {
+                    format!(
+                        "config {}: pv_tablet.verification_target_definitions[{idx}] is missing a non-empty `id`",
+                        config_path.display()
+                    )
+                })?;
+            let mut spec: trellis_kernel::ChallengeTargetSpec =
+                serde_json::from_value(entry.clone()).map_err(|err| {
+                    format!(
+                        "config {}: pv_tablet.verification_target_definitions[{idx}] (`{id}`) is malformed: {err}",
+                        config_path.display()
+                    )
+                })?;
+            // Contract-predicate defs are WHOLE-declaration pins (def kind, the
+            // body IS the predicate — pinning it is the whole point). Force the
+            // kind so a config typo can't downgrade it to a statement-only
+            // theorem pin that would leave the body worker-editable.
+            spec.kind = trellis_kernel::ChallengeTargetKind::Def;
+            // PV "prove OR disprove": `resolution: decide` is legal only on a
+            // `Theorem` (a `def` is a definition, not a proposition — it has no
+            // negation to decide). Reject up front rather than silently ignore.
+            if spec.resolution != trellis_kernel::ChallengeResolution::Prove {
+                return Err(format!(
+                    "config {}: pv_tablet.verification_target_definitions[{idx}] (`{id}`) sets `resolution`; only `prove` is valid on a definition (decide is Theorem-only)",
+                    config_path.display()
+                ));
+            }
+            if spec.name.trim().is_empty() || spec.lean.trim().is_empty() {
+                return Err(format!(
+                    "config {}: pv_tablet.verification_target_definitions[{idx}] (`{id}`) must carry non-empty `name` and `lean`",
+                    config_path.display()
+                ));
+            }
+            // The contract role: `spec` (postcondition predicate) or
+            // `precondition` (input-precondition predicate); default `spec`.
+            let role = match obj
+                .get("role")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or("spec")
+            {
+                "spec" => trellis_kernel::PvRole::Spec,
+                "precondition" => trellis_kernel::PvRole::Precondition,
+                other => {
+                    return Err(format!(
+                        "config {}: pv_tablet.verification_target_definitions[{idx}] (`{id}`) has role {other:?}; expected one of spec/precondition",
+                        config_path.display()
+                    ));
+                }
+            };
+            let node = obj
+                .get("node")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or(spec.name.as_str())
+                .to_string();
+            if pv
+                .verification_target_definitions
+                .insert(trellis_kernel::ChallengeTargetId::from(id), spec)
+                .is_some()
+            {
+                return Err(format!(
+                    "config {}: duplicate pv_tablet.verification_target_definitions id `{id}`",
+                    config_path.display()
+                ));
+            }
+            pv.definition_node_roles.insert(NodeId::from(node), role);
+        }
+    }
+    // Mode discipline: the goal carrier must match the mode. Mode B ("spec")
+    // routes goals through `verification_target_statements` and leaves
+    // `configured_targets` empty (no faithfulness lane); declaring the mode-A
+    // `verification_targets` functions there is a half-config that would
+    // silently re-arm the faithfulness lane, so reject it.
+    if pv.goal_mode == PvGoalMode::Spec && !pv.verification_targets.is_empty() {
+        return Err(format!(
+            "config {}: pv_tablet.verification_targets is set but goal_mode is \"spec\"; mode B declares goals as verification_target_statements (the functions ride configured_challenge_targets, not configured_targets)",
+            config_path.display()
+        ));
+    }
+    let Some(models) = block.get("extraction_models") else {
+        return Ok(pv);
+    };
+    let models = models.as_array().ok_or_else(|| {
+        format!(
+            "config {}: pv_tablet.extraction_models must be an array",
+            config_path.display()
+        )
+    })?;
+    for (idx, entry) in models.iter().enumerate() {
+        let obj = entry.as_object().ok_or_else(|| {
+            format!(
+                "config {}: pv_tablet.extraction_models[{idx}] must be an object",
+                config_path.display()
+            )
+        })?;
+        let id = obj
+            .get("id")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                format!(
+                    "config {}: pv_tablet.extraction_models[{idx}] is missing a non-empty `id`",
+                    config_path.display()
+                )
+            })?;
+        // The claiming node defaults to the prescribed declaration name
+        // (challenge name-parity makes node-id == decl-name), but an explicit
+        // `node` is honored.
+        let mut spec: trellis_kernel::ChallengeTargetSpec = serde_json::from_value(entry.clone())
+            .map_err(|err| {
+            format!(
+                "config {}: pv_tablet.extraction_models[{idx}] (`{id}`) is malformed: {err}",
+                config_path.display()
+            )
+        })?;
+        // ExtractionModel defs are whole-declaration byte-pins (def kind), the
+        // half of Model-Correspondence the byte-pin mechanizes. Force the kind
+        // so a config typo can't downgrade it to a statement-only theorem pin.
+        spec.kind = trellis_kernel::ChallengeTargetKind::Def;
+        // PV Phase 2: stamp the block-level extraction-toolchain fingerprint on
+        // this model's provenance (the source_sha256 already arrives from the
+        // model entry). The acceptance gate fails CLOSED when this is empty for
+        // an ExtractionModel node; reconcile reopens dependents when it changes.
+        spec.provenance.extractor_toolchain_sha256 = toolchain_sha256.clone();
+        if spec.name.trim().is_empty() || spec.lean.trim().is_empty() {
+            return Err(format!(
+                "config {}: pv_tablet.extraction_models[{idx}] (`{id}`) must carry non-empty `name` and `lean`",
+                config_path.display()
+            ));
+        }
+        let node = obj
+            .get("node")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .unwrap_or(spec.name.as_str())
+            .to_string();
+        if pv
+            .extraction_targets
+            .insert(trellis_kernel::ChallengeTargetId::from(id), spec)
+            .is_some()
+        {
+            return Err(format!(
+                "config {}: duplicate pv_tablet.extraction_models id `{id}`",
+                config_path.display()
+            ));
+        }
+        pv.node_roles
+            .insert(NodeId::from(node), trellis_kernel::PvRole::ExtractionModel);
+    }
+    Ok(pv)
+}
+
+fn repo_path_from_config(config_path: &PathBuf) -> Result<PathBuf, String> {
+    let text = fs::read_to_string(config_path)
+        .map_err(|err| format!("failed to read config {}: {err}", config_path.display()))?;
+    let raw: Value = serde_json::from_str(&text)
+        .map_err(|err| format!("failed to parse config {}: {err}", config_path.display()))?;
+    let repo_raw = raw
+        .as_object()
+        .and_then(|obj| obj.get("repo_path"))
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            format!(
+                "config.repo_path must be a non-empty string in {}",
+                config_path.display()
+            )
+        })?;
+    let candidate = PathBuf::from(repo_raw);
+    let resolved = if candidate.is_absolute() {
+        candidate
+    } else {
+        config_path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join(candidate)
+    };
+    Ok(fs::canonicalize(&resolved).unwrap_or(resolved))
+}
+
+/// Truncate the per-cycle event-log files so that exactly `keep` global
+/// records (indices `0..keep`) remain. `cycle_files[i]` holds the non-blank
+/// `cycle_lines[i]` in global-index order. Files entirely past the boundary
+/// are deleted (tail-file deletion); the file straddling the boundary is
+/// rewritten to its kept prefix (partial-rewrite); files before the boundary
+/// are untouched. Mirrors the boundary semantics of the old monolith
+/// `head -n keep` truncation.
+fn truncate_event_log_files_to(
+    cycle_files: &[PathBuf],
+    cycle_lines: &[Vec<String>],
+    keep: u64,
+) -> Result<(), String> {
+    let keep = keep as usize;
+    let mut global_index = 0usize;
+    for (path, lines) in cycle_files.iter().zip(cycle_lines.iter()) {
+        let file_start = global_index;
+        let file_end = global_index + lines.len(); // exclusive
+        global_index = file_end;
+        if file_start >= keep {
+            // Entire file is past the boundary — delete it.
+            fs::remove_file(path).map_err(|err| {
+                format!(
+                    "failed to delete tail event-log file {}: {err}",
+                    path.display()
+                )
+            })?;
+        } else if file_end > keep {
+            // Boundary falls inside this file — rewrite the kept prefix.
+            let kept_count = keep - file_start;
+            let mut new_body = lines[..kept_count].join("\n");
+            if !new_body.is_empty() {
+                new_body.push('\n');
+            }
+            fs::write(path, new_body).map_err(|err| {
+                format!(
+                    "failed to truncate event-log file {}: {err}",
+                    path.display()
+                )
+            })?;
+        }
+    }
+    Ok(())
+}
+
+fn replay_to_event_count(
+    root: PathBuf,
+    stop_after_event_count: u64,
+    dry_run_state_path: Option<PathBuf>,
+    seed_checkpoint_path: Option<PathBuf>,
+) -> Result<RuntimeCliResponse, String> {
+    let paths = RuntimePaths::new(root);
+    let metadata_raw = fs::read_to_string(&paths.metadata_path).map_err(|err| {
+        format!(
+            "failed to read metadata {}: {err}",
+            paths.metadata_path.display()
+        )
+    })?;
+    let metadata: RuntimeMetadata = serde_json::from_str(&metadata_raw)
+        .map_err(|err| format!("failed to parse runtime metadata: {err}"))?;
+    let repo_path = metadata
+        .repo_path
+        .clone()
+        .ok_or_else(|| "runtime metadata has no repo_path".to_string())?;
+    // Per-cycle event log: read every `cycle-NNNNNN.jsonl` file in lexical
+    // (== global index) order. `cycle_lines[i]` holds the non-blank lines of
+    // `cycle_files[i]`; `log_lines` is the flattened, in-order view used for
+    // replay (one entry per global event index).
+    let event_log_dir = trellis_kernel::event_log_dir_for(&paths.root, &metadata);
+    let cycle_files = trellis_kernel::event_log_cycle_files(&event_log_dir)
+        .map_err(|err| format!("failed to enumerate event-log dir: {err}"))?;
+    let mut cycle_lines: Vec<Vec<String>> = Vec::with_capacity(cycle_files.len());
+    for path in &cycle_files {
+        let text = fs::read_to_string(path)
+            .map_err(|err| format!("failed to read event log file {}: {err}", path.display()))?;
+        cycle_lines.push(
+            text.lines()
+                .filter(|l| !l.trim().is_empty())
+                .map(str::to_string)
+                .collect(),
+        );
+    }
+    let log_lines: Vec<&str> = cycle_lines
+        .iter()
+        .flat_map(|lines| lines.iter().map(String::as_str))
+        .collect();
+    let total = log_lines.len() as u64;
+    if stop_after_event_count > total {
+        return Err(format!(
+            "stop_after_event_count={} exceeds log length {}",
+            stop_after_event_count, total
+        ));
+    }
+    // Seed either from a supervisor_state.json checkpoint or from config. A
+    // checkpoint event_count is the last applied event index, while the replay
+    // truncation target is a kept-record count.
+    let (mut state, skip_count) = if let Some(ref ckpt_path) = seed_checkpoint_path {
+        let ckpt_raw = fs::read_to_string(ckpt_path)
+            .map_err(|err| format!("failed to read checkpoint {}: {err}", ckpt_path.display()))?;
+        let ckpt_value: serde_json::Value = serde_json::from_str(&ckpt_raw)
+            .map_err(|err| format!("failed to parse checkpoint JSON: {err}"))?;
+        let state_value = ckpt_value
+            .get("state")
+            .ok_or_else(|| "checkpoint missing 'state' field".to_string())?
+            .clone();
+        let mut ckpt_state: ProtocolState = serde_json::from_value(state_value)
+            .map_err(|err| format!("failed to deserialize checkpoint state: {err}"))?;
+        trellis_kernel::model::recompute_local_closure_reverse_indices(&mut ckpt_state);
+        let ckpt_count = ckpt_value
+            .get("event_count")
+            .and_then(|v| v.as_u64())
+            .ok_or_else(|| "checkpoint missing integer 'event_count'".to_string())?;
+        let skip_count = ckpt_count.checked_add(1).ok_or_else(|| {
+            format!(
+                "checkpoint event_count={} cannot be incremented",
+                ckpt_count
+            )
+        })?;
+        if skip_count > stop_after_event_count {
+            return Err(format!(
+                "checkpoint event_count={} is after stop_after_event_count={}",
+                ckpt_count, stop_after_event_count
+            ));
+        }
+        (ckpt_state, skip_count as usize)
+    } else {
+        let mut state = ProtocolState::default();
+        let seed_metadata = RuntimeMetadata {
+            repo_path: Some(repo_path.clone()),
+            config_path: metadata.config_path.clone(),
+            native_history_kinds: metadata.native_history_kinds.clone(),
+            // G3 replay determinism: carry the on-disk flag through so a
+            // pre-feature event log (metadata without the flag ⇒ serde
+            // default false) reseeds WITHOUT `initial_planning`, byte-
+            // identical to its original run, while post-feature logs reseed
+            // WITH it.
+            initial_planning_seeded: metadata.initial_planning_seeded,
+            trust_journal_path: metadata.trust_journal_path.clone(),
+            trust_actor_key_manifest_path: metadata.trust_actor_key_manifest_path.clone(),
+            trust_gate_presentation_path: metadata.trust_gate_presentation_path.clone(),
+            trust_seed_manifest_path: metadata.trust_seed_manifest_path.clone(),
+            trust_seed_definition_bundle_path: metadata
+                .trust_seed_definition_bundle_path
+                .clone(),
+            trust_evidence_tool_manifest_path: metadata
+                .trust_evidence_tool_manifest_path
+                .clone(),
+            trust_evidence_tool_root_path: metadata.trust_evidence_tool_root_path.clone(),
+            trust_seed_transaction_id: metadata.trust_seed_transaction_id.clone(),
+            trust_advance_gate_episode_id: metadata.trust_advance_gate_episode_id.clone(),
+            trust_manifest_authority_roots: metadata.trust_manifest_authority_roots.clone(),
+            // Same trichotomy for the coverage re-planning arm: pre-feature
+            // and initial-planner-era logs carry `false` (source unseeded ⇒
+            // trigger dead at replay), post-feature logs reseed the source.
+            coverage_replanning_seeded: metadata.coverage_replanning_seeded,
+        };
+        seed_state_from_config(&mut state, &seed_metadata)?;
+        state.normalize_all_structural_state();
+        (state, 0usize)
+    };
+    let mut skipped: Vec<String> = Vec::new();
+    for (idx, line) in log_lines
+        .iter()
+        .enumerate()
+        .skip(skip_count)
+        .take((stop_after_event_count as usize).saturating_sub(skip_count))
+    {
+        let record: trellis_kernel::EventLogRecord = serde_json::from_str(line)
+            .map_err(|err| format!("failed to parse event_log line {}: {err}", idx + 1))?;
+        match trellis_kernel::apply_event(state.clone(), record.event.clone()) {
+            Ok(outcome) => {
+                state = outcome.state;
+            }
+            Err(trellis_kernel::TransitionError::InvalidStage { .. })
+            | Err(trellis_kernel::TransitionError::InvalidPhase { .. }) => {
+                skipped.push(format!("line {}: skipped stale event", idx + 1));
+            }
+            Err(err) => {
+                return Err(format!(
+                    "apply_event failed at log line {}: {err:?}. Skipped so far: {}",
+                    idx + 1,
+                    skipped.len()
+                ));
+            }
+        }
+    }
+    eprintln!(
+        "replay_to_event_count: skipped {} stale events",
+        skipped.len()
+    );
+    let target_state_path = dry_run_state_path
+        .clone()
+        .unwrap_or(paths.state_path.clone());
+    let serialized = serde_json::to_string_pretty(&state)
+        .map_err(|err| format!("failed to serialize replayed state: {err}"))?;
+    fs::write(&target_state_path, serialized).map_err(|err| {
+        format!(
+            "failed to write state {}: {err}",
+            target_state_path.display()
+        )
+    })?;
+    let mut log_truncated = false;
+    if dry_run_state_path.is_none() && stop_after_event_count < total {
+        truncate_event_log_files_to(&cycle_files, &cycle_lines, stop_after_event_count)?;
+        log_truncated = true;
+    }
+    let in_flight_kind = state
+        .in_flight_request
+        .as_ref()
+        .map(|req| format!("{:?}", req.kind));
+    let in_flight_id = state.in_flight_request.as_ref().map(|req| req.id);
+    // Fix A: make the repo worktree consistent with the rewound state by
+    // hard-resetting to the supervisor2 checkpoint tag at or before the
+    // target event_count, and cleaning untracked files under Tablet/. This
+    // prevents the "ghost baseline" problem where rewinding kernel state
+    // alone leaves disk holding work from events that were discarded, which
+    // the next worker's checker then locks in as its `before_snapshot`.
+    // Skip on dry-run since we didn't truncate the log either.
+    let (repo_reset_to_tag, repo_reset_error) = if dry_run_state_path.is_none() {
+        match reset_repo_worktree_to_checkpoint(&repo_path, stop_after_event_count) {
+            Ok(tag) => (Some(tag), None),
+            Err(err) => {
+                eprintln!("replay_to_event_count: repo reset failed: {err}");
+                (None, Some(err))
+            }
+        }
+    } else {
+        (None, None)
+    };
+    Ok(RuntimeCliResponse::ReplayToEventCountOk {
+        event_count_applied: stop_after_event_count,
+        cycle: state.cycle,
+        stage: format!("{:?}", state.stage),
+        in_flight_kind,
+        in_flight_id,
+        state_path: target_state_path,
+        log_truncated,
+        repo_reset_to_tag,
+        repo_reset_error,
+    })
+}
+
+#[derive(Debug, Serialize)]
+struct SegmentEventLogOutput {
+    /// `true` when nothing was written (dry-run, or an already-segmented dir
+    /// that verifies). `false` when files were written this invocation.
+    dry_run: bool,
+    /// `true` when the per-cycle dir already existed and verified clean (no-op).
+    already_segmented: bool,
+    monolith_path: PathBuf,
+    event_log_dir: PathBuf,
+    /// Total non-blank records in the monolith.
+    total_records: u64,
+    /// Highest record index seen (== total_records - 1 on a dense log).
+    max_index: u64,
+    /// Distinct cycles, ascending, with their record counts.
+    cycles: Vec<SegmentCycleSummary>,
+    /// Checkpointed `event_count` from `<repo>/.trellis-history/supervisor_state.json`
+    /// (the triggering event's index), when that file is present.
+    supervisor_event_count: Option<u64>,
+    /// Number of trailing records past `supervisor_event_count + 1` — the
+    /// dirty, uncheckpointed tail the live supervisor wrote before stopping.
+    dirty_tail_records: u64,
+    /// Files that would be / were written.
+    files_written: Vec<PathBuf>,
+}
+
+#[derive(Debug, Serialize)]
+struct SegmentCycleSummary {
+    cycle: u32,
+    records: u64,
+}
+
+/// One-shot migration splitter for `event_log.jsonl` → per-cycle files.
+/// See `RuntimeCliRequest::SegmentEventLog` for the contract. Copies RAW line
+/// bytes (never re-serializes) so the concatenation is byte-identical to the
+/// monolith. Verifies density / monotonicity / contiguity / byte-identity /
+/// count before writing anything; on `dry_run` it verifies and reports only.
+fn segment_event_log(
+    runtime: &Path,
+    repo: &Path,
+    dry_run: bool,
+) -> Result<SegmentEventLogOutput, String> {
+    let monolith_path = runtime.join("event_log.jsonl");
+    let raw = fs::read(&monolith_path)
+        .map_err(|err| format!("failed to read monolith {}: {err}", monolith_path.display()))?;
+
+    // Split into RAW line slices. Splitting on '\n' yields a final empty
+    // segment after a trailing newline; drop exactly that one. Blank lines
+    // anywhere else are an error (the writer never emits them).
+    let mut segments: Vec<&[u8]> = raw.split(|&b| b == b'\n').collect();
+    if segments.last() == Some(&[].as_slice()) {
+        segments.pop();
+    }
+    let mut lines: Vec<&[u8]> = Vec::with_capacity(segments.len());
+    for (i, segment) in segments.into_iter().enumerate() {
+        if segment.iter().all(|b| b.is_ascii_whitespace()) {
+            return Err(format!(
+                "monolith {} has a blank line at record {i}; the writer never emits blank lines — refusing to segment",
+                monolith_path.display()
+            ));
+        }
+        lines.push(segment);
+    }
+
+    let total_records = lines.len() as u64;
+    if total_records == 0 {
+        return Err(format!(
+            "monolith {} has no records to segment",
+            monolith_path.display()
+        ));
+    }
+
+    // Parse index + cycle from each line; verify density, monotonicity,
+    // contiguity. Group line byte-slices by cycle in encounter order.
+    let mut max_index: u64 = 0;
+    let mut cycle_order: Vec<u32> = Vec::new();
+    let mut cycle_lines: std::collections::BTreeMap<u32, Vec<&[u8]>> =
+        std::collections::BTreeMap::new();
+    let mut prev_cycle: Option<u32> = None;
+    let mut seen_cycles: BTreeSet<u32> = BTreeSet::new();
+    for (i, line) in lines.iter().enumerate() {
+        let record: trellis_kernel::EventLogRecord = serde_json::from_slice(line)
+            .map_err(|err| format!("failed to parse monolith record {i}: {err}"))?;
+        if record.index != i as u64 {
+            return Err(format!(
+                "index density violated: record at position {i} has index={} (expected {i})",
+                record.index
+            ));
+        }
+        max_index = record.index;
+        match prev_cycle {
+            Some(prev) if record.cycle < prev => {
+                return Err(format!(
+                    "cycle monotonicity violated at record {i}: cycle {} < previous {prev}",
+                    record.cycle
+                ));
+            }
+            Some(prev) if record.cycle != prev && seen_cycles.contains(&record.cycle) => {
+                return Err(format!(
+                    "cycle contiguity violated at record {i}: cycle {} reappears after {prev}",
+                    record.cycle
+                ));
+            }
+            _ => {}
+        }
+        if !seen_cycles.contains(&record.cycle) {
+            seen_cycles.insert(record.cycle);
+            cycle_order.push(record.cycle);
+        }
+        prev_cycle = Some(record.cycle);
+        cycle_lines.entry(record.cycle).or_default().push(line);
+    }
+    if max_index + 1 != total_records {
+        return Err(format!(
+            "index density violated: max_index={max_index} but {total_records} records present"
+        ));
+    }
+
+    // Reconcile against the checkpointed event_count, tolerating a dirty tail.
+    let supervisor_state_path = repo.join(".trellis-history").join("supervisor_state.json");
+    let supervisor_event_count: Option<u64> = if supervisor_state_path.exists() {
+        let text = fs::read_to_string(&supervisor_state_path)
+            .map_err(|err| format!("failed to read {}: {err}", supervisor_state_path.display()))?;
+        let value: serde_json::Value = serde_json::from_str(&text)
+            .map_err(|err| format!("failed to parse supervisor_state.json: {err}"))?;
+        value.get("event_count").and_then(|v| v.as_u64())
+    } else {
+        None
+    };
+    let dirty_tail_records = match supervisor_event_count {
+        Some(ec) => {
+            let checkpointed_lines = ec + 1; // restored line count is event_count+1
+            if total_records < checkpointed_lines {
+                return Err(format!(
+                    "monolith has {total_records} records but supervisor_state event_count+1={checkpointed_lines}; the log is SHORTER than the last checkpoint — refusing to segment"
+                ));
+            }
+            total_records - checkpointed_lines
+        }
+        None => 0,
+    };
+
+    let event_log_dir = repo.join(".trellis-history").join("event-log");
+
+    // Idempotency: if the dir already exists, verify it byte-matches what we
+    // would write. A clean match is a no-op success; any mismatch fails loud
+    // and refuses to overwrite.
+    let files_written: Vec<PathBuf> = cycle_order
+        .iter()
+        .map(|c| event_log_dir.join(format!("cycle-{c:06}.jsonl")))
+        .collect();
+    let cycle_summaries: Vec<SegmentCycleSummary> = cycle_order
+        .iter()
+        .map(|c| SegmentCycleSummary {
+            cycle: *c,
+            records: cycle_lines.get(c).map(|v| v.len() as u64).unwrap_or(0),
+        })
+        .collect();
+
+    let build_body = |c: u32| -> Vec<u8> {
+        let mut body: Vec<u8> = Vec::new();
+        for line in &cycle_lines[&c] {
+            body.extend_from_slice(line);
+            body.push(b'\n');
+        }
+        body
+    };
+
+    if event_log_dir.exists() {
+        let existing = trellis_kernel::event_log_cycle_files(&event_log_dir)
+            .map_err(|err| format!("failed to enumerate existing event-log dir: {err}"))?;
+        let expected: BTreeSet<PathBuf> = files_written.iter().cloned().collect();
+        let actual: BTreeSet<PathBuf> = existing.iter().cloned().collect();
+        if actual != expected {
+            return Err(format!(
+                "event-log dir {} already exists but its cycle files differ from the split; refusing to overwrite (delete it and re-run if intentional)",
+                event_log_dir.display()
+            ));
+        }
+        for c in &cycle_order {
+            let path = event_log_dir.join(format!("cycle-{c:06}.jsonl"));
+            let on_disk = fs::read(&path)
+                .map_err(|err| format!("failed to read existing {}: {err}", path.display()))?;
+            if on_disk != build_body(*c) {
+                return Err(format!(
+                    "event-log file {} already exists but its bytes differ from the split; refusing to overwrite",
+                    path.display()
+                ));
+            }
+        }
+        // Existing dir verifies — no-op success.
+        return Ok(SegmentEventLogOutput {
+            dry_run,
+            already_segmented: true,
+            monolith_path,
+            event_log_dir,
+            total_records,
+            max_index,
+            cycles: cycle_summaries,
+            supervisor_event_count,
+            dirty_tail_records,
+            files_written,
+        });
+    }
+
+    // Byte-identity check: in-order concatenation of the per-cycle bodies must
+    // equal the monolith bytes (modulo a possibly-absent trailing newline on
+    // the monolith). Build the concatenation and compare.
+    let mut concat: Vec<u8> = Vec::with_capacity(raw.len());
+    for c in &cycle_order {
+        concat.extend_from_slice(&build_body(*c));
+    }
+    let monolith_normalized: Vec<u8> = if raw.last() == Some(&b'\n') {
+        raw.clone()
+    } else {
+        // Monolith lacked a trailing newline; our per-cycle bodies always end
+        // in one, so append one to the comparison baseline.
+        let mut v = raw.clone();
+        v.push(b'\n');
+        v
+    };
+    if concat != monolith_normalized {
+        return Err(
+            "byte-identity check failed: in-order concatenation of per-cycle files does not match the monolith bytes"
+                .to_string(),
+        );
+    }
+
+    if !dry_run {
+        fs::create_dir_all(&event_log_dir).map_err(|err| {
+            format!(
+                "failed to create event-log dir {}: {err}",
+                event_log_dir.display()
+            )
+        })?;
+        for c in &cycle_order {
+            let path = event_log_dir.join(format!("cycle-{c:06}.jsonl"));
+            fs::write(&path, build_body(*c))
+                .map_err(|err| format!("failed to write {}: {err}", path.display()))?;
+        }
+    }
+
+    Ok(SegmentEventLogOutput {
+        dry_run,
+        already_segmented: false,
+        monolith_path,
+        event_log_dir,
+        total_records,
+        max_index,
+        cycles: cycle_summaries,
+        supervisor_event_count,
+        dirty_tail_records,
+        files_written,
+    })
+}
+
+/// Reset the repo worktree so it matches the state we rewound to.
+/// Finds the largest `supervisor2/checkpoint-NNNNNN` tag with NNNNNN <=
+/// `event_count`, runs `git reset --hard` to it, then `git clean -fd Tablet/`
+/// to drop any untracked helper files that later bursts may have added.
+fn reset_repo_worktree_to_checkpoint(repo_path: &Path, event_count: u64) -> Result<String, String> {
+    use std::process::Command;
+    let repo_str = repo_path
+        .to_str()
+        .ok_or_else(|| "repo_path is not valid UTF-8".to_string())?;
+    let tags_out = Command::new("git")
+        .args(["-C", repo_str, "tag", "-l", "supervisor2/checkpoint-*"])
+        .output()
+        .map_err(|err| format!("git tag list failed: {err}"))?;
+    if !tags_out.status.success() {
+        return Err(format!(
+            "git tag list exited {}: {}",
+            tags_out.status,
+            String::from_utf8_lossy(&tags_out.stderr)
+        ));
+    }
+    let tags_raw = String::from_utf8_lossy(&tags_out.stdout);
+    let best = tags_raw
+        .lines()
+        .filter_map(|line| {
+            line.strip_prefix("supervisor2/checkpoint-")
+                .and_then(|suffix| suffix.trim().parse::<u64>().ok())
+        })
+        .filter(|&n| n <= event_count)
+        .max()
+        .ok_or_else(|| {
+            format!("no supervisor2/checkpoint-* tag at or before event_count={event_count}")
+        })?;
+    let tag = format!("supervisor2/checkpoint-{best:06}");
+    let reset_out = Command::new("git")
+        .args(["-C", repo_str, "reset", "--hard", &tag])
+        .output()
+        .map_err(|err| format!("git reset --hard {tag} failed: {err}"))?;
+    if !reset_out.status.success() {
+        return Err(format!(
+            "git reset --hard {tag} exited {}: {}",
+            reset_out.status,
+            String::from_utf8_lossy(&reset_out.stderr)
+        ));
+    }
+    // Clean untracked files under Tablet/ only. Other dirs (.lake, .trellis,
+    // paper/, etc.) are preserved — we only want to drop worker-authored
+    // node files that weren't part of the checkpoint.
+    let clean_out = Command::new("git")
+        .args(["-C", repo_str, "clean", "-fd", "Tablet/"])
+        .output()
+        .map_err(|err| format!("git clean -fd Tablet/ failed: {err}"))?;
+    if !clean_out.status.success() {
+        return Err(format!(
+            "git clean -fd Tablet/ exited {}: {}",
+            clean_out.status,
+            String::from_utf8_lossy(&clean_out.stderr)
+        ));
+    }
+    eprintln!(
+        "replay_to_event_count: reset repo worktree to {tag} (for event_count={event_count})"
+    );
+    Ok(tag)
+}
+
+fn ensure_initial_preamble(repo_path: &Path) -> Result<(), String> {
+    let tablet_dir = repo_path.join("Tablet");
+    fs::create_dir_all(&tablet_dir).map_err(|err| {
+        format!(
+            "failed to create Tablet dir {}: {err}",
+            tablet_dir.display()
+        )
+    })?;
+    let preamble_lean = tablet_dir.join("Preamble.lean");
+    if !preamble_lean.exists() {
+        fs::write(&preamble_lean, "")
+            .map_err(|err| format!("failed to seed {}: {err}", preamble_lean.display()))?;
+    }
+    let preamble_tex = tablet_dir.join("Preamble.tex");
+    if !preamble_tex.exists() {
+        fs::write(&preamble_tex, "")
+            .map_err(|err| format!("failed to seed {}: {err}", preamble_tex.display()))?;
+    }
+    Ok(())
+}
+
+/// Activate one seed-authenticated conditional theorem candidate as an
+/// ordinary, byte-pinned proof obligation after source validation has selected
+/// its qualification profile.
+///
+/// Before this transition the candidate exists only in the verified seed
+/// closure and the signed advance-gate presentation.  Keeping it out of the
+/// live tablet is load-bearing: a decisive exact Rust reproduction must
+/// suppress qualified recovery without spending a worker or verifier burst on
+/// an irrelevant conditional proof.  Once activated, the candidate is a
+/// distinct challenge target.  Its free Lean preamble is copied from the
+/// unrestricted target's seeded file so both statements elaborate in the same
+/// import/namespace context, but the candidate never imports the unrestricted
+/// theorem itself (which would make its proof circular as a qualification
+/// artifact).
+fn activate_trust_conditional_candidate_obligation(
+    state: &mut ProtocolState,
+    repo_path: &Path,
+    candidate_node: &NodeId,
+) -> Result<bool, String> {
+    if !state.trust_base.required() {
+        return Err("conditional candidate activation requires trust-base v1".into());
+    }
+    let candidate = state
+        .trust_base
+        .conditional_theorem_candidates
+        .get(candidate_node)
+        .cloned()
+        .ok_or_else(|| {
+            format!(
+                "conditional candidate activation names unknown seed node {}",
+                candidate_node.as_str()
+            )
+        })?;
+    let before = state.clone();
+    {
+        let node_name = candidate.node_id.as_str();
+        if node_name.is_empty()
+            || matches!(node_name, "." | "..")
+            || node_name
+                .chars()
+                .any(|ch| ch == '/' || ch == '\\' || ch.is_control())
+        {
+            return Err(format!(
+                "trust conditional candidate {} has an unsafe node id",
+                candidate.candidate_id
+            ));
+        }
+        let unrestricted_id = trellis_kernel::ChallengeTargetId::from(candidate.target_id.as_str());
+        if unrestricted_id == candidate.candidate_id {
+            return Err(format!(
+                "trust conditional candidate {} aliases its unrestricted target",
+                candidate.candidate_id
+            ));
+        }
+        let unrestricted = state
+            .configured_challenge_targets
+            .get(&unrestricted_id)
+            .ok_or_else(|| {
+                format!(
+                    "trust conditional candidate {} names missing unrestricted target {}",
+                    candidate.candidate_id, candidate.target_id
+                )
+            })?;
+        if unrestricted.kind != trellis_kernel::ChallengeTargetKind::Theorem {
+            return Err(format!(
+                "trust conditional candidate {} qualifies a non-theorem target",
+                candidate.candidate_id
+            ));
+        }
+
+        let unrestricted_node = unrestricted.name.replace('.', "_");
+        let unrestricted_path = repo_path
+            .join("Tablet")
+            .join(format!("{unrestricted_node}.lean"));
+        let unrestricted_source = fs::read_to_string(&unrestricted_path).map_err(|error| {
+            format!(
+                "failed to read unrestricted target file {} for trust candidate {}: {error}",
+                unrestricted_path.display(),
+                candidate.candidate_id
+            )
+        })?;
+        trellis_kernel::filespec_split::validate_filespec(
+            &unrestricted_source,
+            &unrestricted_node,
+        )?;
+        if trellis_kernel::filespec_split::prescribed_region(&unrestricted_source, false)?
+            != unrestricted.lean
+        {
+            return Err(format!(
+                "unrestricted target file {} does not match its pinned declaration",
+                unrestricted_path.display()
+            ));
+        }
+        let inherited_namespace_context =
+            trellis_kernel::filespec_split::namespace_context(&unrestricted_source)?;
+        let pinned_namespace_context =
+            trellis_kernel::filespec_split::namespace_context_from_preamble(
+                &unrestricted.namespace_context,
+            );
+        if inherited_namespace_context != pinned_namespace_context {
+            return Err(format!(
+                "unrestricted target file {} does not match its pinned namespace context",
+                unrestricted_path.display()
+            ));
+        }
+        let marker_start = unrestricted_source
+            .split_inclusive('\n')
+            .scan(0usize, |offset, line| {
+                let start = *offset;
+                *offset += line.len();
+                Some((start, line))
+            })
+            .find_map(|(start, line)| {
+                let trimmed = line.trim();
+                (trimmed.starts_with("-- [TABLET NODE:") && trimmed.ends_with(']'))
+                    .then_some(start)
+            })
+            .ok_or_else(|| {
+                format!(
+                    "unrestricted target file {} has no tablet-node marker",
+                    unrestricted_path.display()
+                )
+            })?;
+        let free_preamble = unrestricted_source[..marker_start].trim_end();
+        let statement = candidate.statement_utf8.trim_end_matches('\n');
+        let proof_body = if statement.trim_end().ends_with("by") {
+            "  sorry\n"
+        } else if statement.trim_end().ends_with(":=") {
+            "  by sorry\n"
+        } else {
+            return Err(format!(
+                "trust conditional candidate {} statement must end in `by` or `:=`",
+                candidate.candidate_id
+            ));
+        };
+        let candidate_source = format!(
+            "{}{}-- [TABLET NODE: {}]\n{}\n-- BODY\n{}",
+            free_preamble,
+            if free_preamble.is_empty() { "" } else { "\n\n" },
+            node_name,
+            statement,
+            proof_body,
+        );
+        let tablet_dir = repo_path.join("Tablet");
+        fs::create_dir_all(&tablet_dir).map_err(|error| {
+            format!("failed to create Tablet dir {}: {error}", tablet_dir.display())
+        })?;
+        let lean_path = tablet_dir.join(format!("{node_name}.lean"));
+        let installed_source = if lean_path.exists() {
+            fs::read_to_string(&lean_path).map_err(|error| {
+                format!("failed to read {}: {error}", lean_path.display())
+            })?
+        } else {
+            fs::write(&lean_path, &candidate_source)
+                .map_err(|error| format!("failed to seed {}: {error}", lean_path.display()))?;
+            candidate_source
+        };
+        trellis_kernel::filespec_split::validate_filespec(&installed_source, node_name)?;
+        let installed_statement =
+            trellis_kernel::filespec_split::prescribed_region(&installed_source, false)?;
+        let installed_declaration = find_declaration(&installed_source, &candidate.node_id);
+        if installed_statement != candidate.statement_utf8
+            || installed_declaration != candidate.statement_utf8
+            || trellis_kernel::trust_base::raw_sha256(installed_declaration.as_bytes())
+                != candidate.active_statement_sha256
+        {
+            return Err(format!(
+                "trust conditional candidate file {} does not contain the exact seed-authenticated trellis-find-declaration-v1 statement",
+                lean_path.display()
+            ));
+        }
+        if trellis_kernel::filespec_split::namespace_context(&installed_source)?
+            != inherited_namespace_context
+        {
+            return Err(format!(
+                "trust conditional candidate file {} does not retain the unrestricted target's pinned namespace context",
+                lean_path.display()
+            ));
+        }
+        let unrestricted_module = format!("Tablet.{unrestricted_node}");
+        let directly_imports_unrestricted = installed_source[..installed_source
+            .find("-- [TABLET NODE:")
+            .expect("validated filespec has a tablet-node marker")]
+            .lines()
+            .filter_map(|line| line.trim().strip_prefix("import "))
+            .flat_map(str::split_whitespace)
+            .any(|module| module == unrestricted_module);
+        if directly_imports_unrestricted {
+            return Err(format!(
+                "trust conditional candidate file {} directly imports its unrestricted target module {}; the auxiliary proof must remain independent",
+                lean_path.display(), unrestricted_module
+            ));
+        }
+        let tex_path = tablet_dir.join(format!("{node_name}.tex"));
+        if !tex_path.exists() {
+            fs::write(
+                &tex_path,
+                format!(
+                    "\\begin{{theorem}}\nSeed-frozen conditional theorem candidate for unrestricted target `{}`. This auxiliary obligation does not replace or weaken the unrestricted target.\n\\end{{theorem}}\n\\begin{{proof}}\nSKETCH:\n\\end{{proof}}\n",
+                    candidate.target_id
+                ),
+            )
+            .map_err(|error| format!("failed to seed {}: {error}", tex_path.display()))?;
+        }
+
+        let expected_spec = trellis_kernel::ChallengeTargetSpec {
+            kind: trellis_kernel::ChallengeTargetKind::Theorem,
+            name: node_name.to_owned(),
+            lean: candidate.statement_utf8.clone(),
+            namespace_context: inherited_namespace_context,
+            informal: format!(
+                "Seed-frozen conditional theorem candidate for unrestricted target {}",
+                candidate.target_id
+            ),
+            provenance: trellis_kernel::ChallengeTargetProvenance {
+                problem_id: candidate.candidate_id.to_string(),
+                source_file: "trust-seed-definition-bundle".to_owned(),
+                source_sha256: candidate.candidate_definition_sha256.to_string(),
+                extractor_toolchain_sha256: String::new(),
+            },
+            resolution: trellis_kernel::ChallengeResolution::Prove,
+        };
+        match state
+            .configured_challenge_targets
+            .get(&candidate.candidate_id)
+        {
+            Some(existing) if existing != &expected_spec => {
+                return Err(format!(
+                    "trust candidate target {} collides with a different configured target",
+                    candidate.candidate_id
+                ));
+            }
+            None => {
+                state
+                    .configured_challenge_targets
+                    .insert(candidate.candidate_id.clone(), expected_spec);
+            }
+            Some(_) => {}
+        }
+        for (tier, claims) in [
+            ("live", &state.challenge_claims),
+            ("committed", &state.committed_challenge_claims),
+        ] {
+            if claims.get(&candidate.node_id).is_some_and(|existing| {
+                !existing.is_empty()
+                    && *existing != BTreeSet::from([candidate.candidate_id.clone()])
+            }) {
+                return Err(format!(
+                    "trust conditional candidate node {} has conflicting {tier} challenge claims",
+                    candidate.node_id
+                ));
+            }
+        }
+        for (tier, claims) in [
+            ("live", &state.target_claims),
+            ("committed", &state.committed_target_claims),
+        ] {
+            if claims
+                .get(&candidate.node_id)
+                .is_some_and(|existing| !existing.is_empty())
+            {
+                return Err(format!(
+                    "trust conditional candidate node {} has conflicting {tier} paper claims",
+                    candidate.node_id
+                ));
+            }
+        }
+        if state
+            .node_kinds
+            .get(&candidate.node_id)
+            .is_some_and(|kind| *kind != NodeKind::Proof)
+            || state
+                .committed_node_kinds
+                .get(&candidate.node_id)
+                .is_some_and(|kind| *kind != NodeKind::Proof)
+            || state
+                .node_role
+                .get(&candidate.node_id)
+                .is_some_and(|role| *role != trellis_kernel::PvRole::LibraryLemma)
+        {
+            return Err(format!(
+                "trust conditional candidate node {} collides with incompatible node metadata",
+                candidate.node_id
+            ));
+        }
+
+        let deps = installed_source
+            .lines()
+            .map(str::trim)
+            .filter_map(|line| line.strip_prefix("import Tablet."))
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .map(NodeId::from)
+            .collect::<BTreeSet<_>>();
+        state.live.present_nodes.insert(candidate.node_id.clone());
+        state.committed.present_nodes.insert(candidate.node_id.clone());
+        state
+            .node_kinds
+            .insert(candidate.node_id.clone(), NodeKind::Proof);
+        state
+            .committed_node_kinds
+            .insert(candidate.node_id.clone(), NodeKind::Proof);
+        state.proof_nodes.insert(candidate.node_id.clone());
+        state
+            .committed_proof_nodes
+            .insert(candidate.node_id.clone());
+        state.deps.insert(candidate.node_id.clone(), deps.clone());
+        state.committed_deps.insert(candidate.node_id.clone(), deps);
+        state
+            .challenge_claims
+            .insert(candidate.node_id.clone(), BTreeSet::from([candidate.candidate_id.clone()]));
+        state.committed_challenge_claims.insert(
+            candidate.node_id.clone(),
+            BTreeSet::from([candidate.candidate_id.clone()]),
+        );
+        state
+            .target_claims
+            .entry(candidate.node_id.clone())
+            .or_default();
+        state
+            .committed_target_claims
+            .entry(candidate.node_id.clone())
+            .or_default();
+        state
+            .node_role
+            .insert(candidate.node_id.clone(), trellis_kernel::PvRole::LibraryLemma);
+        let candidate_only = BTreeSet::from([candidate.node_id.clone()]);
+        if trellis_kernel::open_nodes_from_repo(repo_path, &candidate_only)
+            .contains(&candidate.node_id)
+        {
+            state.live.open_nodes.insert(candidate.node_id.clone());
+            state.committed.open_nodes.insert(candidate.node_id.clone());
+        } else {
+            state.live.open_nodes.remove(&candidate.node_id);
+            state.committed.open_nodes.remove(&candidate.node_id);
+        }
+    }
+    state.normalize_all_structural_state();
+    state.ensure_node_metadata();
+    Ok(*state != before)
+}
+
+fn ensure_initial_assumptions(repo_path: &Path) -> Result<(), String> {
+    let tablet_dir = repo_path.join("Tablet");
+    fs::create_dir_all(&tablet_dir).map_err(|err| {
+        format!(
+            "failed to create Tablet dir {}: {err}",
+            tablet_dir.display()
+        )
+    })?;
+    let assumptions = trellis_kernel::assumptions_registry::ASSUMPTIONS_NODE;
+    let assumptions_lean = tablet_dir.join(format!("{assumptions}.lean"));
+    if !assumptions_lean.exists() {
+        fs::write(
+            &assumptions_lean,
+            trellis_kernel::assumptions_registry::empty_assumptions_lean_scaffold(),
+        )
+        .map_err(|err| format!("failed to seed {}: {err}", assumptions_lean.display()))?;
+    }
+    let assumptions_tex = tablet_dir.join(format!("{assumptions}.tex"));
+    if !assumptions_tex.exists() {
+        fs::write(
+            &assumptions_tex,
+            trellis_kernel::assumptions_registry::empty_assumptions_tex_scaffold(),
+        )
+        .map_err(|err| format!("failed to seed {}: {err}", assumptions_tex.display()))?;
+    }
+    Ok(())
+}
+
+/// (Re)write `tcb_manifest.json` `extraction_provenance` from the parsed
+/// `pv_tablet` config block: the verbatim `extraction_toolchain` +
+/// `extractor_stack` pins plus the DISTINCT `{source_file, source_sha256}`
+/// pairs from the extraction models' provenance (the writer dedupes). Runs at
+/// Init/InitFromConfig beside `ensure_initial_assumptions`, and on demand via
+/// the offline `refresh_tcb_extraction_provenance` CLI action (a manifest
+/// generated before this section existed, or after a config pin edit, is
+/// refreshed without re-initializing the runtime). Returns true iff the
+/// manifest changed.
+fn refresh_tcb_extraction_provenance(
+    repo_path: &Path,
+    pv: &PvTabletConfig,
+) -> Result<bool, String> {
+    let digests: Vec<trellis_kernel::assumptions_registry::ExtractionSourceDigest> = pv
+        .extraction_targets
+        .values()
+        .map(
+            |spec| trellis_kernel::assumptions_registry::ExtractionSourceDigest {
+                source_file: spec.provenance.source_file.clone(),
+                source_sha256: spec.provenance.source_sha256.clone(),
+            },
+        )
+        .collect();
+    trellis_kernel::assumptions_registry::record_extraction_provenance(
+        repo_path,
+        &pv.extraction_toolchain,
+        &pv.extractor_stack,
+        &digests,
+    )
+}
+
+fn tablet_has_seeded_pv_node_files(repo_path: &Path) -> Result<bool, String> {
+    let tablet_dir = repo_path.join("Tablet");
+    if !tablet_dir.is_dir() {
+        return Ok(false);
+    }
+    for entry in fs::read_dir(&tablet_dir)
+        .map_err(|err| format!("failed to read {}: {err}", tablet_dir.display()))?
+    {
+        let entry =
+            entry.map_err(|err| format!("failed to read {} entry: {err}", tablet_dir.display()))?;
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("lean") {
+            continue;
+        }
+        let stem = path
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or("");
+        if stem != "Preamble" && stem != trellis_kernel::assumptions_registry::ASSUMPTIONS_NODE {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// PV dormant store: materialize the DORMANT refutation node's `.lean`/`.tex`
+/// into `Dormant/` at init, so a later polarity flip has a file to promote into
+/// `Tablet/`. The refutation node is laid out exactly like its primary's seeded
+/// `Tablet/<Primary>.lean` — same FREE region (model/predicate imports +
+/// namespace_context above the `-- [TABLET NODE]` marker), so the refutation
+/// (which references the same model/predicate names) imports correctly and is
+/// FILESPEC-valid by construction. Only the principal slice (and the node-marker
+/// name) is swapped to the kernel-derived `refutation_statement` /
+/// `refutation_informal`; a worker-fillable `sorry` body follows `-- BODY`.
+///
+/// Idempotent: a pre-existing `Dormant/<Refutation>.lean` is left untouched
+/// (a resume / flipped-then-back run must not clobber dormant content). The
+/// `refutation_lean` ends in `:=`/`:= by` (FILESPEC), so the body filler matches.
+/// Skipped when the primary node file is absent (a config-only init with no
+/// seeded Tablet) — there is nothing to mirror yet.
+fn seed_dormant_refutation_file(
+    repo_path: &Path,
+    primary_node_stem: &str,
+    refutation_node_name: &str,
+    refutation_lean: &str,
+    refutation_informal: &str,
+) -> Result<(), String> {
+    let dormant_dir = trellis_kernel::dormant_store::dormant_dir(repo_path);
+    let dormant_lean = dormant_dir.join(format!("{refutation_node_name}.lean"));
+    let dormant_tex = dormant_dir.join(format!("{refutation_node_name}.tex"));
+    // The `.tex` mirrors a proof-bearing FILESPEC node, rendered from the
+    // kernel-owned neutral `refutation_informal` gloss (never the primary's
+    // prose — no disprove-strategy leak).
+    let tex = format!(
+        "\\begin{{theorem}}\n{gloss}\n\\end{{theorem}}\n\\begin{{proof}}\nSKETCH:\n\\end{{proof}}\n",
+        gloss = refutation_informal.trim(),
+    );
+    if dormant_lean.exists() {
+        // Idempotence used to key on the `.lean` ALONE, so a dormant node that
+        // acquired its `.lean` without its `.tex` (interrupted seed, partial
+        // restore) never got one — and `classify_node_kind_from_tex` reads the
+        // `.tex`, so once promoted it classified `Definition` forever. Backfill
+        // the missing `.tex` without touching the existing `.lean`.
+        if !dormant_tex.exists() {
+            fs::create_dir_all(&dormant_dir)
+                .map_err(|err| format!("failed to create {}: {err}", dormant_dir.display()))?;
+            fs::write(&dormant_tex, &tex)
+                .map_err(|err| format!("failed to seed {}: {err}", dormant_tex.display()))?;
+        }
+        return Ok(());
+    }
+    let primary_lean_path = repo_path
+        .join("Tablet")
+        .join(format!("{primary_node_stem}.lean"));
+    let Ok(primary_src) = fs::read_to_string(&primary_lean_path) else {
+        // No seeded primary to mirror (config-only init): nothing to do.
+        return Ok(());
+    };
+    // Keep the primary's FREE region verbatim (imports + namespace_context up to
+    // the `-- [TABLET NODE: ...]` marker line); the refutation reuses it.
+    let marker_idx = primary_src
+        .lines()
+        .position(|l| {
+            let t = l.trim();
+            t.starts_with("-- [TABLET NODE:") && t.ends_with(']')
+        })
+        .ok_or_else(|| {
+            format!(
+                "PV dormant seed: primary {} has no `-- [TABLET NODE: ...]` marker to mirror",
+                primary_lean_path.display()
+            )
+        })?;
+    let free_region: String = primary_src
+        .lines()
+        .take(marker_idx)
+        .collect::<Vec<_>>()
+        .join("\n");
+    let body = if refutation_lean.trim_end().ends_with("by") {
+        "  sorry\n"
+    } else {
+        "  by sorry\n"
+    };
+    let dormant_src = format!(
+        "{free_region}\n-- [TABLET NODE: {refutation_node_name}]\n{lean}\n-- BODY\n{body}",
+        free_region = free_region,
+        refutation_node_name = refutation_node_name,
+        lean = refutation_lean.trim_end(),
+        body = body,
+    );
+    fs::create_dir_all(&dormant_dir)
+        .map_err(|err| format!("failed to create {}: {err}", dormant_dir.display()))?;
+    fs::write(&dormant_lean, dormant_src)
+        .map_err(|err| format!("failed to seed {}: {err}", dormant_lean.display()))?;
+    fs::write(&dormant_tex, tex)
+        .map_err(|err| format!("failed to seed {}: {err}", dormant_tex.display()))?;
+    Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TrustBaseConfigFile {
+    protocol: String,
+    journal_path: String,
+    actor_key_manifest_path: String,
+    manifest_authority_roots_path: String,
+    seed_manifest_path: String,
+    seed_definition_bundle_path: String,
+    evidence_tool_manifest_path: String,
+    evidence_tool_root_path: String,
+    gate_presentation_path: String,
+    seed_transaction_id: String,
+    advance_gate_episode_id: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ManifestAuthorityRootFile {
+    schema: String,
+    roots: BTreeMap<String, String>,
+}
+
+fn resolve_trust_config_path(config_path: &Path, raw: &str) -> Result<PathBuf, String> {
+    if raw.trim().is_empty() {
+        return Err("trust-base path must not be empty".into());
+    }
+    let path = PathBuf::from(raw);
+    if path.is_absolute() {
+        Ok(path)
+    } else {
+        Ok(config_path
+            .parent()
+            .ok_or_else(|| format!("config {} has no parent directory", config_path.display()))?
+            .join(path))
+    }
+}
+
+fn apply_trust_metadata_from_config(
+    metadata: &mut RuntimeMetadata,
+    config_path: &Path,
+    repo_path: &Path,
+) -> Result<(), String> {
+    let bytes = fs::read(config_path)
+        .map_err(|error| format!("failed to read config {}: {error}", config_path.display()))?;
+    let config = trellis_kernel::trust_base::parse_json_strict(&bytes)
+        .map_err(|error| format!("invalid config JSON: {error}"))?;
+    let Some(block) = config.get("trust_base") else {
+        return Ok(());
+    };
+    let trust: TrustBaseConfigFile = serde_json::from_value(block.clone())
+        .map_err(|error| format!("invalid trust_base config: {error}"))?;
+    if trust.protocol != "trellis-trust-v1" {
+        return Err(format!(
+            "trust_base.protocol must be `trellis-trust-v1`, got {:?}",
+            trust.protocol
+        ));
+    }
+    if trust.seed_transaction_id.trim().is_empty()
+        || trust.advance_gate_episode_id.trim().is_empty()
+    {
+        return Err(
+            "trust_base seed_transaction_id and advance_gate_episode_id must be non-empty"
+                .into(),
+        );
+    }
+    let authority_path =
+        resolve_trust_config_path(config_path, &trust.manifest_authority_roots_path)?;
+    let authority_abs = fs::canonicalize(&authority_path).map_err(|error| {
+        format!(
+            "cannot resolve independent manifest-authority roots {}: {error}",
+            authority_path.display()
+        )
+    })?;
+    let repo_abs = fs::canonicalize(repo_path)
+        .map_err(|error| format!("cannot resolve run repo {}: {error}", repo_path.display()))?;
+    if authority_abs.starts_with(&repo_abs) {
+        return Err(
+            "manifest-authority roots must be installed outside the rewindable run repo".into(),
+        );
+    }
+    let authority_bytes = fs::read(&authority_abs).map_err(|error| {
+        format!(
+            "failed to read manifest-authority roots {}: {error}",
+            authority_abs.display()
+        )
+    })?;
+    let authority_value = trellis_kernel::trust_base::parse_json_strict(&authority_bytes)
+        .map_err(|error| format!("invalid manifest-authority roots JSON: {error}"))?;
+    let authority: ManifestAuthorityRootFile = serde_json::from_value(authority_value)
+        .map_err(|error| format!("invalid manifest-authority roots: {error}"))?;
+    if authority.schema != "trellis-manifest-authority-roots/v1" || authority.roots.is_empty() {
+        return Err(
+            "manifest-authority roots require schema trellis-manifest-authority-roots/v1 and a non-empty roots map"
+                .into(),
+        );
+    }
+    metadata.trust_journal_path = Some(resolve_trust_config_path(
+        config_path,
+        &trust.journal_path,
+    )?);
+    metadata.trust_actor_key_manifest_path = Some(resolve_trust_config_path(
+        config_path,
+        &trust.actor_key_manifest_path,
+    )?);
+    metadata.trust_gate_presentation_path = Some(resolve_trust_config_path(
+        config_path,
+        &trust.gate_presentation_path,
+    )?);
+    metadata.trust_seed_manifest_path = Some(resolve_trust_config_path(
+        config_path,
+        &trust.seed_manifest_path,
+    )?);
+    metadata.trust_seed_definition_bundle_path = Some(resolve_trust_config_path(
+        config_path,
+        &trust.seed_definition_bundle_path,
+    )?);
+    metadata.trust_evidence_tool_manifest_path = Some(resolve_trust_config_path(
+        config_path,
+        &trust.evidence_tool_manifest_path,
+    )?);
+    metadata.trust_evidence_tool_root_path = Some(resolve_trust_config_path(
+        config_path,
+        &trust.evidence_tool_root_path,
+    )?);
+    metadata.trust_seed_transaction_id = Some(trust.seed_transaction_id);
+    metadata.trust_advance_gate_episode_id = Some(trust.advance_gate_episode_id);
+    metadata.trust_manifest_authority_roots = authority.roots;
+    Ok(())
+}
+
+fn load_trust_actor_keys(metadata: &RuntimeMetadata) -> Result<trellis_kernel::trust_base::ActorKeyManifest, String> {
+    let path = metadata
+        .trust_actor_key_manifest_path
+        .as_ref()
+        .ok_or_else(|| "trust-base actor key manifest path is missing".to_string())?;
+    let value = trellis_kernel::trust_base::parse_json_strict(
+        &fs::read(path)
+            .map_err(|error| format!("failed to read actor key manifest {}: {error}", path.display()))?,
+    )
+    .map_err(|error| error.to_string())?;
+    let registry = trellis_kernel::trust_base::SchemaRegistry::v1()
+        .map_err(|error| error.to_string())?;
+    let mut roots = trellis_kernel::trust_base::ManifestAuthorityRoots::default();
+    for (authority_id, key) in &metadata.trust_manifest_authority_roots {
+        roots
+            .insert_hex(authority_id.clone(), key)
+            .map_err(|error| error.to_string())?;
+    }
+    if metadata.trust_manifest_authority_roots.is_empty() {
+        return Err("trust-base manifest-authority roots are empty".into());
+    }
+    trellis_kernel::trust_base::ActorKeyManifest::verify(&registry, value, &roots)
+        .map_err(|error| error.to_string())
+}
+
+fn load_verified_trust_seed_definition_closure(
+    metadata: &RuntimeMetadata,
+) -> Result<
+    (
+        trellis_kernel::trust_base::AuthoritativeRecord,
+        trellis_kernel::trust_base::VerifiedSeedDefinitionClosure,
+    ),
+    String,
+> {
+    let seed_path = metadata
+        .trust_seed_manifest_path
+        .as_ref()
+        .ok_or_else(|| "trust-base seed manifest path is missing".to_string())?;
+    let seed_value = trellis_kernel::trust_base::parse_json_strict(
+        &fs::read(seed_path)
+            .map_err(|error| format!("failed to read seed manifest {}: {error}", seed_path.display()))?,
+    )
+    .map_err(|error| error.to_string())?;
+    let registry = trellis_kernel::trust_base::SchemaRegistry::v1()
+        .map_err(|error| error.to_string())?;
+    let seed_record = trellis_kernel::trust_base::AuthoritativeRecord::parse(
+        &registry,
+        seed_value,
+    )
+    .map_err(|error| error.to_string())?;
+    let definition_bundle_path = metadata
+        .trust_seed_definition_bundle_path
+        .as_ref()
+        .ok_or_else(|| "trust-base seed definition bundle path is missing".to_string())?;
+    let definition_closure = trellis_kernel::trust_base::verify_seed_definition_bundle(
+        &seed_record,
+        &fs::read(definition_bundle_path).map_err(|error| {
+            format!(
+                "failed to read seed definition bundle {}: {error}",
+                definition_bundle_path.display()
+            )
+        })?,
+    )
+    .map_err(|error| error.to_string())?;
+    Ok((seed_record, definition_closure))
+}
+
+fn trust_seed_worker_projections(
+    definition_closure: &trellis_kernel::trust_base::VerifiedSeedDefinitionClosure,
+) -> Result<
+    (
+        BTreeMap<NodeId, trellis_kernel::TrustConditionalTheoremCandidate>,
+        BTreeMap<String, trellis_kernel::TrustSourceValidationGuidance>,
+    ),
+    String,
+> {
+    trellis_kernel::trust_base::seed_worker_projections(definition_closure)
+        .map_err(|error| error.to_string())
+}
+
+fn seed_trust_base_state(
+    state: &mut ProtocolState,
+    metadata: &RuntimeMetadata,
+) -> Result<(), String> {
+    let Some(journal_path) = metadata.trust_journal_path.as_ref() else {
+        return Ok(());
+    };
+    if state.trust_base.required() {
+        let (seed_record, definition_closure) =
+            load_verified_trust_seed_definition_closure(metadata)?;
+        let evidence_manifest_path = metadata
+            .trust_evidence_tool_manifest_path
+            .as_ref()
+            .ok_or_else(|| "trust-base evidence/tool manifest path is missing".to_string())?;
+        let evidence_root_path = metadata
+            .trust_evidence_tool_root_path
+            .as_ref()
+            .ok_or_else(|| "trust-base evidence/tool root path is missing".to_string())?;
+        let evidence_closure = trellis_kernel::trust_base::verify_evidence_tool_manifest(
+            evidence_root_path,
+            &fs::read(evidence_manifest_path).map_err(|error| {
+                format!(
+                    "failed to read evidence/tool manifest {}: {error}",
+                    evidence_manifest_path.display()
+                )
+            })?,
+        )
+        .map_err(|error| error.to_string())?;
+        let support_definitions =
+            trellis_kernel::trust_base::seed_support_definition_projection(&evidence_closure)
+                .map_err(|error| error.to_string())?;
+        let repo_path = metadata
+            .repo_path
+            .as_ref()
+            .ok_or_else(|| "trust-base support verification requires repo_path".to_string())?;
+        trellis_kernel::trust_base::verify_seed_support_definition_files(
+            &repo_path.join("Tablet"),
+            &support_definitions,
+        )
+        .map_err(|error| error.to_string())?;
+        let (candidates, source_guidance) =
+            trust_seed_worker_projections(&definition_closure)?;
+        if state.trust_base.seed_manifest_sha256 != Some(seed_record.digest())
+            || state.trust_base.seed_definition_bundle_sha256
+                != Some(definition_closure.bundle_sha256)
+            || state.trust_base.evidence_tool_manifest_sha256
+                != Some(evidence_closure.manifest_sha256)
+            || state.trust_base.approved_evidence_tool_input_root
+                != Some(evidence_closure.evidence_tool_input_root)
+            || state.trust_base.conditional_theorem_candidates != candidates
+            || state.trust_base.source_validation_guidance != source_guidance
+            || state.trust_base.seed_support_definitions != support_definitions
+        {
+            return Err(
+                "persisted trust worker guidance differs from the verified seed closure".into(),
+            );
+        }
+        return Ok(());
+    }
+    if state.cycle != 0 {
+        return Err("trust-base v1 may only be installed into a fresh state".into());
+    }
+    let (seed_record, definition_closure) =
+        load_verified_trust_seed_definition_closure(metadata)?;
+    let evidence_manifest_path = metadata
+        .trust_evidence_tool_manifest_path
+        .as_ref()
+        .ok_or_else(|| "trust-base evidence/tool manifest path is missing".to_string())?;
+    let evidence_root_path = metadata
+        .trust_evidence_tool_root_path
+        .as_ref()
+        .ok_or_else(|| "trust-base evidence/tool root path is missing".to_string())?;
+    let evidence_closure = trellis_kernel::trust_base::verify_evidence_tool_manifest(
+        evidence_root_path,
+        &fs::read(evidence_manifest_path).map_err(|error| {
+            format!(
+                "failed to read evidence/tool manifest {}: {error}",
+                evidence_manifest_path.display()
+            )
+        })?,
+    )
+    .map_err(|error| error.to_string())?;
+    let seed_digest = seed_record.digest();
+    let journal_id = seed_record.value()["journal_id"]
+        .as_str()
+        .ok_or_else(|| "seed manifest journal_id is invalid".to_string())?
+        .to_owned();
+    let run_id = seed_record.value()["run_id"]
+        .as_str()
+        .ok_or_else(|| "seed manifest run_id is invalid".to_string())?
+        .to_owned();
+    let authored_root = seed_record.value()["authored_semantic_root"]
+        .as_str()
+        .ok_or_else(|| "seed manifest authored_semantic_root is invalid".to_string())?
+        .parse()
+        .map_err(|error: trellis_kernel::trust_base::TrustError| error.to_string())?;
+    let evidence_root = seed_record.value()["approved_evidence_tool_input_root"]
+        .as_str()
+        .ok_or_else(|| "seed manifest approved_evidence_tool_input_root is invalid".to_string())?
+        .parse()
+        .map_err(|error: trellis_kernel::trust_base::TrustError| error.to_string())?;
+    if evidence_closure.evidence_tool_input_root != evidence_root {
+        return Err(
+            "seed approved_evidence_tool_input_root differs from the recomputed complete evidence/tool manifest"
+                .into(),
+        );
+    }
+    let seed_support_definitions =
+        trellis_kernel::trust_base::seed_support_definition_projection(&evidence_closure)
+            .map_err(|error| error.to_string())?;
+    let repo_path = metadata
+        .repo_path
+        .as_ref()
+        .ok_or_else(|| "trust-base seed support verification requires repo_path".to_string())?;
+    trellis_kernel::trust_base::verify_seed_support_definition_files(
+        &repo_path.join("Tablet"),
+        &seed_support_definitions,
+    )
+    .map_err(|error| error.to_string())?;
+    let actor_keys = load_trust_actor_keys(metadata)?;
+    let mut journal = if journal_path.exists() {
+        let journal = trellis_kernel::trust_base::TrustJournal::open(journal_path, actor_keys)
+            .map_err(|error| error.to_string())?;
+        if journal.head().sequence_number < 1 || journal.semantic_root() != authored_root {
+            return Err(
+                "fresh trust-base init refuses to reuse a journal without the byte-identical seed"
+                    .into(),
+            );
+        }
+        journal
+    } else {
+        let transaction_id = metadata
+            .trust_seed_transaction_id
+            .as_deref()
+            .ok_or_else(|| "trust-base seed transaction id is missing".to_string())?;
+        trellis_kernel::trust_base::TrustJournal::create(
+            journal_path,
+            &journal_id,
+            &run_id,
+            actor_keys,
+            transaction_id,
+            seed_record,
+        )
+        .map_err(|error| error.to_string())?
+    };
+    trellis_kernel::trust_base::register_seed_lineages(&mut journal, &definition_closure)
+        .map_err(|error| error.to_string())?;
+    let expected_seed_prefix = 1_u64
+        + definition_closure
+            .records_by_digest
+            .values()
+            .filter(|record| {
+                record.contract().record_schema == "trellis-source-claim-lineage/v1"
+            })
+            .count() as u64;
+    if journal.head().sequence_number != expected_seed_prefix {
+        return Err(
+            "fresh trust-base init found journal events beyond the deterministic seed-registration prefix"
+                .into(),
+        );
+    }
+    state.trust_base.mode = trellis_kernel::TrustBaseMode::RequiredV1;
+    state.trust_base.seed_manifest_sha256 = Some(seed_digest);
+    state.trust_base.seed_definition_bundle_sha256 = Some(definition_closure.bundle_sha256);
+    state.trust_base.evidence_tool_manifest_sha256 = Some(evidence_closure.manifest_sha256);
+    state.trust_base.authored_semantic_root = Some(authored_root);
+    state.trust_base.approved_evidence_tool_input_root = Some(evidence_root);
+    state.trust_base.seed_support_definitions = seed_support_definitions;
+    state.trust_base.journal_checkpoint = Some(
+        journal
+            .checkpoint_binding()
+            .map_err(|error| error.to_string())?,
+    );
+    state.trust_base.advance_gate_episode_id = Some(
+        metadata
+            .trust_advance_gate_episode_id
+            .clone()
+            .ok_or_else(|| "trust-base advance gate episode id is missing".to_string())?,
+    );
+    let (candidates, source_guidance) = trust_seed_worker_projections(&definition_closure)?;
+    state.trust_base.conditional_theorem_candidates = candidates;
+    state.trust_base.source_validation_guidance = source_guidance;
+    Ok(())
+}
+
+fn seed_state_from_config(
+    state: &mut ProtocolState,
+    metadata: &RuntimeMetadata,
+) -> Result<(), String> {
+    seed_trust_base_state(state, metadata)?;
+    if let Some(repo_path) = metadata.repo_path.as_ref() {
+        if state.live.present_nodes.is_empty() && state.committed.present_nodes.is_empty() {
+            ensure_initial_preamble(repo_path)?;
+            let preamble = NodeId::from("Preamble");
+            state.live.present_nodes.insert(preamble.clone());
+            state.committed.present_nodes.insert(preamble.clone());
+            state
+                .node_kinds
+                .insert(preamble.clone(), NodeKind::Preamble);
+            state
+                .committed_node_kinds
+                .insert(preamble.clone(), NodeKind::Preamble);
+            state.deps.insert(preamble.clone(), BTreeSet::new());
+            state
+                .committed_deps
+                .insert(preamble.clone(), BTreeSet::new());
+            state
+                .target_claims
+                .insert(preamble.clone(), BTreeSet::new());
+            state
+                .committed_target_claims
+                .insert(preamble.clone(), BTreeSet::new());
+            let preamble_tex = fs::read_to_string(repo_path.join("Tablet").join("Preamble.tex"))
+                .unwrap_or_default();
+            if extract_tex_statement_items(&preamble_tex, true).is_empty() {
+                state.corr_status.insert(preamble.clone(), CorrStatus::Pass);
+                state
+                    .corr_approved_fingerprints
+                    .insert(preamble.clone(), String::new());
+                state
+                    .live
+                    .corr_current_fingerprints
+                    .insert(preamble.clone(), String::new());
+                state
+                    .committed
+                    .corr_current_fingerprints
+                    .insert(preamble.clone(), String::new());
+                state
+                    .live
+                    .target_fingerprints
+                    .insert(preamble.clone(), String::new());
+                state
+                    .committed
+                    .target_fingerprints
+                    .insert(preamble, String::new());
+            }
+        }
+    }
+
+    // Verifier-lane count: derive from the operator's config + policy so that
+    // single-agent-per-panel setups produce single-lane verification (one API
+    // call per check) instead of crashing with "not enough configured X agents
+    // for requested lanes". Existing 2-agent setups still get 2 lanes because
+    // both `*_agents` and `*_agent_selectors` lists have len() == 2, which
+    // `resolve_verifier_lane_count` reports as 2. Backwards compat: when the
+    // config_path is missing or unreadable we keep the protocol default
+    // (`default_verifier_lanes`) — matches pre-K-2 behavior. K-2 fix.
+    if let Some(config_path) = metadata.config_path.as_ref() {
+        if config_path.exists() {
+            let lane_count =
+                trellis_kernel::resolve_verifier_lane_count(config_path).map_err(|err| {
+                    format!("failed to resolve verifier lane count from config: {err}")
+                })?;
+            state.verifier_lanes = trellis_kernel::build_verifier_lanes(lane_count);
+        }
+    }
+
+    let config_path = metadata.config_path.as_ref().filter(|path| path.exists());
+    // Phase IV step 11: seed the tablet's backend target from
+    // `workflow.default_target` (absent ⇒ Lean). Guarded like the other
+    // config-derived seeds; init-only. Resume loads the persisted/defaulted
+    // value, never re-seeds.
+    if let Some(config_path) = config_path {
+        state.tablet_target = target_from_config(config_path)?;
+    }
+    if state.configured_targets.is_empty() {
+        if let Some(config_path) = config_path {
+            let configured_targets = configured_targets_from_config(config_path)?;
+            if !configured_targets.is_empty() {
+                let empty_coverage: BTreeMap<TargetId, BTreeSet<NodeId>> = configured_targets
+                    .iter()
+                    .cloned()
+                    .map(|target| (target, BTreeSet::new()))
+                    .collect();
+                state.configured_targets = configured_targets.clone();
+                state.live.coverage = empty_coverage.clone();
+                state.committed.coverage = empty_coverage.clone();
+            }
+        }
+    }
+    // Reference papers: seed the registry from `workflow.reference_papers`
+    // (init-only, guarded like the other config-derived seeds; resume
+    // loads the persisted registry and never re-seeds). Absent/empty
+    // config ⇒ no-op (bit-for-bit legacy behavior).
+    if state.configured_reference_papers.is_empty() {
+        if let Some(config_path) = config_path {
+            state.configured_reference_papers = reference_papers_from_config(config_path)?;
+        }
+    }
+    if state.configured_challenge_targets.is_empty() {
+        if let Some(config_path) = config_path {
+            let challenge_targets = challenge_targets_from_config(config_path)?;
+            if !challenge_targets.is_empty() {
+                let empty_coverage: BTreeMap<trellis_kernel::ChallengeTargetId, BTreeSet<NodeId>> =
+                    challenge_targets
+                        .keys()
+                        .cloned()
+                        .map(|target| (target, BTreeSet::new()))
+                        .collect();
+                state.configured_challenge_targets = challenge_targets;
+                state.live.challenge_coverage = empty_coverage.clone();
+                state.committed.challenge_coverage = empty_coverage;
+            }
+        }
+    }
+    // PV Phase 1 Slice 2: seed the `pv_tablet` block (init-only, guarded by an
+    // empty `node_role` — the PV-specific state). Each ExtractionModel def is
+    // registered into `configured_challenge_targets` so the EXISTING challenge
+    // byte-pin (`challenge_conformance_errors`, reused VERBATIM) enforces it,
+    // and its claiming node gets `node_role = ExtractionModel`. Absent
+    // `pv_tablet` block ⇒ no-op (existing non-PV behavior). Beside the
+    // tablet_target/challenge seeds; resume loads the persisted state and never
+    // re-seeds.
+    if state.node_role.is_empty() {
+        if let Some(config_path) = config_path {
+            let has_pv_tablet = config_has_pv_tablet(config_path)?;
+            let mut pv = pv_tablet_from_config(config_path)?;
+            if has_pv_tablet && !state.trust_base.required() {
+                if let Some(repo_path) = metadata.repo_path.as_ref() {
+                    ensure_initial_assumptions(repo_path)?;
+                    // Disclose the extraction byte-pins into the manifest the
+                    // operator/auditor reads (idempotent; preserves the
+                    // extractor-seeded disclosure entries).
+                    refresh_tcb_extraction_provenance(repo_path, &pv)?;
+                }
+            }
+            if !pv.extraction_targets.is_empty() {
+                let empty_coverage: BTreeMap<trellis_kernel::ChallengeTargetId, BTreeSet<NodeId>> =
+                    pv.extraction_targets
+                        .keys()
+                        .cloned()
+                        .map(|target| (target, BTreeSet::new()))
+                        .collect();
+                // PV Phase 2 (D2): seed the APPROVED extraction-provenance
+                // baseline init-only, beside the registry/role seed. At init the
+                // baseline EQUALS the configured provenance, so the first resume
+                // reconcile is a no-op (no spurious reopen). It advances only
+                // when a later config presents drifted provenance.
+                state.approved_extraction_provenance.extend(
+                    pv.extraction_targets
+                        .iter()
+                        .map(|(id, spec)| (id.clone(), spec.provenance.clone())),
+                );
+                state
+                    .configured_challenge_targets
+                    .extend(pv.extraction_targets);
+                state.live.challenge_coverage.extend(empty_coverage.clone());
+                state.committed.challenge_coverage.extend(empty_coverage);
+            }
+            // PV mode B (goal_mode == "spec"): seed the pinned goal STATEMENTS
+            // as challenge `Theorem`s alongside the model defs. They share the
+            // `configured_challenge_targets` registry (it already holds both
+            // kinds) and ride `BlockerKind::ChallengeCoverage` for completion —
+            // NO `configured_targets` seed, so the faithfulness lane stays off
+            // (the goal statement IS the spec). Empty for mode A / all-math.
+            if !pv.verification_target_statements.is_empty() {
+                let goal_coverage: BTreeMap<trellis_kernel::ChallengeTargetId, BTreeSet<NodeId>> =
+                    pv.verification_target_statements
+                        .keys()
+                        .cloned()
+                        .map(|target| (target, BTreeSet::new()))
+                        .collect();
+                // PV "prove OR disprove": for each `Decide` goal statement,
+                // DETERMINISTICALLY seed the paired byte-pinned refutation
+                // target `<id>__refutation` (name `<name>__Refutation`) whose
+                // `lean` is the EXACT `¬T` (`refutation_statement`), copying the
+                // primary's namespace_context + provenance. Pure from the
+                // primary spec ⇒ resume regenerates it byte-identically. The
+                // refutation node's role mirrors the primary goal-statement
+                // role so prompt selection treats it consistently; coverage of
+                // the pair rides the primary (`challenge_coverage_blockers`).
+                let mut refutation_targets: BTreeMap<
+                    trellis_kernel::ChallengeTargetId,
+                    trellis_kernel::ChallengeTargetSpec,
+                > = BTreeMap::new();
+                let mut refutation_roles: BTreeMap<NodeId, trellis_kernel::PvRole> =
+                    BTreeMap::new();
+                for (id, spec) in &pv.verification_target_statements {
+                    if spec.resolution != trellis_kernel::ChallengeResolution::Decide {
+                        continue;
+                    }
+                    let refutation_lean =
+                        trellis_kernel::refutation_statement(spec).map_err(|err| {
+                            format!(
+                                "config {}: cannot build refutation for Decide statement `{id}`: {err}",
+                                metadata
+                                    .config_path
+                                    .as_ref()
+                                    .map(|p| p.display().to_string())
+                                    .unwrap_or_default()
+                            )
+                        })?;
+                    let refutation_id = trellis_kernel::refutation_target_id(id);
+                    let refutation_name = trellis_kernel::refutation_node_name(&spec.name);
+                    let refutation_spec = trellis_kernel::ChallengeTargetSpec {
+                        kind: trellis_kernel::ChallengeTargetKind::Theorem,
+                        name: refutation_name.clone(),
+                        lean: refutation_lean,
+                        namespace_context: spec.namespace_context.clone(),
+                        // KERNEL-owned neutral gloss: a fixed, content-free
+                        // transform of the primary's NL ("The following result
+                        // is false:\n<primary informal>"). NEVER the primary's
+                        // prose verbatim — that would leak the disprove
+                        // strategy into the refutation node's `.tex` (the
+                        // worker renders the `.tex` from THIS `informal`).
+                        informal: trellis_kernel::refutation_informal(spec),
+                        provenance: spec.provenance.clone(),
+                        // The refutation target is itself prove-only (the worker
+                        // PROVES `¬T`); only the PRIMARY carries `Decide`.
+                        resolution: trellis_kernel::ChallengeResolution::Prove,
+                    };
+                    // PV dormant store: write the refutation node's file into
+                    // `Dormant/` (NOT `Tablet/`) so it is absent-by-design from
+                    // `present_nodes` until a polarity flip promotes it — and so
+                    // the flip has a file to move. Default polarity is Prove ⇒
+                    // the refutation starts dormant. Idempotent (resume-safe).
+                    if let Some(repo_path) = metadata.repo_path.as_ref() {
+                        seed_dormant_refutation_file(
+                            repo_path,
+                            &spec.name.replace('.', "_"),
+                            &refutation_name,
+                            &refutation_spec.lean,
+                            &refutation_spec.informal,
+                        )?;
+                    }
+                    // Mirror the primary's goal-statement role onto the
+                    // refutation node (keyed by the primary's NODE id == name).
+                    let primary_role = pv
+                        .goal_statement_node_roles
+                        .get(&NodeId::from(spec.name.as_str()))
+                        .copied()
+                        .unwrap_or(trellis_kernel::PvRole::Spec);
+                    refutation_roles.insert(NodeId::from(refutation_name), primary_role);
+                    refutation_targets.insert(refutation_id, refutation_spec);
+                }
+                let refutation_coverage: BTreeMap<
+                    trellis_kernel::ChallengeTargetId,
+                    BTreeSet<NodeId>,
+                > = refutation_targets
+                    .keys()
+                    .cloned()
+                    .map(|target| (target, BTreeSet::new()))
+                    .collect();
+                state
+                    .configured_challenge_targets
+                    .extend(pv.verification_target_statements);
+                state
+                    .configured_challenge_targets
+                    .extend(refutation_targets);
+                state.live.challenge_coverage.extend(goal_coverage.clone());
+                state.committed.challenge_coverage.extend(goal_coverage);
+                state
+                    .live
+                    .challenge_coverage
+                    .extend(refutation_coverage.clone());
+                state
+                    .committed
+                    .challenge_coverage
+                    .extend(refutation_coverage);
+                pv.goal_statement_node_roles.extend(refutation_roles);
+            }
+            // PV mode B: seed the pinned CONTRACT-PREDICATE defs (Spec/precond)
+            // as challenge `Def`s alongside the model defs and goal statements.
+            // They ride the same `configured_challenge_targets` registry +
+            // `BlockerKind::ChallengeCoverage`, so `challenge_conformance_errors`
+            // byte-pins the WHOLE def text (the predicate body included) at every
+            // worker acceptance. Empty for mode A / all-math.
+            if !pv.verification_target_definitions.is_empty() {
+                let def_coverage: BTreeMap<trellis_kernel::ChallengeTargetId, BTreeSet<NodeId>> =
+                    pv.verification_target_definitions
+                        .keys()
+                        .cloned()
+                        .map(|target| (target, BTreeSet::new()))
+                        .collect();
+                state
+                    .configured_challenge_targets
+                    .extend(pv.verification_target_definitions);
+                state.live.challenge_coverage.extend(def_coverage.clone());
+                state.committed.challenge_coverage.extend(def_coverage);
+            }
+            // Merge the goal-statement and contract-predicate-def node roles
+            // (mode B) into the extraction model roles. Empty in mode A ⇒
+            // `node_role` is exactly the model roles as before.
+            let mut node_roles = pv.node_roles;
+            node_roles.extend(pv.goal_statement_node_roles);
+            node_roles.extend(pv.definition_node_roles);
+            if has_pv_tablet && !state.trust_base.required() {
+                node_roles.insert(
+                    NodeId::from(trellis_kernel::assumptions_registry::ASSUMPTIONS_NODE),
+                    trellis_kernel::PvRole::UnderModelAssumptions,
+                );
+            }
+            state.node_role = node_roles;
+            if has_pv_tablet && !state.trust_base.required() {
+                let assumptions =
+                    NodeId::from(trellis_kernel::assumptions_registry::ASSUMPTIONS_NODE);
+                let preamble = NodeId::from("Preamble");
+                state.live.present_nodes.insert(assumptions.clone());
+                state.committed.present_nodes.insert(assumptions.clone());
+                state
+                    .node_kinds
+                    .insert(assumptions.clone(), NodeKind::Definition);
+                state
+                    .committed_node_kinds
+                    .insert(assumptions.clone(), NodeKind::Definition);
+                state
+                    .deps
+                    .insert(assumptions.clone(), BTreeSet::from([preamble.clone()]));
+                state
+                    .committed_deps
+                    .insert(assumptions.clone(), BTreeSet::from([preamble]));
+                state
+                    .target_claims
+                    .insert(assumptions.clone(), BTreeSet::new());
+                state
+                    .committed_target_claims
+                    .insert(assumptions.clone(), BTreeSet::new());
+                state
+                    .challenge_claims
+                    .insert(assumptions.clone(), BTreeSet::new());
+                state
+                    .committed_challenge_claims
+                    .insert(assumptions.clone(), BTreeSet::new());
+                let staged_markers_present = metadata
+                    .repo_path
+                    .as_ref()
+                    .map(|repo_path| {
+                        trellis_kernel::assumptions_registry::has_worker_authored_staged_assumption(
+                            repo_path,
+                        )
+                    })
+                    .transpose()?
+                    .unwrap_or(false);
+                if !staged_markers_present {
+                    state
+                        .corr_status
+                        .insert(assumptions.clone(), CorrStatus::Pass);
+                    state
+                        .corr_approved_fingerprints
+                        .insert(assumptions.clone(), String::new());
+                    state
+                        .live
+                        .corr_current_fingerprints
+                        .insert(assumptions.clone(), String::new());
+                    state
+                        .committed
+                        .corr_current_fingerprints
+                        .insert(assumptions, String::new());
+                }
+            }
+            // PV mode B: REGISTER + AUTO-CLAIM the pre-seeded nodes.
+            //
+            // In mode B `setup_pv_repo.sh` pre-writes EVERY node file on disk —
+            // the ExtractionModel `def`s, the contract-predicate `def`s, the goal
+            // `Theorem` statements, and (for `Decide` goals) the paired
+            // `__Refutation` node — each with its byte-pinned slice plus a
+            // placeholder body. The challenge-target seed above registered their
+            // PINS (`configured_challenge_targets`) and PV roles (`node_role`),
+            // but left them ABSENT from the worker-facing graph: a fresh
+            // `node_kinds`/`present_nodes` holds only `Preamble`, and
+            // `challenge_claims` is empty. The worker would then be told to
+            // "place + claim" nodes that already exist on disk.
+            //
+            // So mirror the mode-A auto-claim (`apply_pv_target_autoseed`, which
+            // claims PRESENT goal nodes): bring every seeded mode-B node present
+            // with its kind (`Theorem ⇒ Proof`, `Def ⇒ Definition`) and claim it
+            // 1:1 against its matching challenge target by name. Result: at the
+            // first worker burst `node_kinds`/`present_nodes` reflect the seeded
+            // nodes and every configured target is already covered — the worker
+            // neither places nor claims, it only PROVES the goal `Theorem`s and
+            // adds helpers. Deps stay empty here; they are re-observed from the
+            // node imports on the first burst (the byte-pin keeps the slice
+            // honest meanwhile). Init-only (same `node_role.is_empty()` guard as
+            // the seed above); a resume loads present/claims from the checkpoint.
+            // Empty for mode A / all-math.
+            // Only auto-claim against a seeded tablet on disk (the real flow
+            // writes `Tablet/<node>.lean` before init); a config-only init has
+            // nothing to register or claim, so leave the graph bootstrap-only.
+            // `Preamble` and `Assumptions` are bootstrap files and do not count
+            // as a seeded PV tablet.
+            if pv.goal_mode == PvGoalMode::Spec
+                && metadata
+                    .repo_path
+                    .as_ref()
+                    .map(|rp| tablet_has_seeded_pv_node_files(rp))
+                    .transpose()?
+                    .unwrap_or(false)
+            {
+                // PV dormant store: the DORMANT side of a `Decide` pair must NOT
+                // be auto-claimed present. Its node file is in `Dormant/`, never
+                // `Tablet/`, so it is absent-by-design from `present_nodes` and
+                // every lane until a polarity flip promotes it. Resolve the
+                // dormant target ids up front (default polarity ⇒ each pair's
+                // refutation) and skip them below; absent for non-Decide runs.
+                let dormant_decide_target_ids: std::collections::BTreeSet<
+                    trellis_kernel::ChallengeTargetId,
+                > = state
+                    .configured_challenge_targets
+                    .keys()
+                    .filter(|id| state.is_decide_primary(id))
+                    .map(|primary| match state.live_polarity(primary) {
+                        trellis_kernel::ChallengePolarity::Prove => {
+                            trellis_kernel::refutation_target_id(primary)
+                        }
+                        trellis_kernel::ChallengePolarity::Disprove => primary.clone(),
+                    })
+                    .collect();
+                for (target_id, spec) in &state.configured_challenge_targets {
+                    // Skip the dormant Decide side: its file lives in `Dormant/`,
+                    // so a missing `Tablet/<node>.lean` here is BY DESIGN, not a
+                    // config/seed disagreement. It re-enters via a polarity flip.
+                    if dormant_decide_target_ids.contains(target_id) {
+                        continue;
+                    }
+                    // The node id / file-base is the decl name with namespace
+                    // dots sanitized to underscores (`FiniteDecimal.value` →
+                    // file `FiniteDecimal_value.lean`), matching the contract's
+                    // `node` field (which the kernel spec drops) and the kernel's
+                    // file-stem node observation. NOT the target id (a refutation
+                    // target lowercases `__refutation` while its file is
+                    // `__Refutation`), and NOT the raw dotted name.
+                    let node_stem = spec.name.replace('.', "_");
+                    let node = NodeId::from(node_stem.as_str());
+                    // Read the seeded node file: fail LOUD if absent (config vs
+                    // seeded repo disagree), and parse its `import Tablet.<dep>`
+                    // lines into the node's deps. The auto-claim MUST populate
+                    // deps here: the supervisor's observe does NOT re-derive deps
+                    // for already-present nodes, so leaving them empty yields a
+                    // flat (edge-less) DAG.
+                    let node_deps: std::collections::BTreeSet<NodeId> = if let Some(repo_path) =
+                        metadata.repo_path.as_ref()
+                    {
+                        let node_file =
+                            repo_path.join("Tablet").join(format!("{}.lean", node_stem));
+                        let src = std::fs::read_to_string(&node_file).map_err(|_| {
+                                format!(
+                                    "PV mode B: configured challenge target `{target_id}` (decl `{}`) has no seeded node file {}; the config and the seeded repo disagree",
+                                    spec.name,
+                                    node_file.display()
+                                )
+                            })?;
+                        src.lines()
+                            .map(str::trim)
+                            .filter_map(|l| l.strip_prefix("import Tablet."))
+                            .map(|name| NodeId::from(name.trim()))
+                            .collect()
+                    } else {
+                        std::collections::BTreeSet::new()
+                    };
+                    let kind = match spec.kind {
+                        trellis_kernel::ChallengeTargetKind::Theorem => NodeKind::Proof,
+                        trellis_kernel::ChallengeTargetKind::Def => NodeKind::Definition,
+                    };
+                    state.live.present_nodes.insert(node.clone());
+                    state.committed.present_nodes.insert(node.clone());
+                    state.node_kinds.insert(node.clone(), kind);
+                    state.committed_node_kinds.insert(node.clone(), kind);
+                    state.deps.insert(node.clone(), node_deps.clone());
+                    state.committed_deps.insert(node.clone(), node_deps);
+                    state
+                        .challenge_claims
+                        .entry(node.clone())
+                        .or_default()
+                        .insert(target_id.clone());
+                    state
+                        .committed_challenge_claims
+                        .entry(node.clone())
+                        .or_default()
+                        .insert(target_id.clone());
+                }
+            }
+        }
+    }
+    // PV verification GOALS: seed the declared `pv_tablet.verification_targets`
+    // functions into `configured_targets` (the existing set the orphan detector
+    // roots on) and record them as the auto-claim prefixes. Guarded by an empty
+    // `pv_verification_target_prefixes` — its OWN init guard, deliberately NOT
+    // the `node_role.is_empty()` PV gate above: a parked PV tablet predating this
+    // field has `node_role` already populated (so that gate is closed) but no
+    // verification targets, and must still get them on resume. `configured_targets`
+    // is left untouched if a math run already seeded it from `main_result_targets`
+    // (the empty-prefixes guard never fires for those — they set no pv prefixes).
+    if state.pv_verification_target_prefixes.is_empty() {
+        if let Some(config_path) = config_path {
+            let pv = pv_tablet_from_config(config_path)?;
+            // MODE A ONLY. `verification_targets` is parse-rejected in mode B,
+            // so it is non-empty only in prose mode; the `==Prose` check makes
+            // the mode-A gating explicit (and robust if that parse rule ever
+            // relaxes). In mode B the goals ride `configured_challenge_targets`
+            // (seeded above) and `configured_targets` stays empty ⇒ no Paper
+            // faithfulness dispatch.
+            if pv.goal_mode == PvGoalMode::Prose && !pv.verification_targets.is_empty() {
+                let empty_coverage: BTreeMap<TargetId, BTreeSet<NodeId>> = pv
+                    .verification_targets
+                    .iter()
+                    .cloned()
+                    .map(|target| (target, BTreeSet::new()))
+                    .collect();
+                state
+                    .configured_targets
+                    .extend(pv.verification_targets.iter().cloned());
+                state.live.coverage.extend(empty_coverage.clone());
+                state.committed.coverage.extend(empty_coverage);
+                state
+                    .pv_verification_target_prefixes
+                    .extend(pv.verification_targets);
+                // Re-derive structural state so the auto-claim fires NOW for any
+                // already-present goal theorems (the resume case: a parked PV
+                // tablet's goal nodes are loaded present with empty claims). On a
+                // fresh init only Preamble is present, so this is a no-op until
+                // the worker brings the scaffolds present, at which point the
+                // per-mutation normalize re-asserts the claims.
+                state.normalize_all_structural_state();
+            }
+        }
+    }
+    // PV prompt-tree gate: seed the durable `pv_tablet_configured` flag once
+    // from the presence of a `pv_tablet` config block. Independent of the
+    // `node_role.is_empty()` PV seed above so a parked PV tablet (node_role
+    // already populated on resume) still records the flag. All-math configs have
+    // no block ⇒ flag stays false ⇒ every PV prompt branch is inert.
+    if !state.pv_tablet_configured {
+        if let Some(config_path) = config_path {
+            if config_has_pv_tablet(config_path)? {
+                state.pv_tablet_configured = true;
+                // Record the goal mode alongside the gate flag (init-only,
+                // same guard). `Lean` (mode B) by default; only a `pv_tablet`
+                // run ever sets it to a non-default, and even mode B keeps the
+                // `Lean` default off the wire. All-math never enters this block.
+                state.pv_goal_mode = pv_tablet_from_config(config_path)?.goal_mode;
+            }
+        }
+    }
+    // Trust-v1 conditional theorem candidates remain seed-only and dormant at
+    // initialization.  Their exact statements are still included in the sole
+    // advance-gate presentation, but no Tablet node, soundness blocker, or
+    // worker obligation exists until post-refutation source validation selects
+    // an eligible qualification profile.
+    // Init validation: a run must configure at least one target type.
+    // With neither, completion gating would be vacuous and the run has
+    // no goal to cover.
+    if let Some(config_path) = config_path {
+        if state.configured_targets.is_empty() && state.configured_challenge_targets.is_empty() {
+            return Err(format!(
+                "config {} configures neither paper targets (workflow.main_result_targets) nor challenge targets (workflow.challenge_targets_path); at least one target type is required",
+                config_path.display()
+            ));
+        }
+    }
+    // Fresh-run INITIAL PLANNER seed (unconditional feature — no config
+    // knob): every fresh run's first cycle dispatches a StuckMathAudit
+    // planning burst before any worker (`start_cycle`'s initial-planning
+    // guard). Seeded LAST so it can read the targets / challenge registry
+    // seeded above, and only after the target validation passed. Mirrors
+    // `import_revision_project`'s revision_planning seeding: the latch is
+    // activated (`active = true`) with a pinned trigger because
+    // `request_stuck_math_audit` gates its returned view on `view.active` — an
+    // inactive latch returns the default (carrier-less) view. It does NOT, by
+    // itself, bypass the empty-blockers zeroing in `audit_plan_view_active`
+    // (only `active && last_clean_rewind_count > 0` does): the carrier reaches
+    // the dispatched request because that predicate's initial-planning DISPATCH
+    // pin returns view-active whenever `initial_planning.is_some()` on the
+    // StuckMathAudit kind, independent of the blocker set.
+    //
+    // Gates, in order:
+    // - G3 replay determinism: `metadata.initial_planning_seeded` is stamped
+    //   at Init/InitFromConfig; pre-feature metadata (serde default false)
+    //   replays a pre-feature event log without the seed, byte-identically.
+    // - B2 freshness: `Init { state }` can pipe arbitrary states through
+    //   this seeder (mid-run checkpoints, RevisionStating imports, states
+    //   with an in-flight request or a live audit lane). A stale carrier +
+    //   the audit-role mutex must not be fatal at init, so only a genuinely
+    //   fresh TheoremStating state is seeded.
+    if metadata.initial_planning_seeded
+        && state.cycle == 0
+        && state.phase == trellis_kernel::Phase::TheoremStating
+        && state.in_flight_request.is_none()
+        && !state.audit_lane_in_flight()
+        && state.stuck_math_audit.initial_planning.is_none()
+    {
+        if let Some(config_path) = config_path {
+            let source = if config_has_pv_tablet(config_path)? {
+                let pv = pv_tablet_from_config(config_path)?;
+                if pv.goal_mode == PvGoalMode::Spec {
+                    // PV mode B (G5): carry the pinned goal statements
+                    // VERBATIM from the already-seeded
+                    // `configured_challenge_targets` — the packet is
+                    // self-contained, never a config-file pointer. Primary
+                    // goal statements only (the kernel-derived
+                    // `__refutation` twins and the model/def pins are
+                    // visible to the planner through the request's
+                    // challenge registry).
+                    let specs: BTreeMap<trellis_kernel::ChallengeTargetId, String> = pv
+                        .verification_target_statements
+                        .keys()
+                        .filter_map(|id| {
+                            state
+                                .configured_challenge_targets
+                                .get(id)
+                                .map(|spec| (id.clone(), spec.lean.clone()))
+                        })
+                        .collect();
+                    if specs.is_empty() {
+                        None
+                    } else {
+                        Some(trellis_kernel::InitialPlanningSource::PvChallengeSpecs { specs })
+                    }
+                } else {
+                    // PV mode A (G5): the prose goal file, kernel-parsed
+                    // from top-level `goal_file` (default GOAL.md, mirroring
+                    // trellis/config.py).
+                    Some(trellis_kernel::InitialPlanningSource::PvGoalProse {
+                        goal_path: goal_file_from_config(config_path)?,
+                    })
+                }
+            } else {
+                // Math/paper run: the manuscript. Runs are expected to
+                // always configure a paper (`workflow.paper_tex_path`); a
+                // paper-less config yields `None` here and the run simply
+                // starts worker-first as before the feature — no planner
+                // without a source to plan from.
+                paper_tex_path_from_config(config_path)?.map(|paper_tex_path| {
+                    trellis_kernel::InitialPlanningSource::PaperManuscript { paper_tex_path }
+                })
+            };
+            if let Some(source) = source {
+                // Coverage re-planning arm (its own replay gate — see the
+                // `RuntimeMetadata.coverage_replanning_seeded` doc): while
+                // this source is set, the coverage trigger re-fires the
+                // planner lane on cadence whenever a configured paper
+                // target's coverage is empty in TheoremStating. Seeded under
+                // the SAME B2 freshness guard as the carrier below, so
+                // mid-run states piped through Init never arm mid-run
+                // (operator lever: hand-seed the state field).
+                if metadata.coverage_replanning_seeded {
+                    state.coverage_replanning_source = Some(source.clone());
+                }
+                let configured_target_ids: BTreeSet<String> = state
+                    .configured_targets
+                    .iter()
+                    .map(|target| target.as_str().to_string())
+                    .chain(
+                        state
+                            .configured_challenge_targets
+                            .keys()
+                            .map(|id| id.as_str().to_string()),
+                    )
+                    .collect();
+                state.stuck_math_audit.active = true;
+                state.stuck_math_audit.trigger =
+                    "initial planning: fresh run — plan the DAG before the first worker burst"
+                        .to_string();
+                state.stuck_math_audit.active_since_cycle = 0;
+                state.stuck_math_audit.initial_planning =
+                    Some(trellis_kernel::InitialPlanningContext {
+                        source,
+                        configured_target_ids,
+                        // Cycle-1 carrier: never the coverage variant (the
+                        // coverage fields default off the wire, keeping
+                        // initial-planner-era replays byte-identical).
+                        ..Default::default()
+                    });
+            }
+        }
+    }
+    // Mode-B auto-claiming above can add the complete extracted/authored
+    // tablet after the initial Preamble metadata was seeded.  Required-v1
+    // validates the fresh state before the first engine event, so every newly
+    // present node must already carry the scheduler metadata that ordinary
+    // `apply_event` paths would otherwise backfill.  Do this only after all
+    // config-derived nodes are installed; conditional theorem candidates are
+    // absent from `present_nodes` while dormant and therefore remain
+    // unscheduled.
+    state.ensure_node_metadata();
+    Ok(())
+}
+
+/// PV Phase 2 (D3 / Slice 3): the source→model drift gate. On startup/resume,
+/// diff each configured ExtractionModel's provenance + text against the APPROVED
+/// baseline (`approved_extraction_provenance` for source/toolchain; the
+/// persisted `configured_challenge_targets` prescription for the model text). A
+/// `Changed` model — different `source_sha256`, different
+/// `extractor_toolchain_sha256`, different `lean` text, OR ABSENT from the
+/// approved baseline (the revision_import.rs:397-405 unmatched⇒Changed
+/// safeguard: NEVER inherit on uncertainty) — REOPENS its dependent
+/// Correctness/Safety/Invariant theorems via `reverse_dep_closure` over
+/// `state.deps` (the same force-invalidate primitive as revision_import.rs:449:
+/// `corr_approved_fingerprints.remove(dep)` + `corr_status.insert(dep, Unknown)`,
+/// so `current_corr_state(dep) == Unknown`). It then RE-BASELINES both approved
+/// sides to the configured values (so an unchanged model on the next resume is a
+/// no-op — no spurious reopen). MECHANICAL only (D4): no revision-planner round.
+///
+/// Behavior-preserving: all-math / non-PV configs have no `pv_tablet` block ⇒
+/// the configured extraction set is empty AND the approved baseline is empty ⇒
+/// this returns early, touching nothing (byte-identical). Skipped while a worker
+/// request is in flight (mirrors the schema-migration discipline — never
+/// re-baseline over unaccepted WIP). Returns `true` iff it mutated state.
+fn reconcile_pv_provenance(state: &mut ProtocolState, config_path: &Path) -> Result<bool, String> {
+    // All-math / non-PV fast path: nothing configured AND nothing approved ⇒
+    // no-op. (Either side non-empty means a PV tablet that must be reconciled.)
+    let configured = pv_tablet_from_config(&config_path.to_path_buf())?.extraction_targets;
+    if configured.is_empty() && state.approved_extraction_provenance.is_empty() {
+        return Ok(false);
+    }
+    // Never re-baseline over an in-flight worker burst (the schema-migration
+    // discipline: don't bless unaccepted WIP into the approval baseline).
+    if state.in_flight_request.is_some() {
+        return Ok(false);
+    }
+
+    // Classify each configured target into one of three buckets, tracking BOTH
+    // the model nodes to reopen AND which targets are safe to re-baseline. A
+    // target's model node is the present node that claims it AND carries the
+    // ExtractionModel role (the seed pairs the two; the byte-pin keeps the
+    // claim honest).
+    //
+    // The baseline advance MUST be gated on the SAME condition as the reopen,
+    // otherwise a changed target with no present claimant gets no reopen yet has
+    // its baseline silently advanced to the drifted value — on the next resume
+    // that restores the node, `approved == configured` ⇒ no drift detected ⇒ the
+    // stale proof survives (a fail-OPEN). So `reconciled` carries forward the
+    // OLD baseline for a changed-but-unreconciled target, re-detecting the drift
+    // when the node returns. Buckets:
+    //   * UNCHANGED                          ⇒ reconciled (baseline no-op).
+    //   * CHANGED + present ExtractionModel  ⇒ reopened AND reconciled (advance).
+    //   * CHANGED + NO present claimant      ⇒ deferred: NO reopen, NO advance.
+    let mut changed_model_nodes: BTreeSet<NodeId> = BTreeSet::new();
+    let mut reconciled: BTreeSet<trellis_kernel::ChallengeTargetId> = BTreeSet::new();
+    for (target_id, spec) in &configured {
+        let changed = match state.approved_extraction_provenance.get(target_id) {
+            // Unmatched ⇒ Changed (fail-closed; never inherit on uncertainty).
+            None => true,
+            Some(approved) => {
+                approved.source_sha256 != spec.provenance.source_sha256
+                    || approved.extractor_toolchain_sha256
+                        != spec.provenance.extractor_toolchain_sha256
+                    // Model-text drift against the persisted prescription. A
+                    // deterministic re-extraction bumps source/toolchain too, so
+                    // this also catches a hand-edited prescription.
+                    || state
+                        .configured_challenge_targets
+                        .get(target_id)
+                        .map(|prior| prior.lean != spec.lean)
+                        .unwrap_or(true)
+            }
+        };
+        if !changed {
+            // No drift ⇒ already reconciled (the baseline advance is a no-op).
+            reconciled.insert(target_id.clone());
+            continue;
+        }
+        // Changed: a target is only reconciled if its ExtractionModel node is
+        // present and claimed — the node that the reopen acts on. A transiently
+        // absent / unclaimed model leaves the target deferred (drift re-detected
+        // when the node returns).
+        let mut has_present_claimant = false;
+        for (node, claims) in &state.challenge_claims {
+            if claims.contains(target_id)
+                && state.node_role.get(node) == Some(&trellis_kernel::PvRole::ExtractionModel)
+                && state.live.present_nodes.contains(node)
+            {
+                changed_model_nodes.insert(node.clone());
+                has_present_claimant = true;
+            }
+        }
+        if has_present_claimant {
+            reconciled.insert(target_id.clone());
+        } else {
+            // Surface the deferred drift so the operator sees it (the baseline is
+            // intentionally NOT advanced; the bound theorem reopens when the
+            // ExtractionModel node returns on a later resume).
+            eprintln!(
+                "[pv-reconcile] target `{}` drifted (source/toolchain/text changed) but has no present ExtractionModel claimant; deferring baseline advance so the drift is re-detected when the model node returns",
+                target_id
+            );
+        }
+    }
+
+    let mut mutated = false;
+    // Reopen the dependents of every changed model node (the bound
+    // Correctness/Safety/Invariant theorems reachable up the dep graph).
+    if !changed_model_nodes.is_empty() {
+        let present = state.live.present_nodes.clone();
+        let deps = state.deps.clone();
+        let dependents = state.reverse_dep_closure(&changed_model_nodes, &present, &deps);
+        for dep in &dependents {
+            // The model nodes themselves are byte-pinned defs, not correspondence
+            // theorems; force-invalidate the dependents' correspondence so the
+            // bound theorems re-verify against the changed model.
+            let removed = state.corr_approved_fingerprints.remove(dep).is_some();
+            let prev_status = state
+                .corr_status
+                .insert(dep.clone(), trellis_kernel::CorrStatus::Unknown);
+            if removed || prev_status != Some(trellis_kernel::CorrStatus::Unknown) {
+                mutated = true;
+            }
+        }
+    }
+
+    // Re-baseline the approved provenance, but ONLY for reconciled targets;
+    // advancing it carries the new fingerprint forward so an unchanged model on
+    // the next resume diffs equal ⇒ no reopen. A changed-but-unreconciled target
+    // carries forward its OLD approved value (NOT the drifted configured one) so
+    // the drift is RE-DETECTED when its ExtractionModel node returns — keeping
+    // the fail-CLOSED spirit: never bake in a drift that wasn't acted on. Models
+    // no longer configured drop out of the baseline.
+    let new_baseline: BTreeMap<
+        trellis_kernel::ChallengeTargetId,
+        trellis_kernel::ChallengeTargetProvenance,
+    > = configured
+        .iter()
+        .filter_map(|(id, spec)| {
+            if reconciled.contains(id) {
+                Some((id.clone(), spec.provenance.clone()))
+            } else {
+                // Deferred (changed-but-unreconciled): carry forward the OLD
+                // approved value if there was one. An UNMATCHED deferred
+                // target (no old entry) stays ABSENT — never advanced to the
+                // drifted configured value — so the next resume still reads it
+                // as unmatched ⇒ `changed` ⇒ re-detected when its claimant
+                // returns. Either way the drift is never baked in.
+                state
+                    .approved_extraction_provenance
+                    .get(id)
+                    .map(|old| (id.clone(), old.clone()))
+            }
+        })
+        .collect();
+    if state.approved_extraction_provenance != new_baseline {
+        state.approved_extraction_provenance = new_baseline;
+        mutated = true;
+    }
+    // Advance the model-text prescription baseline too, on the SAME reconciled
+    // gate: on a reconciled changed model the byte-pin must enforce the NEW text,
+    // and the text baseline must advance so the next resume is a no-op. A
+    // deferred (changed-but-unreconciled) target keeps its OLD prescription so
+    // its text drift is re-detected with the provenance drift above. (PV
+    // reconcile is the documented exception to the otherwise-immutable challenge
+    // registry.)
+    for (id, spec) in &configured {
+        if !reconciled.contains(id) {
+            continue;
+        }
+        match state.configured_challenge_targets.get(id) {
+            Some(prior) if prior == spec => {}
+            // NOTE (future-schema hazard, sound at HEAD): this compares the
+            // whole `ChallengeTargetSpec` for equality, so any field added to
+            // the spec joins the drift-advance trigger. At HEAD the spec is
+            // {kind,name,lean,namespace_context,informal,provenance} and every
+            // field is byte-stable across a deterministic re-extraction, so the
+            // compare is sound; a future field that legitimately differs between
+            // a reconciled config and its prior prescription would re-trigger
+            // this advance — revisit the gate then.
+            _ => {
+                state
+                    .configured_challenge_targets
+                    .insert(id.clone(), spec.clone());
+                mutated = true;
+            }
+        }
+    }
+
+    Ok(mutated)
+}
+
+fn reconcile_pending_under_model_assumptions(
+    state: &mut ProtocolState,
+    repo_path: &Path,
+) -> Result<bool, String> {
+    let assumptions_node = NodeId::from(trellis_kernel::assumptions_registry::ASSUMPTIONS_NODE);
+    if !state.is_under_model_assumptions_node(&assumptions_node) {
+        return Ok(false);
+    }
+    if state.in_flight_request.is_some() {
+        return Ok(false);
+    }
+
+    let pending = trellis_kernel::assumptions_registry::pending_count(repo_path)?;
+    let pending_u32 = pending.min(u32::MAX as usize) as u32;
+    let mut mutated = false;
+    if state.pending_under_model_assumptions != pending_u32 {
+        state.pending_under_model_assumptions = pending_u32;
+        mutated = true;
+    }
+    if pending > 0 {
+        trellis_kernel::assumptions_registry::render_review(repo_path)?;
+    }
+    Ok(mutated)
+}
+
+/// PV Phase 8 (the monotonicity gate): on resume, force the protected-
+/// human-reapproval pipeline to FIRE whenever a PV spec-role node's
+/// correspondence statement changed since it was last approved. The kernel
+/// CANNOT decide whether the new postcondition implies the old one (the corr
+/// fingerprint is a hashed const-SET, not an AST), so it ships the SOUND
+/// SUPERSET: EVERY post-approval statement change reopens the bound theorems
+/// and seeds `pending_protected_reapproval_nodes`, which blocks the done-check
+/// (`clean_checkpoint_ready`) and routes the next cycle to a
+/// `GateKind::ProtectedReapproval` HumanGate — where the human judges
+/// direction (strengthen-not-weaken). This is the irreducible trust boundary
+/// (documented alongside the Phase-2 out-of-band-hash note).
+///
+/// Reuses the DEPLOYED reapproval pipeline (no new ProtocolState field): the
+/// spec set rides `approved_targets.protected_closure_nodes` (frozen by
+/// `freeze_approved_target_snapshot_from_live`, slice 1) and the reopen rides
+/// `pending_protected_reapproval_nodes` + the `reverse_dep_closure` force-
+/// invalidate primitive (`corr_approved_fingerprints.remove` + `corr_status =
+/// Unknown`, the same primitive as `reconcile_pv_provenance` /
+/// revision_import). It `.extend()`s the pending set, so it COMPOSES with the
+/// Phase-2 reopen (both union a BTreeSet — safe, idempotent).
+///
+/// FAIL-CLOSED on every uncertainty (mirrors `corr_reopen_triggered`'s
+/// unparseable⇒reopen + revision-mode unmatched⇒Changed): a present spec-role
+/// node whose approved corr baseline is MISSING, whose current fingerprint is
+/// MISSING/unparseable, or whose statement DIFFERS all REOPEN. The default for
+/// a present spec node is "reopen unless its statement provably byte-matches
+/// the approval baseline" — never inherit a Pass on doubt.
+///
+/// Behavior-preserving: `node_role.is_empty()` for every all-math run ⇒ EARLY
+/// RETURN before touching anything (byte-identical). Skipped while a worker
+/// burst is in flight (the schema-migration discipline — never reopen over
+/// unaccepted WIP). Returns `true` iff it mutated state.
+fn reconcile_pv_spec_monotonicity(state: &mut ProtocolState) -> Result<bool, String> {
+    // All-math fast path: no roles ⇒ no PV spec nodes ⇒ nothing to reconcile.
+    if state.node_role.is_empty() {
+        return Ok(false);
+    }
+    // Never reopen over an in-flight worker burst (the same discipline as the
+    // provenance reconcile + the fingerprint-schema migration: do not disturb
+    // unaccepted WIP).
+    if state.in_flight_request.is_some() {
+        return Ok(false);
+    }
+
+    // Collect the PRESENT spec-role nodes ({Spec, Safety, Correctness,
+    // Invariant}) whose correspondence statement changed since approval — the
+    // reopen seeds. A node missing from `node_role` has no role and is
+    // skipped; a non-spec role (ExtractionModel byte-pin / ExternalModel
+    // critic / LibraryLemma corr) is excluded by `is_protected_spec_role`.
+    let mut reopen_seeds: BTreeSet<NodeId> = BTreeSet::new();
+    for (node, role) in &state.node_role {
+        if !role.is_protected_spec_role() {
+            continue;
+        }
+        // PV "prove OR disprove" / mode-B: a node that claims a configured
+        // challenge target (a byte-pinned goal statement, including a Decide
+        // pair's primary or its auto-seeded `__Refutation`) has its STATEMENT
+        // frozen by `challenge_conformance_errors`. The statement-drift
+        // monotonicity gate (ProtectedReapproval) targets WORKER-AUTHORED
+        // propositions that can drift past approval; a byte-pinned statement
+        // cannot, so the gate is moot for it — same exclusion the worker-accept
+        // path applies (`is_extraction_ground_truth_node`). Without this, a
+        // mere `.tex` re-gloss could drift the corr fingerprint and spuriously
+        // seed a human ProtectedReapproval for an unweakenable goal — and for a
+        // mode-B run there is no human. No-op for all-math (the predicate is
+        // always false there) ⇒ byte-identical.
+        if state.is_extraction_ground_truth_node(node) {
+            continue;
+        }
+        if !state.live.present_nodes.contains(node) {
+            continue;
+        }
+        // The spec node IS the correspondence theorem: diff its OWN approved
+        // fingerprint against its current one. A missing entry on either side
+        // deserialises to `None` inside `corr_reopen_triggered`, which returns
+        // `true` (reopen) — the fail-closed default for a present spec node.
+        let approved = state
+            .corr_approved_fingerprints
+            .get(node)
+            .map(String::as_str)
+            .unwrap_or("");
+        let current = state
+            .live
+            .corr_current_fingerprints
+            .get(node)
+            .map(String::as_str)
+            .unwrap_or("");
+        if runtime_cli_observations::corr_reopen_triggered(approved, current) {
+            reopen_seeds.insert(node.clone());
+        }
+    }
+
+    if reopen_seeds.is_empty() {
+        return Ok(false);
+    }
+
+    let mut mutated = false;
+
+    // Seed the protected-reapproval pipeline. `.extend()` (a BTreeSet union)
+    // composes with any Phase-2 seeds already present (idempotent: re-seeding
+    // an already-pending node is a no-op).
+    let before = state.pending_protected_reapproval_nodes.len();
+    state
+        .pending_protected_reapproval_nodes
+        .extend(reopen_seeds.iter().cloned());
+    if state.pending_protected_reapproval_nodes.len() != before {
+        mutated = true;
+    }
+
+    // Force-invalidate the correspondence of every dependent reachable up the
+    // dep graph, so each theorem bound to a changed spec re-verifies against
+    // the new statement. Same primitive as `reconcile_pv_provenance` /
+    // revision_import: drop the approved corr fp + set corr_status = Unknown ⇒
+    // `current_corr_state == Unknown`.
+    //
+    // The SEED nodes are EXCLUDED from the approved-fp removal: a seed is
+    // already Unknown without it (a statement edit means `current != approved`,
+    // and the fail-closed paths have a missing approved-or-current fp — either
+    // way `current_corr_state` falls through to Unknown). KEEPING the seed's
+    // approved baseline lets the human-facing gate diff
+    // (`diff_corr_fingerprint_axes`, slice 3) enumerate exactly which axes of
+    // the spec statement changed; the gate's re-approval is what advances the
+    // baseline, so leaving it here is not a fail-open (done stays blocked while
+    // the node is pending + Unknown).
+    let present = state.live.present_nodes.clone();
+    let deps = state.deps.clone();
+    let strict_dependents: BTreeSet<NodeId> = state
+        .reverse_dep_closure(&reopen_seeds, &present, &deps)
+        .into_iter()
+        .filter(|node| !reopen_seeds.contains(node))
+        .collect();
+    for dep in &strict_dependents {
+        let removed = state.corr_approved_fingerprints.remove(dep).is_some();
+        let prev_status = state
+            .corr_status
+            .insert(dep.clone(), trellis_kernel::CorrStatus::Unknown);
+        if removed || prev_status != Some(trellis_kernel::CorrStatus::Unknown) {
+            mutated = true;
+        }
+    }
+
+    Ok(mutated)
+}
+
+/// Add-targets mode orchestration (offline; see `ADD_TARGETS.md`).
+///
+/// Order of operations (each step fail-loud, nothing mutated on failure):
+///   1. parse the config; resolve repo + paper; collect
+///      `workflow.main_result_labels`;
+///   2. load the runtime and take the current configured-target set;
+///   3. labels-only re-resolution: `resolve_main_result_targets` with
+///      `raw_targets = None` and the UNION label list (existing configured
+///      labels ∪ config labels). `raw_targets` must be None — when it is
+///      non-empty the resolver IGNORES `raw_labels` and the added labels
+///      would silently no-op;
+///   4. run the pure revival mutation on a CLONE of the state (this asserts
+///      every precondition; the matrix lives in `add_targets.rs`);
+///   5. rewrite `workflow.main_result_targets` with the full resolved list
+///      and commit the config in its git worktree (checkpoint
+///      `reset --hard` reverts uncommitted tracked-config edits);
+///   6. persist the revived state into the runtime root.
+fn add_paper_targets_action(
+    root: PathBuf,
+    config_path: PathBuf,
+) -> Result<RuntimeCliResponse, String> {
+    let config_path = config_path.canonicalize().map_err(|err| {
+        format!(
+            "failed to resolve config path {}: {err}",
+            config_path.display()
+        )
+    })?;
+    let config_text = fs::read_to_string(&config_path)
+        .map_err(|err| format!("failed to read config {}: {err}", config_path.display()))?;
+    let mut config_raw: Value = serde_json::from_str(&config_text)
+        .map_err(|err| format!("failed to parse config {}: {err}", config_path.display()))?;
+    let repo_path = repo_path_from_config(&config_path)?;
+
+    let (paper_raw, config_labels) = {
+        let workflow = config_raw
+            .get("workflow")
+            .and_then(Value::as_object)
+            .ok_or_else(|| {
+                format!(
+                    "config.workflow must be an object in {}",
+                    config_path.display()
+                )
+            })?;
+        let paper_raw = workflow
+            .get("paper_tex_path")
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                format!(
+                    "add_paper_targets: config.workflow.paper_tex_path is missing/empty in {} — \
+                     the labels-only re-resolution needs the configured paper",
+                    config_path.display()
+                )
+            })?
+            .to_string();
+        let config_labels: Vec<String> = workflow
+            .get("main_result_labels")
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::trim)
+                    .filter(|label| !label.is_empty())
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default();
+        (paper_raw, config_labels)
+    };
+    let paper_candidate = PathBuf::from(&paper_raw);
+    let paper_path = if paper_candidate.is_absolute() {
+        paper_candidate
+    } else {
+        repo_path.join(&paper_candidate)
+    };
+    if !paper_path.is_file() {
+        return Err(format!(
+            "add_paper_targets: configured paper {} does not exist \
+             (workflow.paper_tex_path = {paper_raw})",
+            paper_path.display()
+        ));
+    }
+
+    let mut runtime = SupervisorRuntime::load(RuntimePaths::new(root))
+        .map_err(|err| format!("runtime load failed: {err}"))?;
+    let configured: std::collections::BTreeSet<TargetId> =
+        runtime.state().configured_targets.clone();
+    if configured.is_empty() {
+        // Guard BEFORE the resolver call: with an empty union label list the
+        // resolver would fall back to inferring targets from the paper's
+        // statement blocks, fabricating a target set for a run that never
+        // had one (mode-A precondition).
+        return Err(
+            "add_paper_targets requires a mode-A run with a non-empty configured-target set; \
+             this run has no configured paper targets"
+                .to_string(),
+        );
+    }
+    for target in &configured {
+        if target.as_str().starts_with("lines:") {
+            return Err(format!(
+                "add_paper_targets: configured target `{}` is a line-window target (no tex \
+                 label); the labels-only re-resolution cannot preserve it in the rewritten \
+                 workflow.main_result_targets. Label the statement in the paper and migrate \
+                 the config before adding targets.",
+                target.as_str()
+            ));
+        }
+    }
+
+    let mut union_labels: Vec<String> =
+        configured.iter().map(|t| t.as_str().to_string()).collect();
+    for label in &config_labels {
+        if !union_labels.iter().any(|existing| existing == label) {
+            union_labels.push(label.clone());
+        }
+    }
+    let resolved = resolve_main_result_targets(
+        Some(&paper_path),
+        None,
+        Some(&serde_json::json!(union_labels)),
+    )?;
+    for target in &resolved.targets {
+        if target.start_line <= 0 || target.end_line <= 0 {
+            return Err(format!(
+                "add_paper_targets: resolved target {} has non-positive paper block lines \
+                 ({}-{}); refusing to rewrite the config with an unresolvable target",
+                target.tex_label.as_deref().unwrap_or("<unlabeled>"),
+                target.start_line,
+                target.end_line
+            ));
+        }
+    }
+    let mut added_specs: Vec<trellis_kernel::AddedTargetSpec> = Vec::new();
+    for target in &resolved.targets {
+        let Some(label) = target
+            .tex_label
+            .as_deref()
+            .map(str::trim)
+            .filter(|label| !label.is_empty())
+        else {
+            return Err(format!(
+                "add_paper_targets: resolved target at lines {}-{} lost its tex label \
+                 (labels-only resolution must yield labeled targets)",
+                target.start_line, target.end_line
+            ));
+        };
+        let id = TargetId::from(label);
+        if !configured.contains(&id) {
+            added_specs.push(trellis_kernel::AddedTargetSpec {
+                target: id,
+                label: label.to_string(),
+                start_line: target.start_line,
+                end_line: target.end_line,
+            });
+        }
+    }
+
+    // Amendment 1 hard error, raised BEFORE the pure precondition matrix so
+    // a re-run always reports the labels-specific message (idempotence:
+    // running the action twice errors here on the second run, whatever
+    // phase the revival left the state in).
+    if added_specs.is_empty() {
+        return Err(format!(
+            "add_paper_targets: no new targets to add — every label in \
+             workflow.main_result_labels ({}) is already configured. Append the NEW tex \
+             labels to workflow.main_result_labels and re-run.",
+            config_labels.join(", ")
+        ));
+    }
+
+    // Provenance + the pure revival mutation on a CLONE. This asserts every
+    // remaining precondition and mutates nothing persistent on failure.
+    let paper_text = fs::read_to_string(&paper_path)
+        .map_err(|err| format!("failed to read paper {}: {err}", paper_path.display()))?;
+    let paper_sha = trellis_kernel::sha256_hex(&paper_text);
+    let epoch_secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let source_id = format!(
+        "add-targets:{}",
+        trellis_kernel::iso_date_utc(epoch_secs)
+    );
+    let mut candidate = runtime.state().clone();
+    let mut summary = trellis_kernel::add_paper_targets_to_state(
+        &mut candidate,
+        &added_specs,
+        &paper_raw,
+        &paper_sha,
+        &source_id,
+    )?;
+
+    // Amendment 1: rewrite workflow.main_result_targets with the FULL
+    // resolved list (existing + added, label + block lines).
+    let targets_value = serde_json::to_value(&resolved.targets)
+        .map_err(|err| format!("failed to serialize resolved targets: {err}"))?;
+    config_raw
+        .as_object_mut()
+        .and_then(|obj| obj.get_mut("workflow"))
+        .and_then(Value::as_object_mut)
+        .ok_or_else(|| "config.workflow must be an object".to_string())?
+        .insert("main_result_targets".to_string(), targets_value);
+    let rewritten = serde_json::to_string_pretty(&config_raw)
+        .map_err(|err| format!("failed to serialize rewritten config: {err}"))?;
+    // Atomic rewrite (tmp + rename in the same directory): a crash mid-write
+    // must not clobber the operator's config, which carries their freshly
+    // appended main_result_labels edit.
+    let tmp_path = config_path.with_extension("json.add-targets.tmp");
+    fs::write(&tmp_path, rewritten + "\n").map_err(|err| {
+        format!(
+            "failed to write config tmp file {}: {err}",
+            tmp_path.display()
+        )
+    })?;
+    fs::rename(&tmp_path, &config_path).map_err(|err| {
+        format!(
+            "failed to move the rewritten config into place ({} -> {}): {err}",
+            tmp_path.display(),
+            config_path.display()
+        )
+    })?;
+
+    let mut notes: Vec<String> = Vec::new();
+    notes.push(commit_config_in_git(&config_path, &summary.added_targets));
+    match std::env::var("TRELLIS_AB_TEMPLATES_DIR") {
+        Ok(templates_dir) if !templates_dir.trim().is_empty() => {
+            notes.push(format!(
+                "WARNING: TRELLIS_AB_TEMPLATES_DIR is set ({templates_dir}). The A/B config \
+                 templates were NOT patched; the checkpoint-hook config swap will revert \
+                 workflow.main_result_targets / main_result_labels unless you apply the same \
+                 edit to every template in that directory before relaunching."
+            ));
+        }
+        _ => {}
+    }
+    summary.notes = notes.clone();
+
+    runtime
+        .try_post_load_state_migration(move |state| {
+            *state = candidate;
+            Ok(true)
+        })
+        .map_err(|err| format!("failed to persist the revived state: {err}"))?;
+
+    Ok(RuntimeCliResponse::AddPaperTargetsOk {
+        state: runtime.state().clone(),
+        metadata: runtime.metadata().clone(),
+        event_count: runtime.event_count(),
+        summary,
+        notes,
+    })
+}
+
+/// Parse `workflow.reference_papers` from the run config: an array of
+/// `{id, tex_path, source_id}` entries. Absent/empty ⇒ empty registry
+/// (bit-for-bit legacy behavior downstream). Duplicate ids and
+/// empty id/tex_path fields are config errors.
+fn reference_papers_from_config(
+    config_path: &Path,
+) -> Result<
+    std::collections::BTreeMap<trellis_kernel::RefPaperId, trellis_kernel::ReferencePaperSpec>,
+    String,
+> {
+    let text = fs::read_to_string(config_path)
+        .map_err(|err| format!("failed to read config {}: {err}", config_path.display()))?;
+    let raw: Value = serde_json::from_str(&text)
+        .map_err(|err| format!("failed to parse config {}: {err}", config_path.display()))?;
+    let Some(entries) = raw
+        .as_object()
+        .and_then(|obj| obj.get("workflow"))
+        .and_then(Value::as_object)
+        .and_then(|workflow| workflow.get("reference_papers"))
+    else {
+        return Ok(std::collections::BTreeMap::new());
+    };
+    let Some(items) = entries.as_array() else {
+        return Err(format!(
+            "config.workflow.reference_papers must be an array in {}",
+            config_path.display()
+        ));
+    };
+    let mut registry = std::collections::BTreeMap::new();
+    for (idx, item) in items.iter().enumerate() {
+        let Some(obj) = item.as_object() else {
+            return Err(format!(
+                "config.workflow.reference_papers[{idx}] must be an object with id/tex_path/source_id"
+            ));
+        };
+        let field = |key: &str| -> String {
+            obj.get(key)
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .unwrap_or_default()
+                .to_string()
+        };
+        let id = field("id");
+        let tex_path = field("tex_path");
+        let source_id = field("source_id");
+        if id.is_empty() {
+            return Err(format!(
+                "config.workflow.reference_papers[{idx}].id must be a non-empty string"
+            ));
+        }
+        if tex_path.is_empty() {
+            return Err(format!(
+                "config.workflow.reference_papers[{idx}].tex_path must be a non-empty string (id `{id}`)"
+            ));
+        }
+        let key = trellis_kernel::RefPaperId::from(id.as_str());
+        if registry
+            .insert(
+                key,
+                trellis_kernel::ReferencePaperSpec { tex_path, source_id },
+            )
+            .is_some()
+        {
+            return Err(format!(
+                "config.workflow.reference_papers: duplicate id `{id}`"
+            ));
+        }
+    }
+    Ok(registry)
+}
+
+fn add_reference_paper_action(
+    root: PathBuf,
+    config_path: PathBuf,
+) -> Result<RuntimeCliResponse, String> {
+    let config_path = config_path.canonicalize().map_err(|err| {
+        format!(
+            "failed to resolve config path {}: {err}",
+            config_path.display()
+        )
+    })?;
+    let config_registry = reference_papers_from_config(&config_path)?;
+    let repo_path = repo_path_from_config(&config_path)?;
+
+    let mut runtime = SupervisorRuntime::load(RuntimePaths::new(root))
+        .map_err(|err| format!("runtime load failed: {err}"))?;
+    let state = runtime.state();
+
+    // Quiescence preconditions: any phase, but nothing in flight. NOT
+    // Complete-only — the action must compose with add_paper_targets in
+    // either order (a revived RevisionStating state is quiescent too).
+    if state.in_flight_request.is_some() {
+        return Err(
+            "add_reference_paper requires no in-flight request; the loaded state carries one"
+                .to_string(),
+        );
+    }
+    if state.pending_task.is_some() {
+        return Err("add_reference_paper requires no pending worker task".to_string());
+    }
+    if state.gate_kind != trellis_kernel::GateKind::None {
+        return Err(format!(
+            "add_reference_paper requires no active human gate; found gate_kind {:?}",
+            state.gate_kind
+        ));
+    }
+
+    // Invariant assert: state-registry ⊆ config-registry. A state id
+    // missing from config means the operator's config lost an entry the
+    // run still depends on (nodes may claim it) — refuse to proceed.
+    for (id, spec) in &state.configured_reference_papers {
+        match config_registry.get(id) {
+            None => {
+                return Err(format!(
+                    "add_reference_paper: state registry id `{id}` is missing from \
+                     config.workflow.reference_papers — the state registry must be a subset \
+                     of the config registry. Restore the config entry (removal has no \
+                     supported path in v1)."
+                ));
+            }
+            Some(config_spec) if config_spec != spec => {
+                return Err(format!(
+                    "add_reference_paper: duplicate id `{id}` — the config entry \
+                     (tex_path `{}`, source_id `{}`) differs from the already-configured \
+                     state entry (tex_path `{}`, source_id `{}`). Reference papers are \
+                     immutable once added; register the new document under a NEW id.",
+                    config_spec.tex_path, config_spec.source_id, spec.tex_path, spec.source_id
+                ));
+            }
+            Some(_) => {}
+        }
+    }
+
+    // New entries = config \ state. Validate each file BEFORE mutating.
+    let mut added: Vec<trellis_kernel::RefPaperId> = Vec::new();
+    let mut new_entries: std::collections::BTreeMap<
+        trellis_kernel::RefPaperId,
+        trellis_kernel::ReferencePaperSpec,
+    > = std::collections::BTreeMap::new();
+    for (id, spec) in &config_registry {
+        if state.configured_reference_papers.contains_key(id) {
+            continue;
+        }
+        let candidate = PathBuf::from(&spec.tex_path);
+        let resolved = if candidate.is_absolute() {
+            candidate
+        } else {
+            repo_path.join(&candidate)
+        };
+        let content = fs::read_to_string(&resolved).map_err(|err| {
+            format!(
+                "add_reference_paper: reference `{id}` file {} is missing/unreadable: {err}",
+                resolved.display()
+            )
+        })?;
+        if content.trim().is_empty() {
+            return Err(format!(
+                "add_reference_paper: reference `{id}` file {} is empty",
+                resolved.display()
+            ));
+        }
+        added.push(id.clone());
+        new_entries.insert(id.clone(), spec.clone());
+    }
+
+    let mut notes: Vec<String> = Vec::new();
+    // Same operator hazard as add_paper_targets: with the A/B
+    // checkpoint-hook config swap live, un-patched templates revert the
+    // config edit on the next swap.
+    match std::env::var("TRELLIS_AB_TEMPLATES_DIR") {
+        Ok(templates_dir) if !templates_dir.trim().is_empty() => {
+            notes.push(format!(
+                "WARNING: TRELLIS_AB_TEMPLATES_DIR is set ({templates_dir}). The A/B config \
+                 templates were NOT patched; the checkpoint-hook config swap will revert \
+                 workflow.reference_papers unless you apply the same edit to every template \
+                 in that directory before relaunching."
+            ));
+        }
+        _ => {}
+    }
+
+    if added.is_empty() {
+        // Idempotent no-op: every config entry is already configured
+        // with an identical spec.
+        notes.push(
+            "add_reference_paper: no new entries — every config reference paper is already \
+             configured (idempotent no-op)."
+                .to_string(),
+        );
+        return Ok(RuntimeCliResponse::AddReferencePaperOk {
+            state: runtime.state().clone(),
+            metadata: runtime.metadata().clone(),
+            event_count: runtime.event_count(),
+            added,
+            notes,
+        });
+    }
+
+    runtime
+        .try_post_load_state_migration(move |state| {
+            // Mutates ONLY configured_reference_papers.
+            state.configured_reference_papers.extend(new_entries);
+            Ok(true)
+        })
+        .map_err(|err| format!("failed to persist the reference-paper registry: {err}"))?;
+
+    Ok(RuntimeCliResponse::AddReferencePaperOk {
+        state: runtime.state().clone(),
+        metadata: runtime.metadata().clone(),
+        event_count: runtime.event_count(),
+        added,
+        notes,
+    })
+}
+
+/// v1 removal is REJECT-ONLY: while any node claims the id the error
+/// names the claimants; otherwise removal is simply unsupported. The
+/// claim check exists so the error message is actionable rather than a
+/// generic refusal.
+fn remove_reference_paper_action(root: PathBuf, id: String) -> Result<RuntimeCliResponse, String> {
+    let runtime = SupervisorRuntime::load(RuntimePaths::new(root))
+        .map_err(|err| format!("runtime load failed: {err}"))?;
+    let state = runtime.state();
+    let id = trellis_kernel::RefPaperId::from(id.trim());
+    let mut claimants: Vec<&NodeId> = state
+        .node_reference_grounds
+        .iter()
+        .chain(state.committed_node_reference_grounds.iter())
+        .chain(state.last_clean_node_reference_grounds.iter())
+        .filter(|(_, claims)| claims.contains(&id))
+        .map(|(node, _)| node)
+        .collect();
+    claimants.sort();
+    claimants.dedup();
+    if !claimants.is_empty() {
+        return Err(format!(
+            "remove_reference_paper: reference `{id}` is claimed by node(s) {} \
+             (node_reference_grounds, incl. committed/last-clean mirrors); removal is \
+             rejected while any node claims the id.",
+            claimants
+                .iter()
+                .map(|n| n.as_str().to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+    }
+    Err(
+        "remove_reference_paper: removal has no supported path in v1 (reject-only); \
+         reference papers stay registered for the life of the run"
+            .to_string(),
+    )
+}
+
+/// Commit the rewritten config inside its containing git worktree.
+/// Best-effort with a LOUD note either way: the config is a TRACKED file in
+/// live runs and checkpoint `git reset --hard` reverts uncommitted edits,
+/// so an uncommitted rewrite is an operator hazard the note must surface
+/// (amendment 5).
+fn commit_config_in_git(config_path: &Path, added: &[TargetId]) -> String {
+    let Some(dir) = config_path.parent() else {
+        return "WARNING: config path has no parent directory; config rewrite NOT committed \
+                to git"
+            .to_string();
+    };
+    let inside = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .arg("rev-parse")
+        .arg("--is-inside-work-tree")
+        .output();
+    match inside {
+        Ok(out)
+            if out.status.success()
+                && String::from_utf8_lossy(&out.stdout).trim() == "true" => {}
+        _ => {
+            return format!(
+                "WARNING: {} is not inside a git worktree; the config rewrite is NOT \
+                 committed. A checkpoint `git reset --hard` would revert it — commit the \
+                 config manually wherever it is tracked before relaunching.",
+                dir.display()
+            );
+        }
+    }
+    let add = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .arg("add")
+        .arg("--")
+        .arg(config_path)
+        .output();
+    if !matches!(&add, Ok(out) if out.status.success()) {
+        return format!(
+            "WARNING: `git add` of the rewritten config failed; commit {} manually before \
+             relaunching",
+            config_path.display()
+        );
+    }
+    let message = format!(
+        "add_paper_targets: configure {} new paper target(s): {}",
+        added.len(),
+        added
+            .iter()
+            .map(|t| t.as_str().to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
+    let commit = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .arg("commit")
+        .arg("-m")
+        .arg(&message)
+        .arg("--")
+        .arg(config_path)
+        .output();
+    match commit {
+        Ok(out) if out.status.success() => format!(
+            "config rewrite committed in {}: {}",
+            dir.display(),
+            String::from_utf8_lossy(&out.stdout)
+                .lines()
+                .next()
+                .unwrap_or("")
+                .trim()
+        ),
+        Ok(out) => {
+            let combined = format!(
+                "{}{}",
+                String::from_utf8_lossy(&out.stdout),
+                String::from_utf8_lossy(&out.stderr)
+            );
+            if combined.contains("nothing to commit") {
+                "config rewrite produced no diff (already committed); nothing to commit"
+                    .to_string()
+            } else {
+                format!(
+                    "WARNING: `git commit` of the rewritten config failed; commit {} manually \
+                     before relaunching: {}",
+                    config_path.display(),
+                    combined.trim()
+                )
+            }
+        }
+        Err(err) => format!(
+            "WARNING: could not run git to commit the rewritten config ({err}); commit {} \
+             manually before relaunching",
+            config_path.display()
+        ),
+    }
+}
+
+fn main() -> std::process::ExitCode {
+    let request = match read_request() {
+        Ok(request) => request,
+        Err(message) => {
+            let _ = serde_json::to_writer_pretty(
+                io::stdout(),
+                &RuntimeCliResponse::InvalidRequest {
+                    message: message.clone(),
+                },
+            );
+            println!();
+            eprintln!("{message}");
+            return std::process::ExitCode::from(2);
+        }
+    };
+
+    let response = match request {
+        RuntimeCliRequest::Init {
+            root,
+            mut state,
+            metadata,
+        } => {
+            let mut metadata = metadata.unwrap_or_default();
+            // Fresh runs get the initial-planning replay gate at Init (G3):
+            // the persisted metadata records that this run's seed included
+            // the initial-planning arm, so `replay_to_event_count` reseeds
+            // identically. Pre-feature metadata lacks the flag (false).
+            metadata.initial_planning_seeded = true;
+            // Coverage re-planning replay gate, same pattern: stamped at
+            // Init so `seed_state_from_config` arms
+            // `coverage_replanning_source` on fresh runs only.
+            metadata.coverage_replanning_seeded = true;
+                        let trust_metadata_result = if metadata.trust_journal_path.is_none() {
+                if let (Some(config_path), Some(repo_path)) =
+                    (metadata.config_path.clone(), metadata.repo_path.clone())
+                {
+                    apply_trust_metadata_from_config(&mut metadata, &config_path, &repo_path)
+                } else {
+                    Ok(())
+                }
+            } else {
+                Ok(())
+            };
+            let runtime = trust_metadata_result
+                .and_then(|_| seed_state_from_config(&mut state, &metadata))
+                .and_then(|_| {
+                SupervisorRuntime::initialize_with_metadata(
+                    RuntimePaths::new(root),
+                    state,
+                    metadata,
+                )
+                .map_err(|err| format!("runtime init failed: {err}"))
+            });
+            runtime.and_then(|runtime| success_response(&runtime, None, 0, None))
+        }
+        RuntimeCliRequest::InitFromConfig { root, config_path } => {
+            repo_path_from_config(&config_path).and_then(|repo_path| {
+                let mut metadata = RuntimeMetadata {
+                    repo_path: Some(repo_path.clone()),
+                    config_path: Some(config_path.clone()),
+                    native_history_kinds: Default::default(),
+                    // Fresh runs get the initial-planning replay gate at
+                    // init (G3), mirroring the Init arm.
+                    initial_planning_seeded: true,
+                    coverage_replanning_seeded: true,
+                    ..RuntimeMetadata::default()
+                };
+                apply_trust_metadata_from_config(&mut metadata, &config_path, &repo_path)?;
+                let mut state = ProtocolState::default();
+                seed_state_from_config(&mut state, &metadata)?;
+                trellis_kernel::sync_tablet_support_from_repo(&repo_path)?;
+                SupervisorRuntime::initialize_with_metadata(
+                    RuntimePaths::new(root),
+                    state,
+                    metadata,
+                )
+                .map_err(|err| format!("runtime init failed: {err}"))
+                .and_then(|runtime| success_response(&runtime, None, 0, None))
+            })
+        }
+        RuntimeCliRequest::ImportLegacy {
+            root,
+            config_path,
+            state_path,
+            tablet_path,
+        } => {
+            let imported = trellis_kernel::import_legacy_project(
+                &config_path,
+                state_path.as_deref(),
+                tablet_path.as_deref(),
+            );
+            imported.and_then(|imported| {
+                let runtime = SupervisorRuntime::initialize_with_metadata(
+                    RuntimePaths::new(root),
+                    imported.state,
+                    RuntimeMetadata {
+                        repo_path: Some(imported.repo_path),
+                        config_path: Some(config_path),
+                        native_history_kinds: Default::default(),
+                        initial_planning_seeded: false,
+                        ..RuntimeMetadata::default()
+                    },
+                )
+                .map_err(|err| format!("runtime init failed: {err}"))?;
+                success_response(&runtime, None, 0, Some(imported.summary))
+            })
+        }
+        RuntimeCliRequest::ImportRevisionProject {
+            root,
+            config_path,
+            full_state_path,
+            old_paper_tex_path,
+            new_paper_tex_path,
+            old_source_id,
+            new_source_id,
+            target_map,
+        } => trellis_kernel::import_revision_project(
+            &config_path,
+            &full_state_path,
+            &old_paper_tex_path,
+            &new_paper_tex_path,
+            &old_source_id,
+            &new_source_id,
+            target_map.as_ref(),
+        )
+        .and_then(|imported| {
+            let mut state = imported.state;
+            // Dispatch the first request for the normalized stage
+            // (StuckMathAudit -> the revision-planning audit). Mirrors the
+            // legacy-import end-of-flow.
+            if state.in_flight_request.is_none() {
+                if let Some(kind) = state.expected_request_kind() {
+                    let _ = state.issue_request(kind);
+                }
+            }
+            // Bring the runtime-root up identically to a normal init
+            // (InitFromConfig does the same before initialize_with_metadata).
+            // This invokes the repo's check.py sync_tablet_support_op, so the
+            // repo's `.trellis/scripts` (write_scripts) must already exist —
+            // setup_revision_repo.sh materializes them before this CLI call.
+            trellis_kernel::sync_tablet_support_from_repo(&imported.repo_path)?;
+            let runtime = SupervisorRuntime::initialize_with_metadata(
+                RuntimePaths::new(root),
+                state,
+                RuntimeMetadata {
+                    repo_path: Some(imported.repo_path),
+                    config_path: Some(config_path),
+                    native_history_kinds: Default::default(),
+                    initial_planning_seeded: false,
+                    ..RuntimeMetadata::default()
+                },
+            )
+            .map_err(|err| format!("runtime init failed: {err}"))?;
+            Ok(RuntimeCliResponse::ImportRevisionProjectOk {
+                state: runtime.state().clone(),
+                metadata: runtime.metadata().clone(),
+                checkpoint: checkpoint_from_paths(runtime.paths())?,
+                event_count: runtime.event_count(),
+                summary: imported.summary,
+            })
+        }),
+        RuntimeCliRequest::ResolveMainResultTargets {
+            paper_path,
+            raw_targets,
+            raw_labels,
+        } => resolve_main_result_targets(
+            paper_path.as_deref(),
+            raw_targets.as_ref(),
+            raw_labels.as_ref(),
+        )
+        .map(|output| RuntimeCliResponse::ResolveMainResultTargetsOk { output }),
+        RuntimeCliRequest::RefreshTcbExtractionProvenance { config_path } => {
+            repo_path_from_config(&config_path).and_then(|repo_path| {
+                if !config_has_pv_tablet(&config_path)? {
+                    return Err(format!(
+                        "config {} has no pv_tablet block; there is no extraction provenance to record",
+                        config_path.display()
+                    ));
+                }
+                let pv = pv_tablet_from_config(&config_path)?;
+                let updated = refresh_tcb_extraction_provenance(&repo_path, &pv)?;
+                Ok(RuntimeCliResponse::RefreshTcbExtractionProvenanceOk {
+                    manifest_path: repo_path.join("tcb_manifest.json"),
+                    updated,
+                })
+            })
+        }
+        RuntimeCliRequest::AddPaperTargets { root, config_path } => {
+            add_paper_targets_action(root, config_path)
+        }
+        RuntimeCliRequest::AddReferencePaper { root, config_path } => {
+            add_reference_paper_action(root, config_path)
+        }
+        RuntimeCliRequest::RemoveReferencePaper { root, id } => {
+            remove_reference_paper_action(root, id)
+        }
+        RuntimeCliRequest::BridgeRequestPayload { repo_path, request } => {
+            hydrated_bridge_request_payload(&repo_path, &request)
+                .map(|payload| RuntimeCliResponse::BridgeRequestPayloadOk { payload })
+        }
+        RuntimeCliRequest::ReplayToEventCount {
+            root,
+            stop_after_event_count,
+            dry_run_state_path,
+            seed_checkpoint_path,
+        } => replay_to_event_count(
+            root,
+            stop_after_event_count,
+            dry_run_state_path,
+            seed_checkpoint_path,
+        ),
+        RuntimeCliRequest::SegmentEventLog {
+            runtime,
+            repo,
+            dry_run,
+        } => segment_event_log(&runtime, &repo, dry_run)
+            .map(|output| RuntimeCliResponse::SegmentEventLogOk { output }),
+        RuntimeCliRequest::Show { root } => {
+            let runtime = SupervisorRuntime::load(RuntimePaths::new(root))
+                .map_err(|err| format!("runtime load failed: {err}"));
+            runtime.and_then(|runtime| success_response(&runtime, None, 0, None))
+        }
+        RuntimeCliRequest::CurrentRequest { root } => {
+            let runtime = SupervisorRuntime::load(RuntimePaths::new(root))
+                .map_err(|err| format!("runtime load failed: {err}"));
+            runtime.and_then(|runtime| {
+                let request = runtime
+                    .state()
+                    .in_flight_request
+                    .as_ref()
+                    .ok_or_else(|| "runtime has no in-flight request".to_string())?;
+                Ok(RuntimeCliResponse::CurrentRequestOk {
+                    request: bridge_request_payload(
+                        request,
+                        runtime.metadata().config_path.as_deref(),
+                        runtime.metadata().repo_path.as_deref(),
+                    )?,
+                    metadata: runtime.metadata().clone(),
+                })
+            })
+        }
+        RuntimeCliRequest::NormalizeWorker { input } => {
+            trellis_kernel::normalize_worker_response(&input)
+                .map(|output| RuntimeCliResponse::NormalizeWorkerOk { output })
+        }
+        RuntimeCliRequest::ValidateTrellisWorkerResult {
+            raw_payload,
+            acceptance_context,
+        } => {
+            if let Some(acceptance_context) = acceptance_context {
+                worker_allowed_outcomes_for_validation(&acceptance_context).map(
+                    |allowed_outcomes| RuntimeCliResponse::ValidateTrellisWorkerResultOk {
+                        output: validate_trellis_worker_result_data_with_allowed_outcomes(
+                            &raw_payload,
+                            &allowed_outcomes,
+                        ),
+                    },
+                )
+            } else {
+                Ok(RuntimeCliResponse::ValidateTrellisWorkerResultOk {
+                    output: validate_trellis_worker_result_data(&raw_payload),
+                })
+            }
+        }
+        RuntimeCliRequest::ValidateTrellisReviewerResult { raw_payload } => {
+            Ok(RuntimeCliResponse::ValidateTrellisReviewerResultOk {
+                output: validate_trellis_reviewer_result_data(&raw_payload),
+            })
+        }
+        // Cleanup-v2 (audit Finding 1): shape-validate an audit-burst
+        // artifact. Domain legality (target ∈ present, replacement
+        // validity, etc.) is enforced by `apply_audit_response` against
+        // the live ProtocolState — this branch only checks shape.
+        RuntimeCliRequest::ValidateTrellisAuditResult { raw_payload } => {
+            Ok(RuntimeCliResponse::ValidateTrellisAuditResultOk {
+                output: validate_trellis_audit_result_data(&raw_payload),
+            })
+        }
+        RuntimeCliRequest::ValidateTrellisStuckMathAuditResult { raw_payload } => {
+            Ok(RuntimeCliResponse::ValidateTrellisStuckMathAuditResultOk {
+                output: validate_trellis_stuck_math_audit_result_data(&raw_payload),
+            })
+        }
+        RuntimeCliRequest::BuildMalformedResponse {
+            kind,
+            request_id,
+            cycle,
+        } => build_malformed_response_output(kind, request_id, cycle)
+            .map(|output| RuntimeCliResponse::BuildMalformedResponseOk { output }),
+        RuntimeCliRequest::ValidatePaperFaithfulnessResult { raw_payload } => {
+            Ok(RuntimeCliResponse::ValidatePaperFaithfulnessResultOk {
+                output: validate_paper_faithfulness_result_data(&raw_payload),
+            })
+        }
+        RuntimeCliRequest::ValidateDeviationAuthorizationResult { raw_payload } => {
+            Ok(RuntimeCliResponse::ValidateDeviationAuthorizationResultOk {
+                output: validate_deviation_authorization_result_data(&raw_payload),
+            })
+        }
+        RuntimeCliRequest::ValidateSubstantivenessResult { raw_payload } => {
+            Ok(RuntimeCliResponse::ValidateSubstantivenessResultOk {
+                output: validate_substantiveness_result_data(&raw_payload),
+            })
+        }
+        RuntimeCliRequest::ValidateCorrespondenceResult { raw_payload } => {
+            Ok(RuntimeCliResponse::ValidateCorrespondenceResultOk {
+                output: validate_correspondence_result_data(&raw_payload),
+            })
+        }
+        RuntimeCliRequest::ValidateSoundnessResult {
+            raw_payload,
+            node_name,
+        } => Ok(RuntimeCliResponse::ValidateSoundnessResultOk {
+            output: validate_soundness_result_data(&raw_payload, &node_name),
+        }),
+        RuntimeCliRequest::CheckTrellisWorkerResult {
+            repo_path,
+            acceptance_context,
+            raw_payload,
+        } => check_trellis_worker_result_output(&repo_path, acceptance_context, raw_payload)
+            .map(|output| RuntimeCliResponse::CheckTrellisWorkerResultOk { output }),
+        RuntimeCliRequest::HydrateWorkerResponse { input } => {
+            hydrate_worker_response_output(&input)
+                .map(|output| RuntimeCliResponse::HydrateWorkerResponseOk { output })
+        }
+        RuntimeCliRequest::CheckTrellisReviewerResult {
+            review_request,
+            raw_payload,
+        } => check_trellis_reviewer_result_output(review_request, raw_payload)
+            .map(|output| RuntimeCliResponse::CheckTrellisReviewerResultOk { output }),
+        // Cleanup-v2 (audit Finding 1): one-shot validate+normalize for
+        // the audit-burst artifact, mirroring the reviewer path.
+        RuntimeCliRequest::CheckTrellisAuditResult {
+            audit_request,
+            raw_payload,
+        } => check_trellis_audit_result_output(audit_request, raw_payload)
+            .map(|output| RuntimeCliResponse::CheckTrellisAuditResultOk { output }),
+        RuntimeCliRequest::CheckTrellisStuckMathAuditResult {
+            audit_request,
+            raw_payload,
+            repo_path,
+        } => check_trellis_stuck_math_audit_result_output(
+            audit_request,
+            raw_payload,
+            repo_path.as_deref(),
+        )
+        .map(|output| RuntimeCliResponse::CheckTrellisStuckMathAuditResultOk { output }),
+        RuntimeCliRequest::CheckNode {
+            repo_path,
+            node_name,
+            expected_hash,
+        } => check_node_output(&repo_path, &node_name, expected_hash.as_deref())
+            .map(|output| RuntimeCliResponse::CheckNodeOk { output }),
+        RuntimeCliRequest::CheckTablet { repo_path } => check_tablet_output(&repo_path)
+            .map(|output| RuntimeCliResponse::CheckTabletOk { output }),
+        RuntimeCliRequest::SyncTabletSupport { repo_path } => {
+            trellis_kernel::sync_tablet_support_from_repo(&repo_path)
+                .map(|output| RuntimeCliResponse::SyncTabletSupportOk { output })
+        }
+        RuntimeCliRequest::ObserveSoundnessFingerprints { repo_path, nodes } => {
+            ensure_worker_checker_support_available(&repo_path, &nodes).and_then(|_| {
+                observe_soundness_fingerprints(
+                    &repo_path,
+                    &nodes,
+                    &BTreeMap::new(),
+                    &BTreeMap::new(),
+                )
+                .map(|output| RuntimeCliResponse::ObserveSoundnessFingerprintsOk { output })
+            })
+        }
+        RuntimeCliRequest::CheckTabletScoped {
+            repo_path,
+            baseline_errors,
+            allowed_nodes,
+        } => check_tablet_scoped_output(&repo_path, &baseline_errors, &allowed_nodes)
+            .map(|output| RuntimeCliResponse::CheckTabletScopedOk { output }),
+        RuntimeCliRequest::PrepareWorkerGate {
+            repo_path,
+            request,
+            collect_observations,
+            paper_source_path,
+        } => prepare_worker_gate_output(
+            &repo_path,
+            &request,
+            collect_observations.unwrap_or(true),
+            paper_source_path.as_deref(),
+        )
+        .map(|output| RuntimeCliResponse::PrepareWorkerGateOk { output }),
+        RuntimeCliRequest::ExecuteWorkerValidationPlan { input } => {
+            execute_worker_validation_plan(&input)
+                .map(|output| RuntimeCliResponse::ExecuteWorkerValidationPlanOk { output })
+        }
+        RuntimeCliRequest::NormalizeCorr { input } => normalize_corr_response(&input)
+            .map(|output| RuntimeCliResponse::NormalizeCorrOk { output }),
+        RuntimeCliRequest::NormalizePaper { input } => normalize_paper_response(&input)
+            .map(|output| RuntimeCliResponse::NormalizePaperOk { output }),
+        RuntimeCliRequest::NormalizeSound { input } => normalize_sound_response(&input)
+            .map(|output| RuntimeCliResponse::NormalizeSoundOk { output }),
+        RuntimeCliRequest::NormalizeReview { input } => normalize_review_response(&input)
+            .map(|output| RuntimeCliResponse::NormalizeReviewOk { output }),
+        RuntimeCliRequest::NormalizeHumanGate {
+            request_id,
+            cycle,
+            raw_payload_text,
+        } => {
+            let (output, fresh) = normalize_human_gate_output(request_id, cycle, &raw_payload_text);
+            Ok(RuntimeCliResponse::NormalizeHumanGateOk { output, fresh })
+        }
+        RuntimeCliRequest::WorkerBlockerStatusBlock { request } => {
+            Ok(RuntimeCliResponse::WorkerBlockerStatusBlockOk {
+                output: trellis_kernel::worker_blocker_status_block(&request),
+            })
+        }
+        RuntimeCliRequest::ReviewBlockerChoicesBlock { request } => {
+            Ok(RuntimeCliResponse::ReviewBlockerChoicesBlockOk {
+                output: trellis_kernel::review_blocker_choices_block(&request),
+            })
+        }
+        RuntimeCliRequest::AcceptWorker { input } => accept_worker_response(&input)
+            .map(|output| RuntimeCliResponse::AcceptWorkerOk { output }),
+        RuntimeCliRequest::Step { root, response } => {
+            let runtime = load_runtime_with_fingerprint_validation(RuntimePaths::new(root));
+            runtime.and_then(|mut runtime| {
+                run_local_closure_migration_if_configured(&mut runtime)?;
+                let outcome = step_runtime(&mut runtime, response)?;
+                success_response(&runtime, Some(outcome), 1, None)
+            })
+        }
+        RuntimeCliRequest::RestoreActiveWorkerBase { root } => {
+            SupervisorRuntime::load(RuntimePaths::new(root))
+                .map_err(|err| format!("runtime load failed: {err}"))
+                .and_then(|runtime| {
+                    runtime
+                        .restore_active_worker_base_for_inflight()
+                        .map_err(|err| format!("restore active_worker_base failed: {err}"))
+                        .map(|restored| RuntimeCliResponse::RestoreActiveWorkerBaseOk { restored })
+                })
+        }
+        RuntimeCliRequest::AckHaltMarker {
+            root,
+            reason,
+            force,
+            probe_result,
+        } => {
+            // Audit M-3 — operator-driven controlled clear path for the
+            // checker-disagreement halt marker. The kernel routes
+            // through `TRELLIS_KERNEL_CACHE_ROOT` to resolve the marker
+            // path; export it from the supplied `root` so this command
+            // works without requiring the caller to pre-export the env
+            // var. Use unsafe set_var per the same single-threaded
+            // rationale as the `Run` command above.
+            unsafe {
+                std::env::set_var(trellis_kernel::disk_cache::KERNEL_CACHE_ROOT_ENV, &root);
+            }
+            trellis_kernel::runtime_cli_observations_halt::acknowledge_checker_disagreement_halt_marker(
+                &reason,
+                force,
+                probe_result.as_ref(),
+            )
+            .map(|outcome| RuntimeCliResponse::AckHaltMarkerOk { outcome })
+        }
+        RuntimeCliRequest::AckSystemFeedback {
+            root,
+            fingerprint,
+            reason,
+            sample_feedback,
+        } => {
+            // Operator-driven, human-initiated ack of a system_feedback
+            // fingerprint. Export the cache root from the supplied `root`
+            // so the ack store resolves without the caller pre-exporting
+            // the env var (same single-threaded rationale as the other
+            // env mutations in this dispatcher).
+            unsafe {
+                std::env::set_var(trellis_kernel::disk_cache::KERNEL_CACHE_ROOT_ENV, &root);
+            }
+            trellis_kernel::runtime_cli_observations_halt::acknowledge_system_feedback_fingerprint(
+                &fingerprint,
+                &reason,
+                &sample_feedback,
+            )
+            .map(|result| RuntimeCliResponse::AckSystemFeedbackOk { result })
+        }
+        RuntimeCliRequest::Run { root, max_steps } => {
+            let _kernel_cache_env_guard = kernel_cache_env_test_guard();
+            // Export the kernel cache root so every subprocess this
+            // supervisor spawns (bridge → Python wrapper → child kernel
+            // CLI) inherits it via env. Disk-persistent cache files
+            // live at `<root>/checker-state/kernel-cache/<namespace>/`;
+            // see `trellis_kernel::disk_cache` for the file layout.
+            //
+            // Setting an env var on this process is unsafe in edition
+            // 2024+ (concurrent reads from other threads can race) but
+            // we're single-threaded here and the env var is read-only
+            // from this point onward.
+            //
+            // Trust-boundary defense: explicitly UNSET the readonly
+            // fallback var, so an operator shell that happens to export
+            // it (typo, debug leftover) can't push a worker-writable
+            // path into the supervisor's lookup chain. The two-cache
+            // split's invariant — supervisor never reads from anywhere
+            // a worker can write — relies on this var staying unset for
+            // the supervisor process; only `sandbox.py:wrap_command`
+            // sets it, and only inside a worker bwrap (not on
+            // supervisor-side spawns).
+            unsafe {
+                std::env::set_var(trellis_kernel::disk_cache::KERNEL_CACHE_ROOT_ENV, &root);
+                std::env::remove_var(trellis_kernel::disk_cache::KERNEL_CACHE_READONLY_ROOT_ENV);
+            }
+            // Fail-fast startup invariant: `TRELLIS_CHECKER_SOCKET` must be
+            // set AND point to an existing path. Without it, every
+            // `local-closure-axioms` request silently fails with an
+            // `internal_error` status whose error text the wire format
+            // doesn't surface — the worker sees only
+            // `local-closure probe status=internal_error:` and is forced
+            // to downgrade valid artifacts. Detect at supervisor startup
+            // so the operator knows to start the checker server / re-export
+            // the env var BEFORE any worker burst runs.
+            let env_check: Result<(), String> = match std::env::var("TRELLIS_CHECKER_SOCKET") {
+                Ok(path) if !path.trim().is_empty() => {
+                    let socket_path = std::path::Path::new(path.trim());
+                    if socket_path.exists() {
+                        Ok(())
+                    } else {
+                        Err(format!(
+                            "TRELLIS_CHECKER_SOCKET points to a non-existent \
+                             path: {path}. Start the checker server (e.g. \
+                             scripts/trellis_checker_server.sh) before \
+                             launching the supervisor, or correct the env var."
+                        ))
+                    }
+                }
+                _ => Err("TRELLIS_CHECKER_SOCKET is unset (or empty). The \
+                     supervisor requires it to route local-closure-axioms \
+                     requests to the checker server. Set it before launch: \
+                     TRELLIS_CHECKER_SOCKET=<runtime>/sockets/checker.sock"
+                    .to_string()),
+            };
+            env_check.and_then(|_| {
+            let runtime = load_runtime_with_fingerprint_validation(RuntimePaths::new(root));
+            runtime.and_then(|mut runtime| {
+                run_local_closure_migration_if_configured(&mut runtime)?;
+                let mut steps_executed = 0;
+                let limit = max_steps.unwrap_or(u32::MAX);
+                let mut last_outcome: Option<RuntimeStepOutcome> = None;
+                while steps_executed < limit
+                    && runtime.state().stage != trellis_kernel::Stage::Complete
+                {
+                    // Graceful-stop sentinel. Checked at the top of each
+                    // loop iteration so it fires for both successful-step
+                    // and human-gate-poll iterations (the latter `continue`
+                    // past the rest of the body). State is guaranteed
+                    // consistent at this point: the previous iteration's
+                    // step, if any, persisted fully before returning; on
+                    // the first iteration the runtime was just loaded
+                    // from disk. Atomicity invariant from d060508 holds —
+                    // we never observe the sentinel between sink-commit
+                    // and state-rollback.
+                    if let Some(repo_path) = runtime.metadata().repo_path.as_deref() {
+                        let stop_file = repo_path.join(".trellis-stop-after-checkpoint");
+                        if stop_file.exists() {
+                            let _ = std::fs::remove_file(&stop_file);
+                            eprintln!(
+                                "trellis: stop-after-checkpoint sentinel detected; halting cleanly after {steps_executed} step(s)."
+                            );
+                            break;
+                        }
+                    }
+                    let checker_halt_marker = runtime.paths().root.join(
+                        trellis_kernel::runtime_cli_observations_halt::CHECKER_DISAGREEMENT_HALT_MARKER_FILENAME,
+                    );
+                    if checker_halt_marker.exists() {
+                        eprintln!(
+                            "==============================================================\n\
+                             trellis: HALTED — checker-disagreement marker present at\n\
+                               {}\n\
+                             Inspect the JSON for diagnostics + clear instructions.\n\
+                             No new bursts will be dispatched until the marker is\n\
+                             removed (operator-only).\n\
+                             ==============================================================",
+                            checker_halt_marker.display()
+                        );
+                        break;
+                    }
+                    // system_feedback halting is OPT-IN at the WRITER (config
+                    // `system_feedback_halt` / env TRELLIS_SYSTEM_FEEDBACK_HALT;
+                    // default log-and-continue). This CHECK stays unconditional:
+                    // a marker already on disk is an operator-era halt that only
+                    // operator deletion clears, regardless of the current knob.
+                    let system_feedback_halt_marker = runtime.paths().root.join(
+                        trellis_kernel::runtime_cli_observations_halt::SYSTEM_FEEDBACK_HALT_MARKER_FILENAME,
+                    );
+                    if system_feedback_halt_marker.exists() {
+                        eprintln!(
+                            "==============================================================\n\
+                             trellis: HALTED — system_feedback marker present at\n\
+                               {}\n\
+                             An agent burst returned a non-empty system_feedback string.\n\
+                             Inspect the JSON for diagnostics + clear instructions.\n\
+                             No new bursts will be dispatched until the marker is\n\
+                             removed (operator-only).\n\
+                             ==============================================================",
+                            system_feedback_halt_marker.display()
+                        );
+                        break;
+                    }
+                    // Parallel-closure sidecar boundary hook. Runs ONLY
+                    // at the inter-cycle quiescent point (stage Start,
+                    // no in-flight request) and only when the `sidecar`
+                    // config block is present+enabled — absent block ⇒
+                    // strict no-op (no directory creation; the
+                    // byte-identical guarantee's operational form).
+                    // Order inside the hook: journal recovery → claim +
+                    // apply (at most max_applies_per_boundary) → export
+                    // candidates AFTER any same-boundary apply so the
+                    // daemon always sees post-apply eligibility.
+                    if runtime.state().stage == trellis_kernel::Stage::Start
+                        && runtime.state().in_flight_request.is_none()
+                    {
+                        run_sidecar_boundary_hook(&mut runtime)?;
+                    }
+                    let outcome = match step_runtime(&mut runtime, None) {
+                        Ok(outcome) => outcome,
+                        Err(message) if should_poll_for_human_gate_response(&runtime, &message) => {
+                            std::thread::sleep(HUMAN_GATE_POLL_INTERVAL);
+                            continue;
+                        }
+                        Err(message) => return Err(message),
+                    };
+                    steps_executed += 1;
+                    let done = matches!(
+                        outcome.status,
+                        trellis_kernel::RuntimeStepStatus::PackageReady
+                            | trellis_kernel::RuntimeStepStatus::Complete
+                    );
+                    last_outcome = Some(outcome);
+                    if done {
+                        break;
+                    }
+                }
+                success_response(&runtime, last_outcome, steps_executed, None)
+            })
+            })
+        }
+    };
+
+    match response {
+        Ok(response) => {
+            let _ = serde_json::to_writer_pretty(io::stdout(), &response);
+            println!();
+            std::process::ExitCode::SUCCESS
+        }
+        Err(message) => {
+            let _ = serde_json::to_writer_pretty(
+                io::stdout(),
+                &RuntimeCliResponse::Error {
+                    message: message.clone(),
+                },
+            );
+            println!();
+            eprintln!("{message}");
+            std::process::ExitCode::from(1)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::runtime_cli_observations::observe_correspondence_fingerprints;
+    use super::{
+        bridge_request_payload, build_malformed_response_output,
+        campaign_target_requires_witness_report,
+        check_trellis_worker_result_output, fingerprint_mismatches,
+        conditional_proof_is_pending,
+        load_canonical_campaign_witness_report,
+        load_runtime_with_fingerprint_validation, node_deviation_claims_after_updates,
+        normalize_human_gate_output, populate_response_fingerprints, prepare_worker_gate_output,
+        activate_trust_conditional_candidate_obligation,
+        proof_protected_package_legality_error, pv_extraction_toolchain_sha256,
+        pv_tablet_from_config, reconcile_pending_under_model_assumptions, reconcile_pv_provenance,
+        refresh_tcb_extraction_provenance,
+        reconcile_pv_spec_monotonicity, rescind_records_with_stale_approved_axioms_hash_pure,
+        seed_dormant_refutation_file, seed_state_from_config, segment_event_log,
+        should_poll_for_human_gate_response, truncate_event_log_files_to,
+        worker_allowed_outcomes_for_validation, CheckedWorkerPayload, PreparedWorkerGateOutput,
+        RuntimePaths, SupervisorRuntime,
+    };
+    use std::collections::{BTreeMap, BTreeSet};
+    use std::fs;
+    use std::path::PathBuf;
+    use tempfile::tempdir;
+    use trellis_kernel::{
+        DeviationId, DeviationRequest, EventLogRecord, GateKind, NodeId, NodeKind, Phase,
+        ProtocolEvent, ProtocolState, RequestKind, ResetChoice, RetryOutcomeKind,
+        ReviewDecisionKind, RuntimeMetadata, Stage, TargetId, TaskMode, WorkerOutcome,
+        WorkerResponse, WorkerValidationKind, WorkingSnapshot,
+    };
+    use trellis_kernel::{HumanChoice, ResponseStatus, WrapperResponse};
+
+    #[test]
+    fn qualification_waits_only_for_an_absent_conditional_local_closure() {
+        let absent = trellis_kernel::trust_base::TrustError::new(
+            "conditional_candidate_local_closure_missing",
+            "candidate proof is still ordinary PF work",
+        );
+        assert!(conditional_proof_is_pending(&absent));
+
+        for code in [
+            "conditional_candidate_local_closure_inconsistent",
+            "conditional_candidate_local_closure_statement_mismatch",
+            "conditional_candidate_local_closure_hash_invalid",
+            "conditional_candidate_local_closure_hash_zero",
+        ] {
+            let binding_failure =
+                trellis_kernel::trust_base::TrustError::new(code, "must fail closed");
+            assert!(
+                !conditional_proof_is_pending(&binding_failure),
+                "{code} must not be downgraded to pending PF work"
+            );
+        }
+    }
+
+    #[test]
+    fn witness_sidecar_routing_is_claim_specific_not_primary_only() {
+        use trellis_kernel::trust_base::{
+            SeedTargetContract, Sha256Digest, SourceValidationMethod,
+        };
+
+        let target = |target_id: &str, method| SeedTargetContract {
+            target_id: target_id.to_owned(),
+            contract_sha256: Sha256Digest::ZERO,
+            method,
+        };
+        assert!(campaign_target_requires_witness_report(&target(
+            "dec2flt_total",
+            SourceValidationMethod::ExactRustExecutionV1,
+        )));
+        assert!(campaign_target_requires_witness_report(&target(
+            "supporting_decide_claim",
+            SourceValidationMethod::ExactRustExecutionV1,
+        )));
+        assert!(!campaign_target_requires_witness_report(&target(
+            "non_forall_reflection_claim",
+            SourceValidationMethod::CheckedRefutationReflectionV1,
+        )));
+        assert!(!campaign_target_requires_witness_report(&target(
+            "unsupported_non_witness_claim",
+            SourceValidationMethod::NotDefinedForClaimShapeV1,
+        )));
+    }
+
+    #[test]
+    fn campaign_witness_report_missing_is_pending_but_noncanonical_is_fail_closed() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("Refutation.trust-witness.json");
+        assert_eq!(
+            load_canonical_campaign_witness_report(&path).unwrap(),
+            None,
+            "absence is deterministic pending work"
+        );
+
+        fs::write(
+            &path,
+            b"{\"target_id\":\"t\",\"schema\":\"trellis-campaign-witness-report/v1\"}\n",
+        )
+        .unwrap();
+        let error = load_canonical_campaign_witness_report(&path).unwrap_err();
+        assert!(
+            error.contains("exact canonical JSON"),
+            "present but noncanonical evidence must fail closed: {error}"
+        );
+
+        fs::write(
+            &path,
+            b"{\"schema\":\"trellis-campaign-witness-report/v1\",\"target_id\":\"t\"}",
+        )
+        .unwrap();
+        let report = load_canonical_campaign_witness_report(&path)
+            .unwrap()
+            .expect("canonical report");
+        assert_eq!(report["target_id"], "t");
+    }
+
+    #[test]
+    fn trust_conditional_candidate_is_installed_as_an_independent_pinned_obligation() {
+        let dir = tempdir().unwrap();
+        let repo = dir.path();
+        fs::create_dir_all(repo.join("Tablet")).unwrap();
+        fs::write(repo.join("Tablet/Preamble.lean"), "").unwrap();
+        fs::write(
+            repo.join("Tablet/Target.lean"),
+            "import Tablet.Preamble\nnamespace Demo\n\n-- [TABLET NODE: Target]\ntheorem Target : True := by\n-- BODY\n  sorry\n",
+        )
+        .unwrap();
+
+        let statement = "theorem ConditionalTarget : True := by".to_owned();
+        let node = NodeId::from("ConditionalTarget");
+        let candidate_id = trellis_kernel::ChallengeTargetId::from("conditional:target");
+        let mut state = ProtocolState::default();
+        state.trust_base.mode = trellis_kernel::TrustBaseMode::RequiredV1;
+        state.configured_challenge_targets.insert(
+            trellis_kernel::ChallengeTargetId::from("target"),
+            trellis_kernel::ChallengeTargetSpec {
+                kind: trellis_kernel::ChallengeTargetKind::Theorem,
+                name: "Target".to_owned(),
+                lean: "theorem Target : True := by".to_owned(),
+                namespace_context: "namespace Demo".to_owned(),
+                ..trellis_kernel::ChallengeTargetSpec::default()
+            },
+        );
+        state.trust_base.conditional_theorem_candidates.insert(
+            node.clone(),
+            trellis_kernel::TrustConditionalTheoremCandidate {
+                candidate_id: candidate_id.clone(),
+                candidate_definition_sha256: trellis_kernel::trust_base::raw_sha256(
+                    b"candidate",
+                ),
+                profile_id: "bounded-profile".to_owned(),
+                profile_definition_sha256: trellis_kernel::trust_base::raw_sha256(b"profile"),
+                target_id: "target".to_owned(),
+                node_id: node.clone(),
+                statement_utf8: statement.clone(),
+                conditional_statement_sha256: trellis_kernel::trust_base::tagged_hash(
+                    trellis_kernel::trust_base::DomainTag::ConditionalizationSchema,
+                    statement.as_bytes(),
+                ),
+                active_statement_sha256: trellis_kernel::trust_base::raw_sha256(
+                    statement.as_bytes(),
+                ),
+            },
+        );
+
+        assert!(
+            !repo.join("Tablet/ConditionalTarget.lean").exists(),
+            "the seed catalog must remain dormant until journal selection"
+        );
+        assert!(!state.live.present_nodes.contains(&node));
+        activate_trust_conditional_candidate_obligation(&mut state, repo, &node).unwrap();
+
+        let installed = fs::read_to_string(repo.join("Tablet/ConditionalTarget.lean")).unwrap();
+        assert_eq!(
+            trellis_kernel::filespec_split::prescribed_region(&installed, false).unwrap(),
+            statement
+        );
+        assert!(installed.contains("import Tablet.Preamble"));
+        assert!(installed.contains("namespace Demo"));
+        assert!(
+            !installed.contains("import Tablet.Target"),
+            "the candidate must not prove itself by importing the unrestricted theorem"
+        );
+        let preamble_compile = std::process::Command::new("lean")
+            .current_dir(repo)
+            .env("LEAN_PATH", repo)
+            .args([
+                "-o",
+                "Tablet/Preamble.olean",
+                "Tablet/Preamble.lean",
+            ])
+            .output()
+            .expect("Lean must be available to build the inherited preamble");
+        assert!(
+            preamble_compile.status.success(),
+            "test preamble must compile: {}",
+            String::from_utf8_lossy(&preamble_compile.stdout)
+        );
+        let compile = std::process::Command::new("lean")
+            .current_dir(repo)
+            .env("LEAN_PATH", repo)
+            .arg("Tablet/ConditionalTarget.lean")
+            .output()
+            .expect("Lean must be available to verify the generated candidate shell");
+        assert!(
+            compile.status.success(),
+            "generated conditional candidate shell must compile:\nstdout: {}\nstderr: {}",
+            String::from_utf8_lossy(&compile.stdout),
+            String::from_utf8_lossy(&compile.stderr)
+        );
+        assert!(state.proof_nodes.contains(&node));
+        assert!(state.committed_proof_nodes.contains(&node));
+        assert!(state.live.open_nodes.contains(&node));
+        assert_eq!(
+            state.challenge_claims.get(&node),
+            Some(&BTreeSet::from([candidate_id.clone()]))
+        );
+        assert_eq!(
+            state.live.challenge_coverage.get(&candidate_id),
+            Some(&BTreeSet::from([node.clone()]))
+        );
+        assert_eq!(
+            state.configured_challenge_targets[&candidate_id].lean,
+            statement
+        );
+        assert_eq!(
+            state.configured_challenge_targets[&candidate_id].namespace_context,
+            "namespace Demo"
+        );
+
+        state.stage = Stage::HumanGate;
+        state.gate_kind = GateKind::Advance;
+        let gate = state.expected_request(1, RequestKind::HumanGate);
+        let gate_payload = bridge_request_payload(&gate, None, Some(repo)).unwrap();
+        assert_eq!(
+            gate_payload["trust_conditional_theorem_candidates"]["ConditionalTarget"]
+                ["statement_utf8"],
+            statement,
+            "the sole advance gate must see the exact seed-frozen candidate"
+        );
+        assert_eq!(
+            gate_payload["trust_conditional_theorem_candidates"]["ConditionalTarget"]
+                ["target_id"],
+            "target"
+        );
+
+        state.phase = Phase::ProofFormalization;
+        state.stage = Stage::Worker;
+        state.gate_kind = GateKind::None;
+        assert_eq!(
+            state.select_initial_proof_active_node(),
+            Some(node.clone()),
+            "the ordinary proof scheduler must select the open conditional candidate"
+        );
+        state.active_node = Some(node.clone());
+        let worker = state.expected_request(1, RequestKind::Worker);
+        assert_eq!(worker.active_node, Some(node.clone()));
+        assert_eq!(
+            worker.worker_context.validation_kind,
+            WorkerValidationKind::ProofLocal
+        );
+        assert!(
+            worker.worker_context.authorized_nodes.is_empty(),
+            "ProofLocal edits the named active node; its cross-node authorization set is empty"
+        );
+        assert_eq!(
+            worker.trust_conditional_theorem_candidates[&node].statement_utf8,
+            statement
+        );
+
+        let closed = installed.replace("  sorry\n", "  trivial\n");
+        fs::write(repo.join("Tablet/ConditionalTarget.lean"), closed).unwrap();
+        let checkpoint = serde_json::to_vec(&state).unwrap();
+        let mut reloaded: ProtocolState = serde_json::from_slice(&checkpoint).unwrap();
+        activate_trust_conditional_candidate_obligation(&mut reloaded, repo, &node).unwrap();
+        assert!(
+            !reloaded.live.open_nodes.contains(&node),
+            "checkpoint reload must preserve the exact candidate identity and observe that its proof closed"
+        );
+        assert_eq!(
+            reloaded.trust_base.conditional_theorem_candidates,
+            state.trust_base.conditional_theorem_candidates
+        );
+    }
+
+    #[test]
+    fn trust_conditional_candidate_reload_rejects_namespace_or_unrestricted_import_drift() {
+        let dir = tempdir().unwrap();
+        let repo = dir.path();
+        fs::create_dir_all(repo.join("Tablet")).unwrap();
+        fs::write(repo.join("Tablet/Preamble.lean"), "").unwrap();
+        fs::write(
+            repo.join("Tablet/Target.lean"),
+            "import Tablet.Preamble\nnamespace Demo\n\n-- [TABLET NODE: Target]\ntheorem Target : True := by\n-- BODY\n  sorry\n",
+        )
+        .unwrap();
+        let statement = "theorem ConditionalTarget : True := by".to_owned();
+        let node = NodeId::from("ConditionalTarget");
+        let mut state = ProtocolState::default();
+        state.trust_base.mode = trellis_kernel::TrustBaseMode::RequiredV1;
+        state.configured_challenge_targets.insert(
+            trellis_kernel::ChallengeTargetId::from("target"),
+            trellis_kernel::ChallengeTargetSpec {
+                kind: trellis_kernel::ChallengeTargetKind::Theorem,
+                name: "Target".to_owned(),
+                lean: "theorem Target : True := by".to_owned(),
+                namespace_context: "namespace Demo".to_owned(),
+                ..trellis_kernel::ChallengeTargetSpec::default()
+            },
+        );
+        state.trust_base.conditional_theorem_candidates.insert(
+            node.clone(),
+            trellis_kernel::TrustConditionalTheoremCandidate {
+                candidate_id: trellis_kernel::ChallengeTargetId::from("conditional:target"),
+                candidate_definition_sha256: trellis_kernel::trust_base::raw_sha256(b"candidate"),
+                profile_id: "bounded-profile".to_owned(),
+                profile_definition_sha256: trellis_kernel::trust_base::raw_sha256(b"profile"),
+                target_id: "target".to_owned(),
+                node_id: node.clone(),
+                statement_utf8: statement.clone(),
+                conditional_statement_sha256: trellis_kernel::trust_base::tagged_hash(
+                    trellis_kernel::trust_base::DomainTag::ConditionalizationSchema,
+                    statement.as_bytes(),
+                ),
+                active_statement_sha256: trellis_kernel::trust_base::raw_sha256(
+                    statement.as_bytes(),
+                ),
+            },
+        );
+        activate_trust_conditional_candidate_obligation(&mut state, repo, &node).unwrap();
+
+        let candidate_path = repo.join("Tablet/ConditionalTarget.lean");
+        let installed = fs::read_to_string(&candidate_path).unwrap();
+        fs::write(
+            &candidate_path,
+            installed.replacen("import Tablet.Preamble", "import Tablet.Target", 1),
+        )
+        .unwrap();
+        let error = activate_trust_conditional_candidate_obligation(&mut state, repo, &node)
+            .unwrap_err();
+        assert!(error.contains("directly imports its unrestricted target module"));
+
+        fs::write(
+            &candidate_path,
+            installed.replacen("namespace Demo", "namespace Other", 1),
+        )
+        .unwrap();
+        let error = activate_trust_conditional_candidate_obligation(&mut state, repo, &node)
+            .unwrap_err();
+        assert!(error.contains("pinned namespace context"));
+    }
+
+    #[test]
+    fn closure_record_survives_allowlist_growth_and_demotes_on_revocation() {
+        // dec2flt 2026-07-04: the domain-claim lane pass GREW the effective
+        // allowlist and the hash-equality rescind demoted every closure
+        // record, flipping long-closed nodes to closure-unverified — the
+        // exact quarantine provisional admission exists to prevent.
+        // Validity is monotone: a record stays while every axiom it
+        // OBSERVED is still allowed; it demotes only on revocation.
+        let dir = tempdir().unwrap();
+        let repo = dir.path();
+        fs::create_dir_all(repo.join("Tablet")).unwrap();
+        let node = NodeId::from("N");
+        let mut record = trellis_kernel::LocalClosureRecord::default();
+        record.node = node.clone();
+        record.kernel_axioms =
+            BTreeSet::from(["propext".to_string(), "custom.assumption".to_string()]);
+        record.approved_axioms_hash = "hash-at-install".to_string();
+        let mut state = ProtocolState::default();
+        // The node must be a live proof node for the unverified set to
+        // retain it (ensure_local_closure_coverage prunes entries for
+        // absent nodes).
+        state.live.present_nodes.insert(node.clone());
+        state.proof_nodes.insert(node.clone());
+        state.ensure_node_metadata();
+        state
+            .local_closure_records
+            .insert(node.clone(), record.clone());
+        // Allowlist carries the custom assumption (plus defaults) — and has
+        // GROWN with an unrelated extra since install (stale stored hash).
+        fs::write(
+            repo.join("APPROVED_AXIOMS.json"),
+            r#"{"global": ["custom.assumption", "unrelated.extra"], "nodes": {}}"#,
+        )
+        .unwrap();
+        let demoted = rescind_records_with_stale_approved_axioms_hash_pure(&mut state, repo, 7);
+        assert!(demoted.is_empty(), "growth must not demote: {demoted:?}");
+        assert!(state.local_closure_records.contains_key(&node));
+        assert_ne!(
+            state.local_closure_records[&node].approved_axioms_hash,
+            "hash-at-install",
+            "kept record refreshes its recorded allowlist hash"
+        );
+        assert!(state.local_closure_unverified_nodes.is_empty());
+
+        // REVOCATION: the custom assumption leaves the allowlist — the
+        // record relies on it and must demote to re-probe.
+        fs::write(
+            repo.join("APPROVED_AXIOMS.json"),
+            r#"{"global": ["unrelated.extra"], "nodes": {}}"#,
+        )
+        .unwrap();
+        let demoted = rescind_records_with_stale_approved_axioms_hash_pure(&mut state, repo, 8);
+        assert_eq!(demoted, vec![node.clone()]);
+        assert!(!state.local_closure_records.contains_key(&node));
+        assert!(state.local_closure_unverified_nodes.contains(&node));
+    }
+
+    #[test]
+    fn seed_dormant_refutation_writes_to_dormant_not_tablet() {
+        // PV dormant store: seeding a `Decide` pair's refutation writes its
+        // `.lean`/`.tex` into `Dormant/` (mirroring the primary's FREE region),
+        // NEVER `Tablet/` — so `present_nodes` (scan of `Tablet/`) excludes it.
+        // After a polarity flip promotes it, it IS present and FILESPEC-valid.
+        let dir = tempdir().expect("tempdir");
+        let repo = dir.path();
+        std::fs::create_dir_all(repo.join("Tablet")).unwrap();
+        // The shell setup seeds the primary node into Tablet/ with a FREE region
+        // (model import) + marker + pinned slice + body.
+        std::fs::write(
+            repo.join("Tablet").join("Correct.lean"),
+            "import Tablet.Model\n\n-- [TABLET NODE: Correct]\ntheorem Correct (x : I32) : f x ⦃ ret => Spec x ret ⦄ := by\n-- BODY\n  sorry\n",
+        )
+        .unwrap();
+        std::fs::write(repo.join("Tablet").join("Correct.tex"), "").unwrap();
+
+        let refutation_lean =
+            "theorem Correct__Refutation : ¬ (∀ (x : I32), f x ⦃ ret => Spec x ret ⦄) := by";
+        seed_dormant_refutation_file(
+            repo,
+            "Correct",
+            "Correct__Refutation",
+            refutation_lean,
+            "The following result is false:\nf is correct.",
+        )
+        .expect("seed dormant refutation");
+
+        // It is in Dormant/, NOT Tablet/.
+        assert!(repo
+            .join("Dormant")
+            .join("Correct__Refutation.lean")
+            .exists());
+        assert!(!repo
+            .join("Tablet")
+            .join("Correct__Refutation.lean")
+            .exists());
+
+        // The dormant file reuses the primary's FREE region (the model import)
+        // and carries the refutation's pinned slice + a valid FILESPEC body.
+        let dormant_src =
+            std::fs::read_to_string(repo.join("Dormant").join("Correct__Refutation.lean")).unwrap();
+        assert!(dormant_src.contains("import Tablet.Model"));
+        assert!(dormant_src.contains("-- [TABLET NODE: Correct__Refutation]"));
+        assert!(dormant_src.contains(refutation_lean));
+        trellis_kernel::filespec_split::split(&dormant_src, "Correct__Refutation")
+            .expect("dormant refutation must be FILESPEC-valid (promotable as-is)");
+
+        // Idempotent: a second seed with different content does NOT clobber.
+        seed_dormant_refutation_file(
+            repo,
+            "Correct",
+            "Correct__Refutation",
+            "theorem Correct__Refutation : ¬ False := by",
+            "different",
+        )
+        .unwrap();
+        let after =
+            std::fs::read_to_string(repo.join("Dormant").join("Correct__Refutation.lean")).unwrap();
+        assert_eq!(
+            after, dormant_src,
+            "dormant content must never be clobbered"
+        );
+    }
+
+    #[test]
+    fn seed_dormant_refutation_backfills_a_missing_tex_without_clobbering_the_lean() {
+        // The idempotence guard used to key on the `.lean` ALONE, so a dormant
+        // node left with a `.lean` but no `.tex` never acquired one — and
+        // `classify_node_kind_from_tex` reads the `.tex`, so once promoted it
+        // classified `Definition` forever.
+        let dir = tempdir().expect("tempdir");
+        let repo = dir.path();
+        std::fs::create_dir_all(repo.join("Tablet")).unwrap();
+        std::fs::write(
+            repo.join("Tablet").join("Correct.lean"),
+            "import Tablet.Model\n\n-- [TABLET NODE: Correct]\ntheorem Correct : True := by\n-- BODY\n  sorry\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(repo.join("Dormant")).unwrap();
+        let dormant_lean = repo.join("Dormant").join("Correct__Refutation.lean");
+        let dormant_tex = repo.join("Dormant").join("Correct__Refutation.tex");
+        std::fs::write(&dormant_lean, "PRE-EXISTING-LEAN").unwrap();
+        assert!(!dormant_tex.exists());
+
+        seed_dormant_refutation_file(
+            repo,
+            "Correct",
+            "Correct__Refutation",
+            "theorem Correct__Refutation : ¬ True := by",
+            "The following result is false:\nCorrect holds.",
+        )
+        .expect("seed dormant refutation");
+
+        assert_eq!(
+            std::fs::read_to_string(&dormant_lean).unwrap(),
+            "PRE-EXISTING-LEAN",
+            "the existing .lean must never be clobbered"
+        );
+        let tex = std::fs::read_to_string(&dormant_tex).expect("missing .tex must be backfilled");
+        assert!(
+            tex.contains("\\begin{theorem}"),
+            "backfilled .tex must declare a proof-bearing environment; got: {tex}"
+        );
+    }
+
+    #[test]
+    fn human_gate_poll_helper_only_waits_for_missing_human_input() {
+        let dir = tempdir().expect("tempdir");
+        let mut state = ProtocolState::default();
+        state.phase = Phase::TheoremStating;
+        state.stage = Stage::HumanGate;
+        state.cycle = 3;
+        state.request_seq = 1;
+        state.in_flight_request = Some(state.expected_request(1, RequestKind::HumanGate));
+        let runtime = SupervisorRuntime::initialize(RuntimePaths::new(dir.path()), state)
+            .expect("initialize runtime");
+
+        assert!(should_poll_for_human_gate_response(
+            &runtime,
+            "runtime step failed: adapter error: bridge /tmp/bridge failed: missing human gate response file: /tmp/runtime/human_gate_response.json"
+        ));
+        assert!(!should_poll_for_human_gate_response(
+            &runtime,
+            "runtime step failed: adapter error: bridge /tmp/bridge failed: failed to read human gate response file: permission denied"
+        ));
+    }
+
+    // Defect 1 (gate-response freshness). A response stamped with the
+    // in-flight gate's cycle is `fresh`; the bridge may consume it.
+    #[test]
+    fn human_gate_response_matching_cycle_is_fresh() {
+        let (output, fresh) =
+            normalize_human_gate_output(42, 468, r#"{"choice":"approve","cycle":468}"#);
+        assert!(fresh, "a response stamped with the gate's cycle is fresh");
+        match output {
+            WrapperResponse::HumanGate(resp) => {
+                assert_eq!(resp.status, ResponseStatus::Ok);
+                assert_eq!(resp.choice, HumanChoice::Approve);
+                assert_eq!(resp.cycle, 468);
+            }
+            other => panic!("expected HumanGate response, got {other:?}"),
+        }
+    }
+
+    // A response stamped with a DIFFERENT cycle (the stale-approve case
+    // from the stale-approve livelock: file written for cycle 212,
+    // current gate at cycle 468) is NOT fresh — the bridge keeps blocking.
+    #[test]
+    fn human_gate_response_mismatched_cycle_is_stale() {
+        let (_output, fresh) =
+            normalize_human_gate_output(42, 468, r#"{"choice":"approve","cycle":212}"#);
+        assert!(
+            !fresh,
+            "a response stamped with a different cycle must be treated as stale"
+        );
+    }
+
+    // A legacy/un-stamped response (no `cycle`) is treated as stale, so an
+    // un-updated viewer can never auto-consume a gate.
+    #[test]
+    fn human_gate_response_without_cycle_stamp_is_stale() {
+        let (_output, fresh) = normalize_human_gate_output(42, 468, r#"{"choice":"approve"}"#);
+        assert!(!fresh, "an un-stamped response must be treated as stale");
+    }
+
+    // A malformed payload is never fresh (and never consumable).
+    #[test]
+    fn human_gate_response_malformed_is_not_fresh() {
+        let (output, fresh) = normalize_human_gate_output(42, 468, "not json at all");
+        assert!(!fresh);
+        match output {
+            WrapperResponse::HumanGate(resp) => {
+                assert_eq!(resp.status, ResponseStatus::Malformed);
+            }
+            other => panic!("expected HumanGate response, got {other:?}"),
+        }
+    }
+
+    /// Bug 1: verifier panels that produce no result artifact must be able
+    /// to build a Malformed verifier response (the bridge returns this in
+    /// lieu of crashing; the engine re-dispatches on Malformed). Previously
+    /// these kinds were explicitly rejected by build_malformed_response.
+    #[test]
+    fn build_malformed_response_supports_verifier_kinds() {
+        for (kind, want_status_check) in [
+            (RequestKind::Paper, 0u8),
+            (RequestKind::Corr, 1u8),
+            (RequestKind::Sound, 2u8),
+        ] {
+            let resp = build_malformed_response_output(kind, 7, 31)
+                .unwrap_or_else(|e| panic!("kind {kind:?} should be supported: {e}"));
+            match (&resp, want_status_check) {
+                (WrapperResponse::Paper(r), 0) => {
+                    assert_eq!(r.status, ResponseStatus::Malformed);
+                    assert_eq!(r.request_id, 7);
+                    assert_eq!(r.cycle, 31);
+                }
+                (WrapperResponse::Corr(r), 1) => {
+                    assert_eq!(r.status, ResponseStatus::Malformed);
+                    assert_eq!(r.request_id, 7);
+                    assert_eq!(r.cycle, 31);
+                }
+                (WrapperResponse::Sound(r), 2) => {
+                    assert_eq!(r.status, ResponseStatus::Malformed);
+                    assert_eq!(r.request_id, 7);
+                    assert_eq!(r.cycle, 31);
+                }
+                other => panic!("unexpected response variant for {kind:?}: {other:?}"),
+            }
+        }
+    }
+
+    // ── Round-2 state-inconsistency recovery tests ───────────────────────
+    fn git_in(repo: &std::path::Path, args: &[&str]) {
+        let status = std::process::Command::new("git")
+            .arg("-C")
+            .arg(repo)
+            .args(args)
+            .status()
+            .expect("git spawn");
+        assert!(status.success(), "git {args:?} failed");
+    }
+
+    /// Seed a lake-less Tablet repo with one node `A` (A.tex + A.lean),
+    /// committed. Returns (runtime_root, repo_path). The node's corr
+    /// fingerprint is recorded into `live.corr_current_fingerprints` so a
+    /// later `load_runtime_with_fingerprint_validation` compares it against
+    /// disk. `corr_fingerprint_schema_version` is pinned to 3 so the load-time
+    /// schema migration does not touch the recorded live fingerprints.
+    fn seed_divergence_repo(dir: &tempfile::TempDir) -> (PathBuf, PathBuf) {
+        let root = dir.path().join("runtime");
+        let repo = dir.path().join("repo");
+        fs::create_dir_all(repo.join("Tablet")).unwrap();
+        git_in(&repo, &["init", "--initial-branch=main"]);
+        git_in(&repo, &["config", "user.email", "t@t"]);
+        git_in(&repo, &["config", "user.name", "t"]);
+        fs::write(
+            repo.join("Tablet/A.tex"),
+            "\\begin{theorem} A holds. \\end{theorem}\n",
+        )
+        .unwrap();
+        fs::write(repo.join("Tablet/A.lean"), "theorem a : True := trivial\n").unwrap();
+        git_in(&repo, &["add", "-A"]);
+        git_in(&repo, &["commit", "-m", "c1 committed checkpoint"]);
+
+        let nodes = BTreeSet::from([NodeId::from("A")]);
+        let committed_fp = observe_correspondence_fingerprints(&repo, &nodes).unwrap();
+        assert!(
+            committed_fp
+                .get(&NodeId::from("A"))
+                .map(|f| !f.trim().is_empty())
+                .unwrap_or(false),
+            "test setup: node A must have a non-empty corr fingerprint"
+        );
+
+        let mut state = ProtocolState::default();
+        state.cycle = 887;
+        // Pin the CURRENT corr-fingerprint schema version so the one-shot
+        // `migrate_corr_fingerprint_schema` (which recomputes fingerprints
+        // from the on-disk Tablet text when the stored version is stale) does
+        // NOT fire on load — otherwise it would re-align the recorded
+        // fingerprints to the stray-edited disk and mask the very divergence
+        // this fixture exists to trigger. This models the ordinary resume the
+        // divergence-rewind path guards (no schema migration in flight).
+        state.corr_fingerprint_schema_version =
+            crate::runtime_cli_observations::CORR_FINGERPRINT_SCHEMA_VERSION;
+        state.live.corr_current_fingerprints = committed_fp;
+        // The divergence check only inspects nodes that are BOTH recorded and
+        // live-present (the `.filter(present.contains)` guard added by the
+        // Decide-flip staleness fix). Node A must be present or `nodes_to_check`
+        // is empty and the check short-circuits before it can rewind.
+        state.live.present_nodes.insert(NodeId::from("A"));
+        SupervisorRuntime::initialize_with_metadata(
+            RuntimePaths::new(&root),
+            state,
+            RuntimeMetadata {
+                repo_path: Some(repo.clone()),
+                config_path: None,
+                native_history_kinds: BTreeSet::new(),
+                initial_planning_seeded: false,
+            ..RuntimeMetadata::default()
+            },
+        )
+        .expect("initialize runtime");
+
+        // `load()` refuses a non-initial cycle with an empty event-log dir;
+        // seed one valid record so the load path under test is reached.
+        let event_log_dir = repo.join(".trellis-history").join("event-log");
+        fs::create_dir_all(&event_log_dir).unwrap();
+        let rec = EventLogRecord {
+            index: 0,
+            event: ProtocolEvent::StartCycle,
+            commands: Vec::new(),
+            phase: Phase::ProofFormalization,
+            stage: Stage::HumanGate,
+            cycle: 887,
+            ts_ms: 0,
+        };
+        fs::write(
+            event_log_dir.join("cycle-000887.jsonl"),
+            format!("{}\n", serde_json::to_string(&rec).unwrap()),
+        )
+        .unwrap();
+        (root, repo)
+    }
+
+    fn seed_assumptions_pin_runtime(
+        dir: &tempfile::TempDir,
+        staged: bool,
+    ) -> (SupervisorRuntime, PathBuf, NodeId) {
+        let root = dir.path().join("runtime");
+        let repo = dir.path().join("repo");
+        let tablet = repo.join("Tablet");
+        fs::create_dir_all(&tablet).unwrap();
+        if staged {
+            fs::write(
+                tablet.join("Assumptions.lean"),
+                format!(
+                    "{}\n{}a1\naxiom dec2flt.slice_len_le_isize_max : True\n{}a1\n",
+                    trellis_kernel::assumptions_registry::empty_assumptions_lean_scaffold(),
+                    trellis_kernel::assumptions_registry::LEAN_ASSUMPTION_BEGIN_PREFIX,
+                    trellis_kernel::assumptions_registry::LEAN_ASSUMPTION_END_PREFIX,
+                ),
+            )
+            .unwrap();
+            fs::write(
+                tablet.join("Assumptions.tex"),
+                format!(
+                    "{}\n{}a1\nEvery Rust slice length is at most isize::MAX.\n{}a1\n",
+                    trellis_kernel::assumptions_registry::empty_assumptions_tex_scaffold(),
+                    trellis_kernel::assumptions_registry::TEX_ASSUMPTION_BEGIN_PREFIX,
+                    trellis_kernel::assumptions_registry::TEX_ASSUMPTION_END_PREFIX,
+                ),
+            )
+            .unwrap();
+        } else {
+            fs::write(
+                tablet.join("Assumptions.lean"),
+                trellis_kernel::assumptions_registry::empty_assumptions_lean_scaffold(),
+            )
+            .unwrap();
+            fs::write(
+                tablet.join("Assumptions.tex"),
+                trellis_kernel::assumptions_registry::empty_assumptions_tex_scaffold(),
+            )
+            .unwrap();
+        }
+
+        let assumptions = NodeId::from(trellis_kernel::assumptions_registry::ASSUMPTIONS_NODE);
+        let mut state = ProtocolState::default();
+        state.pv_tablet_configured = true;
+        state.node_role.insert(
+            assumptions.clone(),
+            trellis_kernel::PvRole::UnderModelAssumptions,
+        );
+        state.live.present_nodes.insert(assumptions.clone());
+        state
+            .corr_status
+            .insert(assumptions.clone(), CorrStatus::Pass);
+        state
+            .corr_approved_fingerprints
+            .insert(assumptions.clone(), String::new());
+        state
+            .live
+            .corr_current_fingerprints
+            .insert(assumptions.clone(), String::new());
+        let runtime = SupervisorRuntime::initialize_with_metadata(
+            RuntimePaths::new(&root),
+            state,
+            RuntimeMetadata {
+                repo_path: Some(repo.clone()),
+                config_path: None,
+                native_history_kinds: BTreeSet::new(),
+                initial_planning_seeded: false,
+            ..RuntimeMetadata::default()
+            },
+        )
+        .expect("initialize runtime");
+        (runtime, repo, assumptions)
+    }
+
+    #[test]
+    fn fingerprint_mismatches_accepts_empty_assumptions_scaffold_pin() {
+        let dir = tempdir().unwrap();
+        let (runtime, repo, assumptions) = seed_assumptions_pin_runtime(&dir, false);
+        let nodes = BTreeSet::from([assumptions]);
+
+        let mismatches = fingerprint_mismatches(&runtime, &repo, &nodes).unwrap();
+
+        assert!(
+            mismatches.is_empty(),
+            "bootstrap Assumptions scaffold should match the empty fingerprint pin, got {mismatches:?}"
+        );
+    }
+
+    #[test]
+    fn fingerprint_mismatches_reopens_empty_pin_for_real_staged_assumption() {
+        let dir = tempdir().unwrap();
+        let (runtime, repo, assumptions) = seed_assumptions_pin_runtime(&dir, true);
+        let nodes = BTreeSet::from([assumptions]);
+
+        let mismatches = fingerprint_mismatches(&runtime, &repo, &nodes).unwrap();
+
+        assert!(
+            mismatches
+                .iter()
+                .any(|msg| msg.contains("corr[Assumptions]")),
+            "a real staged marker must not be hidden by the empty bootstrap pin: {mismatches:?}"
+        );
+    }
+
+    /// Operator round-2 directive: a STATE-INCONSISTENCY divergence between
+    /// loaded kernel state and the on-disk worktree must auto-rewind to the
+    /// LAST CHECKPOINT (LastCommit / `git reset --hard HEAD`), recover, and
+    /// resume — NOT fail loud, NOT LastClean. A stray (uncommitted) worktree
+    /// edit is discarded back to the committed checkpoint.
+    #[test]
+    fn state_divergence_auto_rewinds_to_last_commit() {
+        let dir = tempdir().unwrap();
+        let (root, repo) = seed_divergence_repo(&dir);
+        let committed = fs::read_to_string(repo.join("Tablet/A.lean")).unwrap();
+
+        // Stray uncommitted edit ⇒ disk fingerprint diverges from recorded.
+        fs::write(
+            repo.join("Tablet/A.lean"),
+            "theorem a : True := by trivial\n",
+        )
+        .unwrap();
+        let nodes = BTreeSet::from([NodeId::from("A")]);
+        let dirty_runtime = SupervisorRuntime::load(RuntimePaths::new(&root)).unwrap();
+        assert!(
+            !fingerprint_mismatches(&dirty_runtime, &repo, &nodes)
+                .unwrap()
+                .is_empty(),
+            "precondition: the stray edit must produce a divergence"
+        );
+        drop(dirty_runtime);
+
+        // The load path must auto-rewind to HEAD and succeed.
+        let runtime = load_runtime_with_fingerprint_validation(RuntimePaths::new(&root))
+            .expect("state divergence must auto-rewind to LastCommit and resume, not fail");
+        assert_eq!(
+            runtime.state().cycle,
+            887,
+            "LastCommit rewind keeps the loaded cycle (no LastClean long rollback)"
+        );
+        assert_eq!(
+            fs::read_to_string(repo.join("Tablet/A.lean")).unwrap(),
+            committed,
+            "worktree must be reset to the committed checkpoint (HEAD)"
+        );
+        // No supervisor2/clean-* tag was ever created ⇒ a LastClean attempt
+        // would have errored; reaching Ok proves the recovery used HEAD only.
+        let tags = std::process::Command::new("git")
+            .arg("-C")
+            .arg(&repo)
+            .args(["tag", "--list", "supervisor2/clean-*"])
+            .output()
+            .unwrap();
+        assert!(
+            tags.stdout.is_empty(),
+            "test invariant: no clean tag exists, so recovery cannot have used LastClean"
+        );
+    }
+
+    /// If HEAD itself does not match the recorded state (a committed
+    /// divergence — genuine corruption, not a stray edit), the auto-rewind to
+    /// HEAD cannot resolve it and the load FAILS LOUD. It must NOT escalate to
+    /// LastClean.
+    #[test]
+    fn state_divergence_at_head_fails_loud_after_rewind() {
+        let dir = tempdir().unwrap();
+        let (root, repo) = seed_divergence_repo(&dir);
+
+        // Commit the divergent content ⇒ HEAD no longer matches recorded state.
+        fs::write(
+            repo.join("Tablet/A.lean"),
+            "theorem a : True := by trivial\n",
+        )
+        .unwrap();
+        git_in(&repo, &["add", "-A"]);
+        git_in(&repo, &["commit", "-m", "c2 divergent HEAD"]);
+
+        let err = match load_runtime_with_fingerprint_validation(RuntimePaths::new(&root)) {
+            Ok(_) => panic!("committed divergence must fail loud after the HEAD rewind"),
+            Err(e) => e,
+        };
+        assert!(
+            err.contains("AFTER an automatic rewind to the last checkpoint"),
+            "must fail loud (not LastClean) when HEAD itself diverges; got: {err}"
+        );
+    }
+
+    // (deleted: proof_protected_package_check_rejects_protected_fingerprint_drift
+    //  exercised the per-node post-hoc honesty loop that iterated
+    //  `protected_snapshot.keys()`. That loop is gone; drift-on-covering-nodes
+    //  is now caught by `paper_target_corr_reopen_guard_errors` at commit time.
+    //  The test's assertion — that a "protected target fingerprint" mismatch
+    //  yields a rejection at this legality-error helper — no longer applies.)
+
+    #[test]
+    fn proof_local_allows_new_lean_irrelevant_helper_definition() {
+        // Adding a new helper that is NOT in any covering node's L_def
+        // (Lean-relevance set) does not appear in the paper fingerprint's
+        // `lean_relevant_definition_descendants` axis, so the post-worker
+        // fingerprint byte-equals the pre-worker fingerprint and the
+        // protection check passes.
+        let acceptance_context = serde_json::json!({
+            "request": {},
+            "validation_kind": "proof_local",
+            "worker_acceptance": {},
+            "active_node": "ThmConn",
+            "held_target": "",
+            "authorized_nodes": [],
+            "configured_targets": ["thm:conn"],
+            "current_present_nodes": ["Preamble", "ThmConn", "ExistingDef"],
+            "current_proof_nodes": ["ThmConn"],
+            "current_deps": {
+                "Preamble": [],
+                "ThmConn": ["Preamble", "ExistingDef"],
+                "ExistingDef": ["Preamble"]
+            },
+            "current_target_claims": {"ThmConn": ["thm:conn"], "ExistingDef": []},
+            "current_paper_approved_fingerprints": {"thm:conn": "paper-approved"},
+            "current_coverage": {"thm:conn": ["ThmConn"]},
+            "current_paper_current_fingerprints": {
+                "thm:conn": serde_json::json!({
+                    "target": "thm:conn",
+                    "covering_nodes": {"ThmConn": "protected-fp"},
+                    "preamble_definition_hashes": []
+                }).to_string()
+            },
+            "repo_path": "/tmp/repo",
+            "before_snapshot": {},
+            "baseline_errors": [],
+            "imports_before": [],
+            "expected_active_hash": "",
+            "baseline_declaration_hashes": {},
+            "baseline_correspondence_hashes": {}
+        });
+        let acceptance_context: PreparedWorkerGateOutput =
+            serde_json::from_value(acceptance_context).expect("parse acceptance context");
+        let response = WorkerResponse {
+            outcome: WorkerOutcome::Valid,
+            snapshot: WorkingSnapshot {
+                present_nodes: BTreeSet::from([
+                    NodeId::from("Preamble"),
+                    NodeId::from("ThmConn"),
+                    NodeId::from("ExistingDef"),
+                    NodeId::from("NewHelperDef"),
+                ]),
+                open_nodes: BTreeSet::new(),
+                coverage: BTreeMap::from([(
+                    TargetId::from("thm:conn"),
+                    BTreeSet::from([NodeId::from("ThmConn")]),
+                )]),
+                target_fingerprints: BTreeMap::from([
+                    (NodeId::from("ThmConn"), "protected-fp".to_string()),
+                    (
+                        NodeId::from("ExistingDef"),
+                        "existing-def-target".to_string(),
+                    ),
+                    (
+                        NodeId::from("NewHelperDef"),
+                        "helper-def-target".to_string(),
+                    ),
+                ]),
+                corr_current_fingerprints: BTreeMap::from([
+                    (NodeId::from("ThmConn"), "protected-fp".to_string()),
+                    (
+                        NodeId::from("ExistingDef"),
+                        "existing-def-target".to_string(),
+                    ),
+                    (
+                        NodeId::from("NewHelperDef"),
+                        "helper-def-target".to_string(),
+                    ),
+                ]),
+                paper_current_fingerprints: BTreeMap::from([(
+                    TargetId::from("thm:conn"),
+                    serde_json::json!({
+                        "target": "thm:conn",
+                        "covering_nodes": {"ThmConn": "protected-fp"},
+                        "preamble_definition_hashes": []
+                    })
+                    .to_string(),
+                )]),
+                sound_current_fingerprints: BTreeMap::new(),
+                deviation_current_fingerprints: BTreeMap::new(),
+                sound_current_fingerprint_parts: BTreeMap::new(),
+                sketch_proof_nodes: BTreeSet::new(),
+                placeholder_definition_nodes: BTreeSet::new(),
+                substantiveness_current_fingerprints: BTreeMap::new(),
+                protected_closure_nodes_per_target: BTreeMap::new(),
+                challenge_coverage: BTreeMap::new(),
+            },
+            ..WorkerResponse::default()
+        };
+
+        let err =
+            proof_protected_package_legality_error("proof_local", &acceptance_context, &response);
+
+        assert_eq!(err, None);
+    }
+
+    #[test]
+    fn proof_restructure_allows_non_lean_relevant_def_tex_edit() {
+        // A TeX-only edit to a definition descendant whose Lean meaning
+        // is not consumed by any covering node's `lean_semantic_closure`
+        // walk does not appear in the paper fingerprint's
+        // `lean_relevant_definition_descendants` axis, so the post-worker
+        // fingerprint byte-equals the pre-worker fingerprint and the
+        // protection check passes.
+        let acceptance_context = serde_json::json!({
+            "request": {},
+            "validation_kind": "proof_restructure",
+            "worker_acceptance": {},
+            "active_node": "ThmConn",
+            "held_target": "",
+            "authorized_nodes": [],
+            "configured_targets": ["thm:conn"],
+            "current_present_nodes": ["Preamble", "ThmConn", "PostStateDef"],
+            "current_proof_nodes": ["ThmConn"],
+            "current_deps": {
+                "Preamble": [],
+                "ThmConn": ["Preamble", "PostStateDef"],
+                "PostStateDef": ["Preamble"]
+            },
+            "current_target_claims": {"ThmConn": ["thm:conn"], "PostStateDef": []},
+            "current_paper_approved_fingerprints": {"thm:conn": "paper-approved"},
+            "current_coverage": {"thm:conn": ["ThmConn"]},
+            "current_paper_current_fingerprints": {
+                "thm:conn": serde_json::json!({
+                    "target": "thm:conn",
+                    "covering_nodes": {"ThmConn": "protected-fp"},
+                    "preamble_definition_hashes": []
+                }).to_string()
+            },
+            "repo_path": "/tmp/repo",
+            "before_snapshot": {},
+            "baseline_errors": [],
+            "imports_before": [],
+            "expected_active_hash": "",
+            "baseline_declaration_hashes": {},
+            "baseline_correspondence_hashes": {}
+        });
+        let acceptance_context: PreparedWorkerGateOutput =
+            serde_json::from_value(acceptance_context).expect("parse acceptance context");
+        let response = WorkerResponse {
+            outcome: WorkerOutcome::Valid,
+            snapshot: WorkingSnapshot {
+                present_nodes: BTreeSet::from([
+                    NodeId::from("Preamble"),
+                    NodeId::from("ThmConn"),
+                    NodeId::from("PostStateDef"),
+                ]),
+                open_nodes: BTreeSet::new(),
+                coverage: BTreeMap::from([(
+                    TargetId::from("thm:conn"),
+                    BTreeSet::from([NodeId::from("ThmConn")]),
+                )]),
+                target_fingerprints: BTreeMap::new(),
+                corr_current_fingerprints: BTreeMap::new(),
+                paper_current_fingerprints: BTreeMap::from([(
+                    TargetId::from("thm:conn"),
+                    serde_json::json!({
+                        "target": "thm:conn",
+                        "covering_nodes": {"ThmConn": "protected-fp"},
+                        "preamble_definition_hashes": []
+                    })
+                    .to_string(),
+                )]),
+                sound_current_fingerprints: BTreeMap::new(),
+                deviation_current_fingerprints: BTreeMap::new(),
+                sound_current_fingerprint_parts: BTreeMap::new(),
+                sketch_proof_nodes: BTreeSet::new(),
+                placeholder_definition_nodes: BTreeSet::new(),
+                substantiveness_current_fingerprints: BTreeMap::new(),
+                protected_closure_nodes_per_target: BTreeMap::new(),
+                challenge_coverage: BTreeMap::new(),
+            },
+            ..WorkerResponse::default()
+        };
+
+        let err = proof_protected_package_legality_error(
+            "proof_restructure",
+            &acceptance_context,
+            &response,
+        );
+
+        assert_eq!(
+            err, None,
+            "non-Lean-relevant def TeX edits must pass under restructure"
+        );
+    }
+
+    #[test]
+    fn proof_restructure_rejects_lean_relevant_descendant_change() {
+        // A change to a Lean-relevant descendant's TeX shows up in the
+        // paper fingerprint's `lean_relevant_definition_descendants` axis,
+        // so the post-worker fingerprint byte-differs from the pre-worker
+        // fingerprint and the protection check fires.
+        let acceptance_context = serde_json::json!({
+            "request": {},
+            "validation_kind": "proof_restructure",
+            "worker_acceptance": {},
+            "active_node": "ThmConn",
+            "held_target": "",
+            "authorized_nodes": [],
+            "configured_targets": ["thm:conn"],
+            "current_present_nodes": ["Preamble", "ThmConn", "RelevantDef"],
+            "current_proof_nodes": ["ThmConn"],
+            "current_deps": {
+                "Preamble": [],
+                "ThmConn": ["Preamble", "RelevantDef"],
+                "RelevantDef": ["Preamble"]
+            },
+            "current_target_claims": {"ThmConn": ["thm:conn"], "RelevantDef": []},
+            "current_paper_approved_fingerprints": {"thm:conn": "paper-approved"},
+            "current_coverage": {"thm:conn": ["ThmConn"]},
+            "current_paper_current_fingerprints": {
+                "thm:conn": serde_json::json!({
+                    "target": "thm:conn",
+                    "covering_nodes": {"ThmConn": "protected-fp"},
+                    "lean_relevant_definition_descendants": {"RelevantDef": "relevant-fp-old"},
+                    "preamble_definition_hashes": []
+                }).to_string()
+            },
+            "repo_path": "/tmp/repo",
+            "before_snapshot": {},
+            "baseline_errors": [],
+            "imports_before": [],
+            "expected_active_hash": "",
+            "baseline_declaration_hashes": {},
+            "baseline_correspondence_hashes": {}
+        });
+        let acceptance_context: PreparedWorkerGateOutput =
+            serde_json::from_value(acceptance_context).expect("parse acceptance context");
+        let response = WorkerResponse {
+            outcome: WorkerOutcome::Valid,
+            snapshot: WorkingSnapshot {
+                present_nodes: BTreeSet::from([
+                    NodeId::from("Preamble"),
+                    NodeId::from("ThmConn"),
+                    NodeId::from("RelevantDef"),
+                ]),
+                open_nodes: BTreeSet::new(),
+                coverage: BTreeMap::from([(
+                    TargetId::from("thm:conn"),
+                    BTreeSet::from([NodeId::from("ThmConn")]),
+                )]),
+                target_fingerprints: BTreeMap::new(),
+                corr_current_fingerprints: BTreeMap::new(),
+                paper_current_fingerprints: BTreeMap::from([(
+                    TargetId::from("thm:conn"),
+                    serde_json::json!({
+                        "target": "thm:conn",
+                        "covering_nodes": {"ThmConn": "protected-fp"},
+                        "lean_relevant_definition_descendants": {"RelevantDef": "relevant-fp-NEW"},
+                        "preamble_definition_hashes": []
+                    })
+                    .to_string(),
+                )]),
+                sound_current_fingerprints: BTreeMap::new(),
+                deviation_current_fingerprints: BTreeMap::new(),
+                sound_current_fingerprint_parts: BTreeMap::new(),
+                sketch_proof_nodes: BTreeSet::new(),
+                placeholder_definition_nodes: BTreeSet::new(),
+                substantiveness_current_fingerprints: BTreeMap::new(),
+                protected_closure_nodes_per_target: BTreeMap::new(),
+                challenge_coverage: BTreeMap::new(),
+            },
+            ..WorkerResponse::default()
+        };
+
+        let err = proof_protected_package_legality_error(
+            "proof_restructure",
+            &acceptance_context,
+            &response,
+        );
+
+        assert!(
+            err.is_some(),
+            "Lean-relevant descendant change must trigger paper-fingerprint error"
+        );
+        assert!(
+            err.as_deref().unwrap_or("").contains("paper fingerprints"),
+            "expected paper-fingerprint error, got: {:?}",
+            err
+        );
+    }
+
+    fn theorem_worker_acceptance_context(
+        is_pv: bool,
+        allowed_outcomes: Vec<&str>,
+    ) -> serde_json::Value {
+        serde_json::json!({
+            "request": {
+                "id": 42,
+                "cycle": 7,
+                "is_pv": is_pv,
+                "current_node_kinds": {},
+                "worker_contract": {
+                    "allowed_outcomes": allowed_outcomes,
+                },
+            },
+            "validation_kind": "theorem_global",
+            "worker_acceptance": {
+                "validation_kind": "theorem_global",
+                "validation_execution_plan": [],
+            },
+            "active_node": "",
+            "held_target": "",
+            "authorized_nodes": [],
+            "configured_targets": [],
+            "current_present_nodes": [],
+            "current_proof_nodes": [],
+            "current_deps": {},
+            "current_target_claims": {},
+            "repo_path": "/tmp/repo",
+            "before_snapshot": {},
+            "baseline_errors": [],
+            "imports_before": [],
+            "expected_active_hash": "",
+            "baseline_declaration_hashes": {},
+            "baseline_correspondence_hashes": {},
+        })
+    }
+
+    fn target_false_under_model_payload() -> serde_json::Value {
+        serde_json::json!({
+            "outcome": "target_false_under_model",
+            "summary": "T is false under the model",
+            "comments": "",
+            "deleted_nodes": [],
+            "semantic_dep_updates": {},
+            "target_claim_updates": {},
+            "difficulty_updates": {},
+            "needs_restructure_suggested_nodes": [],
+            "under_model_disproof": "x0 = over-isize::MAX slice falsifies parse_number",
+            "under_model_route_opinion": "model-deviation",
+            "under_model_reasoning": "the Usize->Isize cast wraps negative",
+        })
+    }
+
+    fn write_acceptance_stub_check_script(repo: &std::path::Path) {
+        let script = r#"#!/usr/bin/env python3
+import json
+import sys
+from pathlib import Path
+
+cmd = sys.argv[1]
+
+if cmd == "sync-tablet-support":
+    print(json.dumps({
+        "updated_paths": ["Tablet/INDEX.md", "Tablet/README.md"],
+        "header_tex_path": "Tablet/header.tex",
+        "index_md_path": "Tablet/INDEX.md",
+        "readme_md_path": "Tablet/README.md",
+    }))
+elif cmd == "materialize-tablet-oleans":
+    nodes = []
+    i = 3
+    while i < len(sys.argv):
+        if sys.argv[i] == "--node" and i + 1 < len(sys.argv):
+            nodes.append(sys.argv[i + 1])
+            i += 2
+        else:
+            i += 1
+    print(json.dumps({
+        "requested_nodes": nodes,
+        "materialized_nodes": nodes,
+        "returncode": 0,
+        "stdout": "",
+        "stderr": "",
+        "timed_out": False,
+        "spawn_error": "",
+    }))
+elif cmd == "lean-compile-node":
+    print(json.dumps({
+        "returncode": 0,
+        "stdout": "",
+        "stderr": "",
+        "timed_out": False,
+        "spawn_error": "",
+    }))
+elif cmd == "print-axioms":
+    node = sys.argv[2]
+    print(json.dumps({
+        "returncode": 0,
+        "stdout": f"{node} does not depend on any axioms\n",
+        "stderr": "",
+        "timed_out": False,
+        "spawn_error": "",
+    }))
+elif cmd == "lean-semantic-payloads":
+    repo = Path(sys.argv[2])
+    nodes = []
+    i = 3
+    while i < len(sys.argv):
+        if sys.argv[i] == "--node" and i + 1 < len(sys.argv):
+            nodes.append(sys.argv[i + 1])
+            i += 2
+        else:
+            i += 1
+    payloads = {}
+    for node in nodes:
+        lean_path = repo / "Tablet" / f"{node}.lean"
+        payload = ""
+        if lean_path.exists():
+            for line in lean_path.read_text(encoding="utf-8").splitlines():
+                stripped = line.strip()
+                if stripped.startswith(("theorem ", "lemma ", "def ", "abbrev ", "instance ", "structure ", "inductive ", "class ", "axiom ")):
+                    payload = stripped
+                    break
+        payloads[node] = {"ok": True, "payload": payload, "error": ""}
+    print(json.dumps(payloads))
+elif cmd == "local-closure-axioms":
+    node = sys.argv[2]
+    print(json.dumps({
+        "request_id": 0,
+        "node_name": node,
+        "returncode": 0,
+        "timed_out": False,
+        "stdout": "",
+        "stderr": "",
+        "status": "ok",
+        "kernel_axioms": [],
+        "boundary_theorems": [],
+        "strict_theorem_deps": [],
+        "strict_definition_deps": [],
+        "errors": [],
+    }))
+else:
+    raise SystemExit(f"unexpected subcommand: {cmd}")
+"#;
+        let path = repo.join(".trellis/scripts/check.py");
+        fs::create_dir_all(path.parent().unwrap()).expect("create checker dir");
+        fs::write(&path, script).expect("write checker");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perms = fs::metadata(&path).unwrap().permissions();
+            perms.set_mode(0o755);
+            fs::set_permissions(&path, perms).unwrap();
+        }
+    }
+
+    fn seed_assumptions_repo(repo: &std::path::Path, ordinary: bool) {
+        write_acceptance_stub_check_script(repo);
+        fs::create_dir_all(repo.join("Tablet")).expect("create Tablet");
+        fs::write(repo.join("Tablet/Preamble.lean"), "").expect("write preamble lean");
+        fs::write(repo.join("Tablet/Preamble.tex"), "").expect("write preamble tex");
+        if ordinary {
+            fs::write(
+                repo.join("Tablet/Assumptions.lean"),
+                "-- [TABLET NODE: Assumptions]\nimport Tablet.Preamble\n\n\
+                 theorem Assumptions : True := by\n  trivial\n",
+            )
+            .expect("write ordinary assumptions lean");
+            fs::write(
+                repo.join("Tablet/Assumptions.tex"),
+                "\\begin{theorem}Ordinary assumptions node.\\end{theorem}\n\
+                 \\begin{proof}Trivial.\\end{proof}\n",
+            )
+            .expect("write ordinary assumptions tex");
+        } else {
+            fs::write(
+                repo.join("Tablet/Assumptions.lean"),
+                trellis_kernel::assumptions_registry::empty_assumptions_lean_scaffold(),
+            )
+            .expect("write assumptions lean");
+            fs::write(
+                repo.join("Tablet/Assumptions.tex"),
+                trellis_kernel::assumptions_registry::empty_assumptions_tex_scaffold(),
+            )
+            .expect("write assumptions tex");
+        }
+    }
+
+    fn assumption_authoring_acceptance_context(
+        repo: &std::path::Path,
+        before_snapshot: BTreeMap<String, String>,
+        authoring: bool,
+        under_model_role: bool,
+    ) -> serde_json::Value {
+        let mut request = serde_json::json!({
+            "id": 42,
+            "cycle": 7,
+            "is_pv": authoring || under_model_role,
+            "current_node_kinds": {"Preamble": "definition", "Assumptions": "definition"},
+            "worker_contract": {
+                "allowed_outcomes": ["valid", "invalid", "stuck", "needs_restructure"]
+            },
+        });
+        if authoring {
+            request["assumption_authoring"] = serde_json::json!({
+                "candidate_invariant": "Every slice length is at most isize::MAX.",
+                "needed_by": ["goal:correct"],
+                "gate_from_invalid_attempt": false,
+            });
+        }
+        if under_model_role {
+            request["node_role"] = serde_json::json!({
+                "Assumptions": "under_model_assumptions"
+            });
+        }
+        serde_json::json!({
+            "request": request,
+            "validation_kind": "theorem_restructure",
+            "worker_acceptance": {
+                "validation_kind": "theorem_restructure",
+                "validation_execution_plan": [
+                    {
+                        "kind": "theorem_target_edit_scope",
+                        "target": "Assumptions",
+                        "initial_scope": ["Assumptions"]
+                    },
+                    {
+                        "kind": "scoped_tablet",
+                        "allowed_nodes_mode": "previous_or_explicit",
+                        "explicit_nodes": ["Assumptions"]
+                    }
+                ],
+            },
+            "active_node": "Assumptions",
+            "held_target": "",
+            "authorized_nodes": ["Assumptions"],
+            "configured_targets": ["Assumptions"],
+            "current_present_nodes": ["Preamble", "Assumptions"],
+            "current_proof_nodes": [],
+            "current_deps": {"Preamble": [], "Assumptions": ["Preamble"]},
+            "current_target_claims": {"Preamble": [], "Assumptions": ["Assumptions"]},
+            "current_node_kinds": {"Preamble": "definition", "Assumptions": "definition"},
+            "node_role": if under_model_role {
+                serde_json::json!({"Assumptions": "under_model_assumptions"})
+            } else {
+                serde_json::json!({})
+            },
+            "under_model_assumption_nodes": if under_model_role {
+                serde_json::json!(["Assumptions"])
+            } else {
+                serde_json::json!([])
+            },
+            "assumption_authoring_node": if authoring && under_model_role {
+                serde_json::json!("Assumptions")
+            } else {
+                serde_json::Value::Null
+            },
+            "current_coverage": {},
+            "current_paper_current_fingerprints": {},
+            "repo_path": repo.display().to_string(),
+            "before_snapshot": before_snapshot,
+            "before_tablet_contents": {},
+            "baseline_errors": [],
+            "imports_before": [],
+            "expected_active_hash": "",
+            "baseline_declaration_hashes": {},
+            "baseline_correspondence_hashes": {},
+        })
+    }
+
+    fn authored_assumption_payload() -> serde_json::Value {
+        serde_json::json!({
+            "outcome": "valid",
+            "summary": "staged the slice-length under-model assumption",
+            "comments": "",
+            "semantic_dep_updates": {},
+            "target_claim_updates": {},
+            "deleted_nodes": [],
+            "difficulty_updates": {},
+            "needs_restructure_suggested_nodes": [],
+            "authored_assumption_id": "slice_len_le_isize_max",
+            "authored_axiom_name": "dec2flt.slice_len_le_isize_max",
+            "authored_citation_locator": "Rust Reference: allocation size is at most isize::MAX",
+            "authored_rust_justification": "Rust allocations cannot exceed isize::MAX bytes.",
+        })
+    }
+
+    fn trust_v1_support_acceptance_context(
+        repo: &std::path::Path,
+        before_snapshot: BTreeMap<String, String>,
+    ) -> serde_json::Value {
+        let mut context =
+            assumption_authoring_acceptance_context(repo, before_snapshot, false, false);
+        context["request"]["trust_base_required_v1"] = serde_json::json!(true);
+        context["request"]["trust_dormant_conditional_candidate_nodes"] =
+            serde_json::json!([]);
+        context["request"]["worker_contract"]["allowed_outcomes"] = serde_json::json!([
+            "valid",
+            "invalid",
+            "stuck",
+            "needs_restructure",
+            "target_false_under_model"
+        ]);
+        context["request"]["is_pv"] = serde_json::json!(true);
+        context["validation_kind"] = serde_json::json!("theorem_global");
+        context["worker_acceptance"]["validation_kind"] =
+            serde_json::json!("theorem_global");
+        context["worker_acceptance"]["validation_execution_plan"] = serde_json::json!([]);
+        context["active_node"] = serde_json::json!("");
+        context["authorized_nodes"] = serde_json::json!([]);
+        context["configured_targets"] = serde_json::json!([]);
+        context["current_present_nodes"] = serde_json::json!(["Preamble"]);
+        context["current_deps"] = serde_json::json!({"Preamble": []});
+        context["current_target_claims"] = serde_json::json!({"Preamble": []});
+        context["current_node_kinds"] = serde_json::json!({"Preamble": "preamble"});
+        context
+    }
+
+    fn no_op_worker_payload(outcome: &str) -> serde_json::Value {
+        let suggested = if outcome == "needs_restructure" {
+            serde_json::json!(["Goal"])
+        } else {
+            serde_json::json!([])
+        };
+        serde_json::json!({
+            "outcome": outcome,
+            "summary": "no-op",
+            "comments": "",
+            "semantic_dep_updates": {},
+            "target_claim_updates": {},
+            "deleted_nodes": [],
+            "difficulty_updates": {},
+            "needs_restructure_suggested_nodes": suggested,
+        })
+    }
+
+    #[test]
+    fn trust_v1_rejects_dormant_conditional_candidate_materialization_for_every_outcome() {
+        for outcome in [
+            "valid",
+            "stuck",
+            "needs_restructure",
+            "target_false_under_model",
+        ] {
+            let tmp = tempdir().expect("tempdir");
+            let repo = tmp.path();
+            seed_assumptions_repo(repo, false);
+            let before_snapshot = trellis_kernel::snapshot_tablet_dir(repo);
+            fs::write(
+                repo.join("Tablet/ConditionalTarget.lean"),
+                "-- [TABLET NODE: ConditionalTarget]\ntheorem ConditionalTarget : True := by\n-- BODY\n  trivial\n",
+            )
+            .expect("materialize dormant candidate");
+            let mut context = trust_v1_support_acceptance_context(repo, before_snapshot);
+            context["request"]["trust_dormant_conditional_candidate_nodes"] =
+                serde_json::json!(["ConditionalTarget"]);
+
+            let payload = if outcome == "target_false_under_model" {
+                target_false_under_model_payload()
+            } else {
+                no_op_worker_payload(outcome)
+            };
+            let output = check_trellis_worker_result_output(
+                repo,
+                context,
+                payload,
+            )
+            .expect("check output");
+
+            assert!(!output.ok, "{outcome} must not mask dormant materialization");
+            assert_eq!(output.final_outcome, "invalid");
+            assert!(output.errors.iter().any(|error| {
+                error.contains("dormant trust conditional candidate Tablet/ConditionalTarget.lean")
+            }));
+            assert!(output.validation_step_results.is_empty());
+        }
+    }
+
+    #[test]
+    fn trust_v1_rejects_dormant_candidate_mutation_but_allows_unchanged_recovery_file() {
+        let tmp = tempdir().expect("tempdir");
+        let repo = tmp.path();
+        seed_assumptions_repo(repo, false);
+        let candidate_path = repo.join("Tablet/ConditionalTarget.lean");
+        fs::write(
+            &candidate_path,
+            "-- [TABLET NODE: ConditionalTarget]\ntheorem ConditionalTarget : True := by\n-- BODY\n  sorry\n",
+        )
+        .expect("seed crash-recovery carrier");
+        let before_snapshot = trellis_kernel::snapshot_tablet_dir(repo);
+        let mut unchanged_context =
+            trust_v1_support_acceptance_context(repo, before_snapshot.clone());
+        unchanged_context["request"]["trust_dormant_conditional_candidate_nodes"] =
+            serde_json::json!(["ConditionalTarget"]);
+        let parsed: super::PreparedWorkerGateOutput =
+            serde_json::from_value(unchanged_context).expect("context");
+        assert!(
+            super::trust_v1_dormant_candidate_edit_errors(repo, &parsed).is_empty(),
+            "an unchanged regular recovery carrier stays dormant and protected"
+        );
+
+        fs::write(
+            &candidate_path,
+            "-- [TABLET NODE: ConditionalTarget]\ntheorem ConditionalTarget : False := by\n-- BODY\n  sorry\n",
+        )
+        .expect("mutate dormant carrier");
+        let errors = super::trust_v1_dormant_candidate_edit_errors(repo, &parsed);
+        assert!(errors.iter().any(|error| {
+            error.contains("dormant trust conditional candidate Tablet/ConditionalTarget.lean")
+        }));
+    }
+
+    #[test]
+    fn trust_v1_rejects_assumptions_carrier_rewrite_before_semantic_validation() {
+        for outcome in ["valid", "stuck", "needs_restructure"] {
+            let tmp = tempdir().expect("tempdir");
+            let repo = tmp.path();
+            seed_assumptions_repo(repo, false);
+            let before_snapshot = trellis_kernel::snapshot_tablet_dir(repo);
+            fs::write(
+                repo.join("Tablet/Assumptions.lean"),
+                "def Assumptions : Prop := True\nnotation \"RustValidSliceU8\" => Assumptions\n",
+            )
+            .expect("rewrite assumptions carrier");
+
+            let output = check_trellis_worker_result_output(
+                repo,
+                trust_v1_support_acceptance_context(repo, before_snapshot),
+                no_op_worker_payload(outcome),
+            )
+            .expect("check output");
+
+            assert!(!output.ok, "{outcome} must not mask a carrier edit");
+            assert_eq!(
+                output.final_outcome, "invalid",
+                "{outcome}: errors={:?}", output.errors
+            );
+            assert!(output.errors.iter().any(|error| {
+                error.contains("immutable seed support file Tablet/Assumptions.lean")
+            }));
+            assert!(output.validation_step_results.is_empty());
+        }
+    }
+
+    #[test]
+    fn trust_v1_rejects_each_seed_support_file_edit() {
+        for filename in [
+            "Preamble.lean",
+            "Preamble.tex",
+            "Assumptions.lean",
+            "Assumptions.tex",
+        ] {
+            let tmp = tempdir().expect("tempdir");
+            let repo = tmp.path();
+            seed_assumptions_repo(repo, false);
+            let before_snapshot = trellis_kernel::snapshot_tablet_dir(repo);
+            fs::write(repo.join("Tablet").join(filename), b"worker rewrite\n")
+                .expect("rewrite support file");
+
+            let output = check_trellis_worker_result_output(
+                repo,
+                trust_v1_support_acceptance_context(repo, before_snapshot),
+                no_op_worker_payload("valid"),
+            )
+            .expect("check output");
+            assert!(
+                output.errors.iter().any(|error| error.contains(filename)),
+                "missing rejection for {filename}: {:?}",
+                output.errors
+            );
+            assert_eq!(output.final_outcome, "invalid");
+        }
+    }
+
+    #[test]
+    fn trust_v1_unchanged_assumptions_carrier_never_becomes_a_live_node() {
+        let tmp = tempdir().expect("tempdir");
+        let repo = tmp.path();
+        seed_assumptions_repo(repo, false);
+        let before_snapshot = trellis_kernel::snapshot_tablet_dir(repo);
+
+        let output = check_trellis_worker_result_output(
+            repo,
+            trust_v1_support_acceptance_context(repo, before_snapshot),
+            no_op_worker_payload("valid"),
+        )
+        .expect("check output");
+
+        assert!(output.ok, "unexpected errors: {:?}", output.errors);
+        let response = output.response.expect("worker response");
+        let present = response["snapshot"]["present_nodes"]
+            .as_array()
+            .expect("present_nodes array");
+        assert!(!present.iter().any(|node| node == "Assumptions"));
+        assert!(response["node_kind_updates"].get("Assumptions").is_none());
+        assert!(response["dep_updates"].get("Assumptions").is_none());
+    }
+
+    #[test]
+    fn trust_v1_reserved_carrier_is_removed_from_post_edit_impact_scope() {
+        let tmp = tempdir().expect("tempdir");
+        let repo = tmp.path();
+        fs::create_dir_all(repo.join("Tablet")).expect("create Tablet");
+        fs::write(repo.join("Tablet/Preamble.lean"), "import Mathlib\n")
+            .expect("write preamble");
+        fs::write(repo.join("Tablet/Preamble.tex"), "")
+            .expect("write preamble tex");
+        fs::write(repo.join("Tablet/Assumptions.lean"), "def RustValidSliceU8 : Prop := True\n")
+            .expect("write assumptions");
+        fs::write(repo.join("Tablet/Assumptions.tex"), "")
+            .expect("write assumptions tex");
+        fs::write(
+            repo.join("Tablet/Goal.lean"),
+            "import Tablet.Assumptions\ntheorem Goal : True := by trivial\n",
+        )
+        .expect("write goal");
+        fs::write(repo.join("Tablet/Goal.tex"), "goal\n").expect("write goal tex");
+        let before_snapshot = trellis_kernel::snapshot_tablet_dir(repo);
+        fs::write(
+            repo.join("Tablet/Goal.lean"),
+            "import Tablet.Assumptions\ntheorem Goal : True := by\n  trivial\n",
+        )
+        .expect("edit goal");
+
+        let output = super::execute_worker_validation_plan(&super::ExecuteWorkerValidationPlanInput {
+            repo_path: repo.to_path_buf(),
+            active_node: Some(NodeId::from("Goal")),
+            before_snapshot,
+            current_present_nodes: BTreeSet::from([
+                NodeId::from("Preamble"),
+                NodeId::from("Goal"),
+            ]),
+            reserved_non_node_stems: BTreeSet::from([NodeId::from("Assumptions")]),
+            validation_execution_plan: vec![
+                trellis_kernel::WorkerValidationExecutionPlanStep::TheoremTargetEditScope {
+                    target: Some(NodeId::from("Goal")),
+                    initial_scope: BTreeSet::from([NodeId::from("Goal")]),
+                },
+            ],
+            ..Default::default()
+        })
+        .expect("execute validation plan");
+
+        assert_eq!(output.step_results.len(), 1);
+        assert!(output.step_results[0].allowed_nodes.contains("Goal"));
+        assert!(!output.step_results[0].allowed_nodes.contains("Assumptions"));
+    }
+
+    #[test]
+    fn acceptance_context_derives_node_role_from_embedded_request_for_scoped_tablet() {
+        let tmp = tempdir().expect("tempdir");
+        let repo = tmp.path();
+        seed_assumptions_repo(repo, false);
+        let before_snapshot = trellis_kernel::snapshot_tablet_dir(repo);
+        let mut context =
+            assumption_authoring_acceptance_context(repo, before_snapshot, false, true);
+        let obj = context.as_object_mut().expect("context object");
+        obj.remove("node_role");
+        obj.remove("under_model_assumption_nodes");
+
+        let output = check_trellis_worker_result_output(
+            repo,
+            context,
+            serde_json::json!({
+                "outcome": "valid",
+                "summary": "no-op under-model assumptions scaffold",
+                "comments": "",
+                "semantic_dep_updates": {},
+                "target_claim_updates": {},
+                "deleted_nodes": [],
+                "difficulty_updates": {},
+                "needs_restructure_suggested_nodes": [],
+            }),
+        )
+        .expect("check output");
+
+        assert!(
+            output.ok,
+            "embedded request.node_role must be enough for scoped-tablet to use the Assumptions contract: {:?}",
+            output.errors
+        );
+        assert_eq!(output.final_outcome, "valid");
+    }
+
+    #[test]
+    fn theorem_global_scoped_tablet_rejects_non_authoring_under_model_assumptions_edit() {
+        let tmp = tempdir().expect("tempdir");
+        let repo = tmp.path();
+        seed_assumptions_repo(repo, false);
+        let before_snapshot = trellis_kernel::snapshot_tablet_dir(repo);
+        fs::write(
+            repo.join("Tablet/Assumptions.lean"),
+            format!(
+                "{}\n{}slice_len_le_isize_max\naxiom dec2flt.slice_len_le_isize_max : True\n{}slice_len_le_isize_max\n",
+                trellis_kernel::assumptions_registry::empty_assumptions_lean_scaffold(),
+                trellis_kernel::assumptions_registry::LEAN_ASSUMPTION_BEGIN_PREFIX,
+                trellis_kernel::assumptions_registry::LEAN_ASSUMPTION_END_PREFIX,
+            ),
+        )
+        .expect("stage non-authoring assumptions edit");
+        let mut context =
+            assumption_authoring_acceptance_context(repo, before_snapshot, false, true);
+        context["validation_kind"] = serde_json::json!("theorem_global");
+        context["worker_acceptance"]["validation_kind"] = serde_json::json!("theorem_global");
+        context["worker_acceptance"]["validation_execution_plan"] = serde_json::json!([
+            {
+                "kind": "scoped_tablet",
+                "allowed_nodes_mode": "all_present",
+                "explicit_nodes": []
+            }
+        ]);
+
+        let output = check_trellis_worker_result_output(
+            repo,
+            context,
+            serde_json::json!({
+                "outcome": "valid",
+                "summary": "global non-authoring assumptions edit",
+                "comments": "",
+                "semantic_dep_updates": {},
+                "target_claim_updates": {},
+                "deleted_nodes": [],
+                "difficulty_updates": {},
+                "needs_restructure_suggested_nodes": [],
+            }),
+        )
+        .expect("check output");
+
+        assert!(!output.ok, "global non-authoring edit must be rejected");
+        assert_eq!(output.final_outcome, "invalid");
+        assert!(
+            output
+                .validation_errors
+                .iter()
+                .chain(output.errors.iter())
+                .any(|err| err.contains("only legal on a PV assumption-authoring worker request")),
+            "expected central Assumptions edit rejection, got errors={:?} validation_errors={:?}",
+            output.errors,
+            output.validation_errors
+        );
+    }
+
+    #[test]
+    fn assumption_authoring_full_acceptance_allows_staged_axiom_and_hydrates_blocks() {
+        let tmp = tempdir().expect("tempdir");
+        let repo = tmp.path();
+        seed_assumptions_repo(repo, false);
+        let before_snapshot = trellis_kernel::snapshot_tablet_dir(repo);
+        fs::write(
+            repo.join("Tablet/Assumptions.lean"),
+            format!(
+                "{}\n{}slice_len_le_isize_max\naxiom dec2flt.slice_len_le_isize_max : True\n{}slice_len_le_isize_max\n",
+                trellis_kernel::assumptions_registry::empty_assumptions_lean_scaffold(),
+                trellis_kernel::assumptions_registry::LEAN_ASSUMPTION_BEGIN_PREFIX,
+                trellis_kernel::assumptions_registry::LEAN_ASSUMPTION_END_PREFIX,
+            ),
+        )
+        .expect("stage assumption lean");
+        fs::write(
+            repo.join("Tablet/Assumptions.tex"),
+            format!(
+                "{}\n{}slice_len_le_isize_max\n\\begin{{definition}}Every Rust slice allocation length is at most isize::MAX.\\end{{definition}}\n{}slice_len_le_isize_max\n",
+                trellis_kernel::assumptions_registry::empty_assumptions_tex_scaffold(),
+                trellis_kernel::assumptions_registry::TEX_ASSUMPTION_BEGIN_PREFIX,
+                trellis_kernel::assumptions_registry::TEX_ASSUMPTION_END_PREFIX,
+            ),
+        )
+        .expect("stage assumption tex");
+
+        let output = check_trellis_worker_result_output(
+            repo,
+            assumption_authoring_acceptance_context(repo, before_snapshot, true, true),
+            authored_assumption_payload(),
+        )
+        .expect("check output");
+
+        assert!(output.ok, "unexpected errors: {:?}", output.errors);
+        assert_eq!(output.final_outcome, "valid");
+        let response = output.response.expect("worker response");
+        assert_eq!(
+            response["staged_assumption_lean_statement"],
+            serde_json::json!("axiom dec2flt.slice_len_le_isize_max : True")
+        );
+        assert!(response["staged_assumption_nl_statement"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("Every Rust slice allocation length"));
+    }
+
+    #[test]
+    fn assumptions_full_acceptance_rejects_axiom_without_authoring() {
+        for (under_model_role, label) in [
+            (false, "ordinary Assumptions node"),
+            (true, "non-authoring under-model Assumptions node"),
+        ] {
+            let tmp = tempdir().expect("tempdir");
+            let repo = tmp.path();
+            seed_assumptions_repo(repo, true);
+            let before_snapshot = trellis_kernel::snapshot_tablet_dir(repo);
+            fs::write(
+                repo.join("Tablet/Assumptions.lean"),
+                "-- [TABLET NODE: Assumptions]\nimport Tablet.Preamble\n\naxiom Assumptions : True\n",
+            )
+            .expect("write axiom assumptions lean");
+
+            let output = check_trellis_worker_result_output(
+                repo,
+                assumption_authoring_acceptance_context(
+                    repo,
+                    before_snapshot,
+                    false,
+                    under_model_role,
+                ),
+                serde_json::json!({
+                    "outcome": "valid",
+                    "summary": "ordinary axiom attempt",
+                    "comments": "",
+                    "semantic_dep_updates": {},
+                    "target_claim_updates": {},
+                    "deleted_nodes": [],
+                    "difficulty_updates": {},
+                    "needs_restructure_suggested_nodes": [],
+                }),
+            )
+            .expect("check output");
+
+            assert!(!output.ok, "{label} axiom must be rejected");
+            assert_eq!(output.final_outcome, "invalid", "{label}");
+            let combined_errors: Vec<_> = output
+                .validation_errors
+                .iter()
+                .chain(output.errors.iter())
+                .collect();
+            if under_model_role {
+                assert!(
+                    combined_errors
+                        .iter()
+                        .any(|err| err.contains("only legal on a PV assumption-authoring worker request")),
+                    "expected non-authoring under-model edit rejection for {label}, got errors={:?} validation_errors={:?}",
+                    output.errors,
+                    output.validation_errors
+                );
+            } else {
+                assert!(
+                    combined_errors
+                        .iter()
+                        .any(|err| err.contains("Forbidden keywords") && err.contains("axiom")),
+                    "expected forbidden-axiom rejection for {label}, got errors={:?} validation_errors={:?}",
+                    output.errors,
+                    output.validation_errors
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn non_authoring_worker_rejects_authored_assumption_metadata() {
+        let tmp = tempdir().expect("tempdir");
+        let output = check_trellis_worker_result_output(
+            tmp.path(),
+            theorem_worker_acceptance_context(true, vec!["valid", "invalid"]),
+            authored_assumption_payload(),
+        )
+        .expect("check output");
+
+        assert!(!output.ok, "stray authored metadata must be rejected");
+        assert_eq!(output.final_outcome, "invalid");
+        assert!(
+            output
+                .errors
+                .iter()
+                .chain(output.validation_errors.iter())
+                .any(|err| err.contains("authored_assumption_* fields are only legal")),
+            "expected authored-metadata rejection, got errors={:?} validation_errors={:?}",
+            output.errors,
+            output.validation_errors
+        );
+    }
+
+    #[test]
+    fn pv_theorem_full_acceptance_allows_target_false_and_preserves_under_model_fields() {
+        let tmp = tempdir().expect("tempdir");
+        let acceptance_context = theorem_worker_acceptance_context(
+            true,
+            vec![
+                "valid",
+                "invalid",
+                "stuck",
+                "needs_restructure",
+                "target_false_under_model",
+            ],
+        );
+
+        let output = check_trellis_worker_result_output(
+            tmp.path(),
+            acceptance_context,
+            target_false_under_model_payload(),
+        )
+        .expect("check output");
+
+        assert!(output.ok, "unexpected errors: {:?}", output.errors);
+        assert_eq!(
+            output.data.as_ref().unwrap()["outcome"],
+            serde_json::json!("target_false_under_model")
+        );
+        let response = output.response.expect("worker response");
+        assert_eq!(
+            response["under_model_disproof"],
+            serde_json::json!("x0 = over-isize::MAX slice falsifies parse_number")
+        );
+        assert_eq!(
+            response["under_model_route_opinion"],
+            serde_json::json!("model-deviation")
+        );
+        assert_eq!(
+            response["under_model_reasoning"],
+            serde_json::json!("the Usize->Isize cast wraps negative")
+        );
+    }
+
+    #[test]
+    fn non_pv_theorem_validation_rejects_target_false_under_model() {
+        let tmp = tempdir().expect("tempdir");
+        let acceptance_context = theorem_worker_acceptance_context(
+            false,
+            vec!["valid", "invalid", "stuck", "needs_restructure"],
+        );
+
+        let output = check_trellis_worker_result_output(
+            tmp.path(),
+            acceptance_context,
+            target_false_under_model_payload(),
+        )
+        .expect("check output");
+
+        assert!(!output.ok);
+        assert!(output.errors.iter().any(|err| {
+            err.contains(
+                "outcome must be one of ['valid', 'invalid', 'stuck', 'needs_restructure']",
+            )
+        }));
+        assert!(output.data.is_none());
+        assert!(output.response.is_none());
+    }
+
+    #[test]
+    fn advertised_worker_allowed_outcomes_reject_unknown_outcome_name() {
+        let acceptance_context = theorem_worker_acceptance_context(
+            true,
+            vec!["valid", "target_false_under_model", "bogus"],
+        );
+
+        let err = worker_allowed_outcomes_for_validation(&acceptance_context)
+            .expect_err("unknown advertised outcome must reject the context");
+
+        assert!(err.contains("unknown outcome 'bogus'"));
+    }
+
+    #[test]
+    fn cleanup_worker_result_check_rejects_stuck_and_target_false_at_raw_validation_floor() {
+        let tmp = tempdir().expect("tempdir");
+        let acceptance_context = serde_json::json!({
+            "worker_acceptance": {
+                "validation_kind": "cleanup",
+            }
+        });
+        for raw_payload in [
+            serde_json::json!({
+                "outcome": "stuck",
+                "summary": "cannot finish",
+                "comments": "",
+                "semantic_dep_updates": {},
+                "target_claim_updates": {},
+                "difficulty_updates": {},
+            }),
+            target_false_under_model_payload(),
+        ] {
+            let output = check_trellis_worker_result_output(
+                tmp.path(),
+                acceptance_context.clone(),
+                raw_payload,
+            )
+            .expect("check output");
+
+            assert!(!output.ok);
+            assert!(output
+                .errors
+                .iter()
+                .any(|err| err.contains("outcome must be one of ['valid', 'invalid']")));
+            assert!(output.data.is_none());
+            assert!(output.response.is_none());
+        }
+    }
+
+    #[test]
+    fn bridge_request_payload_preserves_retry_fields() {
+        let mut state = ProtocolState::default();
+        state.phase = Phase::ProofFormalization;
+        state.stage = Stage::Worker;
+        state.cycle = 3;
+        state.retry_outcome_kind = RetryOutcomeKind::Invalid;
+        state.attempt = 2;
+        state.invalid_attempt = true;
+        let request = state.expected_request(15, RequestKind::Worker);
+
+        let payload = bridge_request_payload(&request, None, None).expect("bridge request payload");
+
+        assert_eq!(payload["invalid_attempt"], serde_json::json!(true));
+        assert_eq!(payload["retry_outcome_kind"], serde_json::json!("Invalid"));
+        assert_eq!(payload["retry_attempt"], serde_json::json!(2));
+    }
+
+    #[test]
+    fn bridge_request_payload_forwards_substantiveness_verify_nodes() {
+        // Regression: bridge_request_payload missed `substantiveness_verify_nodes`
+        // in the JSON, so the Python bridge's `_handle_paper` saw an empty
+        // per-node frontier (`request.get("substantiveness_verify_nodes", [])`
+        // returned []), took the no-op short-circuit, and returned
+        // `member_responses: []`. The kernel's substantiveness drain then
+        // treated the no-progress response as a verifier-stuck signal, and
+        // after `SUBSTANTIVENESS_MAX_CONSECUTIVE_NO_PROGRESS = 5` rounds,
+        // escalated to Reviewer with all blockers Unknown — surfacing a
+        // K-1-shaped verifier-starvation collateral.
+        let mut request = trellis_kernel::WrapperRequest::default();
+        request.id = 4;
+        request.cycle = 1;
+        request.kind = RequestKind::Paper;
+        request.phase = Phase::TheoremStating;
+        request.substantiveness_verify_nodes =
+            BTreeSet::from([NodeId::from("Foo"), NodeId::from("Bar")]);
+        request.verify_lanes = BTreeSet::from(["v1".to_string(), "v2".to_string()]);
+
+        let payload = bridge_request_payload(&request, None, None).expect("bridge request payload");
+
+        assert_eq!(
+            payload["substantiveness_verify_nodes"],
+            serde_json::json!(["Bar", "Foo"])
+        );
+    }
+
+    #[test]
+    fn bridge_request_payload_emits_every_wrapper_request_field() {
+        // Structural regression test for the recurring bug class where a
+        // newly-added WrapperRequest field is silently absent from the
+        // bridge JSON, causing the on-disk request to deserialize back
+        // with the field at serde default and the validator to reject
+        // otherwise-legal reviewer responses. Fields that have previously
+        // hit this class: `substantiveness_verify_nodes`, the new-soundness
+        // cluster (`sound_verifier_requestable_nodes`,
+        // `sound_repair_ready_nodes`, `kernel_hinted_next_active_coarse_nodes`,
+        // `proof_active_node_base_legal_candidates`, etc.).
+        //
+        // The fix is structural — `bridge_request_payload` now seeds from
+        // `serde_json::to_value(request)` rather than a hand-built JSON
+        // whitelist. This test pins that property: every public field on
+        // WrapperRequest must appear as a top-level key in the payload.
+        let request = trellis_kernel::WrapperRequest::default();
+        let payload = bridge_request_payload(&request, None, None).expect("bridge request payload");
+        let payload_obj = payload
+            .as_object()
+            .expect("payload must serialize to a JSON object");
+
+        // Reflect over the WrapperRequest serde JSON to discover its
+        // full field set, then assert each appears in the payload. The
+        // overlays (kind/phase/mode/etc.) are tested implicitly because
+        // those field names exist in both serde-emit and overlay form.
+        let direct = serde_json::to_value(&request).expect("serialize WrapperRequest");
+        let direct_obj = direct
+            .as_object()
+            .expect("WrapperRequest must serialize to an object");
+        let mut missing: Vec<&String> = direct_obj
+            .keys()
+            .filter(|key| !payload_obj.contains_key(*key))
+            .collect();
+        missing.sort();
+        assert!(
+            missing.is_empty(),
+            "bridge_request_payload dropped {} WrapperRequest field(s) the serde renderer emits: {missing:?}. \
+             If you added a field to WrapperRequest, the structural serde-seeded payload should pick it up \
+             automatically — this assertion failing means the seeding logic itself regressed.",
+            missing.len()
+        );
+
+        // Spot-check the previously-stripped new-soundness fields are
+        // present (would fail under the pre-fix manual whitelist).
+        for key in [
+            "sound_verifier_requestable_nodes",
+            "sound_repair_ready_nodes",
+            "sound_assessment_statuses",
+            "previous_sound_lane_findings",
+            "kernel_hinted_next_active_coarse_nodes",
+            "proof_active_node_base_legal_candidates",
+            "coarse_repair_blocker_carriers",
+            "resettable_theorem_stating_nodes",
+            "cleanup_force_done_view",
+            "cycles_since_clean",
+            "last_clean_rewind_count",
+            "latest_worker_summary",
+            "latest_worker_needs_restructure_suggested_nodes",
+        ] {
+            assert!(
+                payload_obj.contains_key(key),
+                "bridge_request_payload must emit `{key}` (would have failed under the pre-fix manual whitelist)",
+            );
+        }
+    }
+
+    #[test]
+    fn bridge_request_payload_round_trips_sound_verifier_requestable_nodes() {
+        // Tighter regression: actual values round-trip through serde back
+        // into a WrapperRequest with the field populated, not just present
+        // as a key. Mirrors the failure mode where
+        // `sound_verifier_requestable_nodes` deserialized
+        // back as an empty BTreeSet and the validator rejected
+        // `request_sound_verifier_node_ids=[LocalDecoderLemma]` as
+        // "legal Sound verifier targets are {}".
+        let mut request = trellis_kernel::WrapperRequest::default();
+        request.id = 53;
+        request.cycle = 12;
+        request.kind = RequestKind::Review;
+        request.phase = Phase::TheoremStating;
+        request.sound_verifier_requestable_nodes =
+            BTreeSet::from([NodeId::from("LocalDecoderLemma")]);
+        request.sound_repair_ready_nodes = BTreeSet::from([
+            NodeId::from("LocalDecoderLemma"),
+            NodeId::from("CoverLemma"),
+        ]);
+
+        let payload = bridge_request_payload(&request, None, None).expect("bridge request payload");
+        let round_tripped: trellis_kernel::WrapperRequest =
+            serde_json::from_value(payload).expect("round-trip payload back into WrapperRequest");
+
+        assert_eq!(
+            round_tripped.sound_verifier_requestable_nodes,
+            BTreeSet::from([NodeId::from("LocalDecoderLemma")]),
+            "sound_verifier_requestable_nodes must survive the JSON round-trip"
+        );
+        assert_eq!(
+            round_tripped.sound_repair_ready_nodes,
+            BTreeSet::from([
+                NodeId::from("LocalDecoderLemma"),
+                NodeId::from("CoverLemma")
+            ]),
+            "sound_repair_ready_nodes must survive the JSON round-trip"
+        );
+    }
+
+    #[test]
+    fn checked_worker_payload_preserves_needs_restructure_suggested_nodes() {
+        // Regression: validate_trellis_worker_result_data requires + extracts
+        // needs_restructure_suggested_nodes when outcome=needs_restructure
+        // (and re-emits it in the success payload). But CheckedWorkerPayload
+        // had no field for it, so serde-default dropped the array during
+        // deserialization and accept_worker_response built a WorkerResponse
+        // with an empty suggested set. The reviewer's
+        // latest_worker_needs_restructure_suggested_nodes snapshot was
+        // therefore always [], defeating the whole point of the field
+        // (let reviewer widen scope concretely instead of guessing what
+        // "needs broader repair" means).
+        let raw_payload = serde_json::json!({
+            "outcome": "needs_restructure",
+            "summary": "needs broader scope",
+            "comments": "active node alone cannot close; need HelperA and HelperB included",
+            "deleted_nodes": [],
+            "needs_restructure_suggested_nodes": ["HelperA", "HelperB"],
+        });
+        let validated = trellis_kernel::validate_trellis_worker_result_data(&raw_payload);
+        assert!(validated.ok, "validator errors={:?}", validated.errors);
+        let validated_data = validated.data.expect("validator must emit data");
+        assert_eq!(
+            validated_data["needs_restructure_suggested_nodes"],
+            serde_json::json!(["HelperA", "HelperB"]),
+            "validator must re-emit the suggested-nodes field"
+        );
+
+        let payload: CheckedWorkerPayload = serde_json::from_value(validated_data)
+            .expect("validator output must deserialize into CheckedWorkerPayload");
+        assert_eq!(
+            payload.needs_restructure_suggested_nodes,
+            vec!["HelperA".to_string(), "HelperB".to_string()],
+            "CheckedWorkerPayload must preserve the suggested-nodes field; \
+             a missing field here means accept_worker_response will build a \
+             WorkerResponse with the suggested set empty and the reviewer \
+             snapshot will always be []"
+        );
+    }
+
+    #[test]
+    fn checked_worker_payload_preserves_audit_request() {
+        // Regression (BLOCKER F1): validate_trellis_worker_result_data
+        // re-emits the optional `audit_request`, but CheckedWorkerPayload
+        // had no field for it, so serde-default dropped it during
+        // deserialization and accept_worker_response built a WorkerResponse
+        // with `audit_request: None` (via `..WorkerResponse::default()`).
+        // The worker's advisory "call for an audit" therefore never reached
+        // `record_latest_worker_rationale` / `pending_worker_audit_request`.
+        let raw_payload = serde_json::json!({
+            "outcome": "stuck",
+            "summary": "cannot close",
+            "comments": "approach looks broken",
+            "deleted_nodes": [],
+            "audit_request": {
+                "reason_kind": "approach",
+                "reason": "the decomposition cannot close"
+            }
+        });
+        let validated = trellis_kernel::validate_trellis_worker_result_data(&raw_payload);
+        assert!(validated.ok, "validator errors={:?}", validated.errors);
+        let validated_data = validated.data.expect("validator must emit data");
+        assert_eq!(
+            validated_data["audit_request"]["reason_kind"],
+            serde_json::json!("approach"),
+            "validator must re-emit the audit_request field"
+        );
+
+        let payload: CheckedWorkerPayload = serde_json::from_value(validated_data)
+            .expect("validator output must deserialize into CheckedWorkerPayload");
+        let raw = payload
+            .audit_request
+            .expect("CheckedWorkerPayload must preserve audit_request; a missing field here means accept_worker_response drops the worker's advisory audit call");
+        assert_eq!(raw.reason_kind, "approach");
+        assert_eq!(raw.reason, "the decomposition cannot close");
+    }
+
+    #[test]
+    fn checked_worker_payload_preserves_memory_challenges() {
+        // Regression (feedback_allowlist_validator): the validator re-emits
+        // `memory_challenges`, but without a CheckedWorkerPayload field
+        // serde-default would drop it and accept_worker_response would build
+        // a WorkerResponse with the challenge list empty.
+        let raw_payload = serde_json::json!({
+            "outcome": "stuck",
+            "summary": "cannot close",
+            "comments": "",
+            "deleted_nodes": [],
+            "memory_challenges": [
+                {"entry_id": "pm-0004-z", "reason": "probe contradicts the bound"}
+            ]
+        });
+        let validated = trellis_kernel::validate_trellis_worker_result_data(&raw_payload);
+        assert!(validated.ok, "validator errors={:?}", validated.errors);
+        let validated_data = validated.data.expect("validator must emit data");
+        assert_eq!(
+            validated_data["memory_challenges"][0]["entry_id"],
+            serde_json::json!("pm-0004-z"),
+            "validator must re-emit the memory_challenges field"
+        );
+        let payload: CheckedWorkerPayload = serde_json::from_value(validated_data)
+            .expect("validator output must deserialize into CheckedWorkerPayload");
+        assert_eq!(payload.memory_challenges.len(), 1);
+        assert_eq!(payload.memory_challenges[0].entry_id, "pm-0004-z");
+    }
+
+    #[test]
+    fn stuck_math_audit_checker_validates_memory_operations_against_repo() {
+        use crate::check_trellis_stuck_math_audit_result_output;
+        let tmp = tempdir().expect("tempdir");
+        let repo = tmp.path().join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        // Seed one active entry the audit may retire.
+        trellis_kernel::process_memory::apply_file_ops(
+            &repo,
+            &[trellis_kernel::process_memory::ProcessMemoryFileOp::Add {
+                entry_id: "pm-0001-route-x".into(),
+                entry_type: "refuted-route".into(),
+                coarse_node: "global".into(),
+                title: "t".into(),
+                body: "Route X refuted.".into(),
+                cycle: 1,
+                request_id: 1,
+            }],
+        )
+        .unwrap();
+        let mut request = trellis_kernel::WrapperRequest::default();
+        request.id = 31;
+        request.cycle = 9;
+        request.kind = RequestKind::StuckMathAudit;
+        request.coarse_dag_nodes = BTreeSet::from([NodeId::from("CoarseA")]);
+        let request_json = serde_json::to_value(&request).unwrap();
+        let payload = |ops: serde_json::Value| {
+            serde_json::json!({
+                "report": format!("## Claim being audited\n{}", "x".repeat(400)),
+                "tasks": [],
+                "probe_paths": [],
+                "memory_operations": ops,
+            })
+        };
+
+        // Valid: retire the existing active entry + add into a known cone.
+        let ok = check_trellis_stuck_math_audit_result_output(
+            request_json.clone(),
+            payload(serde_json::json!([
+                {"op": "retire", "entry_id": "pm-0001-route-x", "reason": "superseded by probe"},
+                {"op": "add", "type": "constraint", "coarse_node": "CoarseA",
+                 "title": "Interface bound", "body": "e_F = 2 b^(c/2) n."}
+            ])),
+            Some(&repo),
+        )
+        .expect("checker runs");
+        assert!(ok.ok, "errors={:?}", ok.errors);
+        let response = ok.response.expect("normalized response");
+        assert_eq!(
+            response["memory_operations"][0]["op"],
+            serde_json::json!("retire"),
+            "memory_operations must survive onto the normalized response"
+        );
+
+        // Unknown entry id → rejected against the repo worktree.
+        let missing = check_trellis_stuck_math_audit_result_output(
+            request_json.clone(),
+            payload(serde_json::json!([
+                {"op": "retire", "entry_id": "pm-9999-nope", "reason": "r"}
+            ])),
+            Some(&repo),
+        )
+        .expect("checker runs");
+        assert!(!missing.ok);
+        assert!(missing.errors[0].contains("does not name an existing"));
+
+        // Regression (stuck-math-audit 2998, cycle 677): a short-form
+        // `pm-<seq>` id (the LLM's natural abbreviation of the full
+        // `pm-<seq>-<slug>` id) is rejected with an actionable error that
+        // names the offending op and suggests the full id — never an
+        // ok-status response whose real errors get lost downstream.
+        let short_id = check_trellis_stuck_math_audit_result_output(
+            request_json.clone(),
+            payload(serde_json::json!([
+                {"op": "supersede", "entry_id": "pm-0001", "type": "refuted-route",
+                 "title": "t", "body": "b"}
+            ])),
+            Some(&repo),
+        )
+        .expect("checker runs");
+        assert!(!short_id.ok);
+        assert!(short_id.data.is_none() && short_id.response.is_none());
+        assert!(
+            short_id.errors[0].contains("memory_operations[0].entry_id `pm-0001`"),
+            "error must name the offending op: {:?}",
+            short_id.errors
+        );
+        assert!(
+            short_id.errors[0].contains("did you mean `pm-0001-route-x`"),
+            "error must suggest the full entry id: {:?}",
+            short_id.errors
+        );
+
+        // Unknown coarse node → rejected against the request's coarse DAG.
+        let bad_cone = check_trellis_stuck_math_audit_result_output(
+            request_json.clone(),
+            payload(serde_json::json!([
+                {"op": "add", "type": "constraint", "coarse_node": "NotACone",
+                 "title": "t", "body": "b"}
+            ])),
+            Some(&repo),
+        )
+        .expect("checker runs");
+        assert!(!bad_cone.ok);
+        assert!(bad_cone.errors.iter().any(|e| e.contains("known coarse node")));
+
+        // Operations without a repo path fail closed.
+        let no_repo = check_trellis_stuck_math_audit_result_output(
+            request_json,
+            payload(serde_json::json!([
+                {"op": "retire", "entry_id": "pm-0001-route-x", "reason": "r"}
+            ])),
+            None,
+        )
+        .expect("checker runs");
+        assert!(!no_repo.ok);
+        assert!(no_repo.errors[0].contains("require a repo_path"));
+    }
+
+    #[test]
+    fn bridge_request_payload_preserves_protected_review_scope_fields() {
+        let mut request = trellis_kernel::WrapperRequest::default();
+        request.id = 12;
+        request.cycle = 4;
+        request.kind = RequestKind::Review;
+        request.phase = Phase::ProofFormalization;
+        request.approved_target_nodes =
+            BTreeSet::from([NodeId::from("ProtectedA"), NodeId::from("ProtectedB")]);
+        request.protected_semantic_change_confirmation =
+            Some(trellis_kernel::ProtectedSemanticChangeConfirmation {
+                nodes: BTreeSet::from([NodeId::from("ProtectedA")]),
+                next_active: Some(NodeId::from("Active")),
+                next_mode: TaskMode::CoarseRestructure,
+                allow_new_obligations: true,
+                must_close_active: false,
+            });
+
+        let payload = bridge_request_payload(&request, None, None).expect("bridge request payload");
+
+        assert_eq!(
+            payload["approved_target_nodes"],
+            serde_json::json!(["ProtectedA", "ProtectedB"])
+        );
+        assert_eq!(
+            payload["protected_semantic_change_confirmation"]["nodes"],
+            serde_json::json!(["ProtectedA"])
+        );
+    }
+
+    #[test]
+    fn bridge_worker_payload_preserves_coarse_dag_nodes_for_acceptance_context() {
+        let tmp = tempdir().expect("tempdir");
+        let mut request = trellis_kernel::WrapperRequest::default();
+        request.id = 16;
+        request.cycle = 6;
+        request.kind = RequestKind::Worker;
+        request.phase = Phase::ProofFormalization;
+        request.mode = TaskMode::Restructure;
+        request.active_node = Some(NodeId::from("ProofPhaseHelper"));
+        request.current_present_nodes = BTreeSet::from([
+            NodeId::from("CoarseA"),
+            NodeId::from("CoarseB"),
+            NodeId::from("ProofPhaseHelper"),
+        ]);
+        request.current_paper_approved_fingerprints.insert(
+            TargetId::from("target_main"),
+            "paper-approved-fp".to_string(),
+        );
+        request.coarse_dag_nodes =
+            BTreeSet::from([NodeId::from("CoarseA"), NodeId::from("CoarseB")]);
+        request.worker_acceptance.enabled = true;
+        request.worker_acceptance.validation_kind = WorkerValidationKind::ProofRestructure;
+
+        let payload = bridge_request_payload(&request, None, None).expect("bridge request payload");
+
+        assert_eq!(
+            payload["coarse_dag_nodes"],
+            serde_json::json!(["CoarseA", "CoarseB"])
+        );
+        assert_eq!(
+            payload["worker_contract"]["scope_contract"]["coarse_dag_nodes"],
+            serde_json::json!(["CoarseA", "CoarseB"])
+        );
+        assert_eq!(
+            payload["current_paper_approved_fingerprints"],
+            serde_json::json!({"target_main": "paper-approved-fp"})
+        );
+
+        let round_tripped: trellis_kernel::WrapperRequest =
+            serde_json::from_value(payload).expect("round-tripped wrapper request");
+        let acceptance = prepare_worker_gate_output(tmp.path(), &round_tripped, false, None)
+            .expect("prepared worker gate output");
+
+        assert_eq!(
+            acceptance.coarse_dag_nodes,
+            BTreeSet::from([NodeId::from("CoarseA"), NodeId::from("CoarseB")])
+        );
+        assert_eq!(
+            acceptance.request["worker_contract"]["scope_contract"]["coarse_dag_nodes"],
+            serde_json::json!(["CoarseA", "CoarseB"])
+        );
+        assert_eq!(
+            acceptance.current_paper_approved_fingerprints,
+            BTreeMap::from([(
+                TargetId::from("target_main"),
+                "paper-approved-fp".to_string(),
+            )])
+        );
+    }
+
+    #[test]
+    fn bridge_review_normalization_accepts_protected_scope_from_bridge_payload() {
+        let mut request = trellis_kernel::WrapperRequest::default();
+        request.id = 13;
+        request.cycle = 5;
+        request.kind = RequestKind::Review;
+        request.phase = Phase::ProofFormalization;
+        request.allowed_decisions = BTreeSet::from([ReviewDecisionKind::Continue]);
+        request.allowed_next_modes = BTreeSet::from([TaskMode::CoarseRestructure]);
+        request.kernel_hinted_next_active_nodes = BTreeSet::from([NodeId::from("Active")]);
+        request.allowed_resets = BTreeSet::from([ResetChoice::None]);
+        request.approved_target_nodes = BTreeSet::from([NodeId::from("ProtectedA")]);
+        request.current_present_nodes =
+            BTreeSet::from([NodeId::from("Active"), NodeId::from("ProtectedA")]);
+        let review_request =
+            bridge_request_payload(&request, None, None).expect("bridge request payload");
+        let raw_payload = serde_json::json!({
+            "decision": "continue",
+            "reason": "protected change is required",
+            "comments": "",
+            "task_blocker_ids": [],
+            "override_blocker_ids": [],
+            "reset_blocker_ids": [],
+            "next_active": "Active",
+            "next_mode": "coarse_restructure",
+            "reset": "none",
+            "difficulty_updates": {},
+            "allow_new_obligations": true,
+            "must_close_active": false,
+            "next_worker_context_mode": "resume",
+            "paper_focus_ranges": [],
+            "work_style_hint": "none",
+            "protected_semantic_change_node_ids": ["ProtectedA"],
+            "confirm_protected_semantic_change_scope": false,
+            "authorized_node_ids": ["Active", "ProtectedA"],
+        });
+
+        let output = super::check_trellis_reviewer_result_output(review_request, raw_payload)
+            .expect("review normalization output");
+
+        assert!(output.ok, "errors: {:?}", output.errors);
+        let response = output.response.expect("normalized response");
+        assert_eq!(
+            response["protected_semantic_change_nodes"],
+            serde_json::json!(["ProtectedA"])
+        );
+    }
+
+    #[test]
+    fn reviewer_result_cleanup_batch_survives_full_check_path() {
+        // Regression test for the batch-dispatch strip bug. The allowlist
+        // `validate_trellis_reviewer_result_data` re-emitted a slimmer
+        // success JSON that omitted `cleanup_batch_tasks`, so by the time
+        // `check_trellis_reviewer_result_output` deserialized
+        // RawReviewPayload from the stripped validated_data, the batch was
+        // gone before `normalize_review_response` (which DOES copy it) ran.
+        // Net: a reviewer's `cleanup_batch_tasks:[9,13,14]` (as in the real
+        // 3534 artifact, no system_feedback) was silently dropped and the
+        // engine took the no-dispatch branch. This exercises the FULL JSON
+        // pipeline the prior audit skipped: raw artifact → validator →
+        // RawReviewPayload → normalize → normalized ReviewResponse still
+        // carries the batch (the value the engine reads to set
+        // `cleanup_active_batch`).
+        use trellis_kernel::model::{
+            CleanupAuditTask, CleanupTaskConfidence, CleanupTaskKind, CleanupTaskStatus,
+        };
+        let lintfix = |node: &str| CleanupAuditTask {
+            target_node: node.into(),
+            rationale: "unused var".into(),
+            confidence: CleanupTaskConfidence::High,
+            kind: CleanupTaskKind::LintFix {
+                warning_text: "unused variable".into(),
+            },
+            status: CleanupTaskStatus::Pending,
+            audit_origin_round: 1,
+        };
+        let mut request = trellis_kernel::WrapperRequest::default();
+        request.id = 3534;
+        request.cycle = 42;
+        request.kind = RequestKind::Review;
+        request.phase = Phase::Cleanup;
+        request.allowed_decisions = BTreeSet::from([ReviewDecisionKind::Continue]);
+        request.allowed_next_modes = BTreeSet::from([TaskMode::Cleanup]);
+        request.allowed_resets = BTreeSet::from([ResetChoice::None]);
+        // Three Pending LintFix tasks on distinct, non-protected nodes so
+        // the downstream `review_response_legal` batch gate passes and the
+        // batch reaches the normalized ReviewResponse.
+        request.cleanup_audit_tasks_view = vec![lintfix("A"), lintfix("B"), lintfix("C")];
+        request.cleanup_audit_burst_count_view = 1;
+        let review_request =
+            bridge_request_payload(&request, None, None).expect("bridge request payload");
+
+        // No system_feedback — the clean batch decision path.
+        let raw_payload = serde_json::json!({
+            "decision": "continue",
+            "reason": "batch three pending lintfix tasks into one burst",
+            "comments": "",
+            "task_blocker_ids": [],
+            "override_blocker_ids": [],
+            "reset_blocker_ids": [],
+            "next_active": "",
+            "next_mode": "cleanup",
+            "reset": "none",
+            "difficulty_updates": {},
+            "allow_new_obligations": true,
+            "must_close_active": false,
+            "cleanup_batch_tasks": [0, 1, 2],
+        });
+
+        // First assert the validator half preserves the field (this is the
+        // exact boundary that stripped it pre-fix).
+        let validated =
+            trellis_kernel::artifact_validation::validate_trellis_reviewer_result_data(&raw_payload);
+        assert!(validated.ok, "errors: {:?}", validated.errors);
+        let validated_data = validated.data.expect("validated data");
+        assert_eq!(
+            validated_data["cleanup_batch_tasks"],
+            serde_json::json!([0, 1, 2]),
+            "cleanup_batch_tasks must survive the allowlist validator (the stripped boundary)"
+        );
+
+        // Then the full check path: normalized ReviewResponse carries it.
+        let output = super::check_trellis_reviewer_result_output(review_request, raw_payload)
+            .expect("review normalization output");
+        assert!(output.ok, "errors: {:?}", output.errors);
+        let response = output.response.expect("normalized response");
+        assert_eq!(
+            response["cleanup_batch_tasks"],
+            serde_json::json!([0, 1, 2]),
+            "the normalized ReviewResponse (what the engine reads to set \
+             cleanup_active_batch) must carry the batch end-to-end"
+        );
+    }
+
+    #[test]
+    fn human_gate_payload_surfaces_protected_reapproval_nodes() {
+        let mut state = ProtocolState::default();
+        state.phase = Phase::ProofFormalization;
+        state.stage = Stage::HumanGate;
+        state.gate_kind = GateKind::ProtectedReapproval;
+        state.pending_protected_reapproval_nodes = BTreeSet::from([NodeId::from("ProtectedA")]);
+        let request = state.expected_request(21, RequestKind::HumanGate);
+
+        let payload = bridge_request_payload(&request, None, None).expect("bridge request payload");
+
+        assert_eq!(
+            payload["gate_kind"],
+            serde_json::json!("protected_reapproval")
+        );
+        assert_eq!(
+            payload["protected_reapproval_nodes"],
+            serde_json::json!(["ProtectedA"])
+        );
+    }
+
+    #[test]
+    fn node_deviation_claims_after_updates_seeds_from_affected_nodes() {
+        // P2(b) parity: hydrator must mirror `apply_worker_structure_updates`
+        // semantics: when a worker response sets
+        // `deviation_requests[id].affected_nodes = {N}` and leaves
+        // `node_deviation_claims` untouched, the post-response view
+        // must claim `id` for node `N`. Otherwise the hydrator's
+        // substantiveness fingerprint snapshot and the kernel's apply
+        // result will disagree.
+        let dev_id = DeviationId::from("dev:a");
+        let node = NodeId::from("N");
+        let other = NodeId::from("M");
+        let present = BTreeSet::from([node.clone(), other.clone()]);
+        let base: BTreeMap<NodeId, BTreeSet<DeviationId>> = BTreeMap::new();
+        let requests = BTreeMap::from([(
+            dev_id.clone(),
+            DeviationRequest {
+                path: "reference/dev_a.tex".to_string(),
+                summary: "a deviation".to_string(),
+                affected_nodes: BTreeSet::from([node.clone()]),
+            },
+        )]);
+        let explicit_updates: BTreeMap<NodeId, BTreeSet<DeviationId>> = BTreeMap::new();
+
+        let claims =
+            node_deviation_claims_after_updates(&base, &requests, &explicit_updates, &present);
+
+        assert_eq!(
+            claims.get(&node),
+            Some(&BTreeSet::from([dev_id.clone()])),
+            "affected_node N must inherit deviation `dev:a`",
+        );
+        assert!(
+            !claims.contains_key(&other),
+            "non-affected node M must not be claimed",
+        );
+    }
+
+    #[test]
+    fn node_deviation_claims_after_updates_lets_explicit_clears_override() {
+        // Explicit `node_deviation_claims[N] = {}` must override the
+        // seed from `deviation_requests.affected_nodes`. This matches
+        // `apply_worker_structure_updates` ordering (affected_nodes
+        // first, explicit overrides second).
+        let dev_id = DeviationId::from("dev:a");
+        let node = NodeId::from("N");
+        let present = BTreeSet::from([node.clone()]);
+        let base: BTreeMap<NodeId, BTreeSet<DeviationId>> = BTreeMap::new();
+        let requests = BTreeMap::from([(
+            dev_id.clone(),
+            DeviationRequest {
+                path: "reference/dev_a.tex".to_string(),
+                summary: "a deviation".to_string(),
+                affected_nodes: BTreeSet::from([node.clone()]),
+            },
+        )]);
+        let explicit_updates = BTreeMap::from([(node.clone(), BTreeSet::new())]);
+
+        let claims =
+            node_deviation_claims_after_updates(&base, &requests, &explicit_updates, &present);
+
+        assert!(
+            !claims.contains_key(&node),
+            "explicit empty-set clear must win over affected_nodes seed; got {:?}",
+            claims,
+        );
+    }
+
+    #[test]
+    fn populate_response_fingerprints_seeds_substantiveness_from_affected_nodes_only() {
+        // End-to-end parity test: a worker response that registers a
+        // new deviation only via `deviation_requests.affected_nodes`
+        // (no explicit `node_deviation_claims` entry) must produce a
+        // `substantiveness_current_fingerprints[N]` that already embeds
+        // the deviation fingerprint. This is what
+        // `apply_worker_structure_updates` would produce on the kernel
+        // side, so the two views must agree.
+        use trellis_kernel::NodeKind;
+        let dir = tempdir().expect("tempdir");
+        let repo = dir.path().to_path_buf();
+        fs::create_dir_all(repo.join("Tablet")).expect("create Tablet");
+        fs::create_dir_all(repo.join("reference")).expect("create reference");
+        fs::write(repo.join("Tablet/N.tex"), "\\begin{theorem}N\\end{theorem}")
+            .expect("write N.tex");
+        fs::write(repo.join("Tablet/Preamble.tex"), "").expect("write Preamble.tex");
+        fs::write(repo.join("paper.tex"), "paper").expect("write paper.tex");
+        fs::write(
+            repo.join("reference/dev_a.tex"),
+            "\\section*{dev_a}\nA deviation\n",
+        )
+        .expect("write dev_a.tex");
+
+        let node = NodeId::from("N");
+        let dev_id = DeviationId::from("dev:a");
+        let configured_targets: BTreeSet<TargetId> = BTreeSet::new();
+        let current_target_claims: BTreeMap<NodeId, BTreeSet<TargetId>> = BTreeMap::new();
+        let current_deviation_files: BTreeMap<DeviationId, String> = BTreeMap::new();
+        let current_node_deviation_claims: BTreeMap<NodeId, BTreeSet<DeviationId>> =
+            BTreeMap::new();
+        let approved_paper_fingerprints: BTreeMap<TargetId, String> = BTreeMap::new();
+        let current_node_kinds = BTreeMap::from([
+            (NodeId::from("Preamble"), NodeKind::Preamble),
+            (node.clone(), NodeKind::Definition),
+        ]);
+        let paper_source = repo.join("paper.tex");
+
+        let mut response = WorkerResponse {
+            snapshot: WorkingSnapshot {
+                present_nodes: BTreeSet::from([NodeId::from("Preamble"), node.clone()]),
+                ..WorkingSnapshot::default()
+            },
+            deviation_requests: BTreeMap::from([(
+                dev_id.clone(),
+                DeviationRequest {
+                    path: "reference/dev_a.tex".to_string(),
+                    summary: "a deviation".to_string(),
+                    affected_nodes: BTreeSet::from([node.clone()]),
+                },
+            )]),
+            // INTENTIONALLY empty explicit claims: only affected_nodes
+            // is providing the claim.
+            node_deviation_claims: BTreeMap::new(),
+            ..WorkerResponse::default()
+        };
+
+        populate_response_fingerprints(
+            &repo,
+            &configured_targets,
+            &current_target_claims,
+            &current_deviation_files,
+            &current_node_deviation_claims,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &approved_paper_fingerprints,
+            Some(paper_source.as_path()),
+            &current_node_kinds,
+            &BTreeMap::new(),
+            &BTreeSet::new(),
+            &mut response,
+        )
+        .expect("populate_response_fingerprints");
+
+        let dev_fp = response
+            .snapshot
+            .deviation_current_fingerprints
+            .get(&dev_id)
+            .expect("deviation fingerprint must be observed");
+        assert!(
+            !dev_fp.is_empty(),
+            "deviation fingerprint must be non-empty for a file that exists",
+        );
+        let subst_storage = response
+            .snapshot
+            .substantiveness_current_fingerprints
+            .get(&node)
+            .expect("substantiveness fingerprint must be populated for N");
+        let parsed =
+            super::runtime_cli_observations::SubstantivenessFingerprint::from_storage_string(
+                subst_storage,
+            )
+            .expect("parse substantiveness fingerprint");
+        assert_eq!(
+            parsed.claimed_deviation_fingerprints.get(&dev_id),
+            Some(dev_fp),
+            "substantiveness fingerprint must embed the deviation fingerprint for N \
+             when only affected_nodes was provided; got {:?}",
+            parsed.claimed_deviation_fingerprints,
+        );
+    }
+
+    #[test]
+    fn populate_response_fingerprints_uses_post_worker_reference_grounds() {
+        // Amendment G4 regression: the acceptance-cycle hydrator must
+        // fingerprint the POST-update reference claims, and its output
+        // must byte-match what the runtime's own observe produces on the
+        // post-apply state — otherwise a freshly claimed node reopens
+        // substantiveness twice (once claim-free on the acceptance
+        // cycle, once with the claim on the next observe).
+        use trellis_kernel::{NodeKind, RefPaperId, ReferencePaperSpec};
+        let dir = tempdir().expect("tempdir");
+        let repo = dir.path().to_path_buf();
+        fs::create_dir_all(repo.join("Tablet")).expect("create Tablet");
+        fs::create_dir_all(repo.join("paper/refs")).expect("create refs");
+        fs::write(repo.join("Tablet/N.tex"), "\\begin{theorem}N\\end{theorem}")
+            .expect("write N.tex");
+        fs::write(repo.join("Tablet/Preamble.tex"), "").expect("write Preamble.tex");
+        fs::write(repo.join("paper.tex"), "paper").expect("write paper.tex");
+        fs::write(repo.join("paper/refs/smith2020.tex"), "cited result text")
+            .expect("write reference");
+
+        let node = NodeId::from("N");
+        let ref_id = RefPaperId::from("smith2020");
+        let registry = BTreeMap::from([(
+            ref_id.clone(),
+            ReferencePaperSpec {
+                tex_path: "paper/refs/smith2020.tex".to_string(),
+                source_id: "Smith 2020".to_string(),
+            },
+        )]);
+        let current_node_kinds = BTreeMap::from([
+            (NodeId::from("Preamble"), NodeKind::Preamble),
+            (node.clone(), NodeKind::Definition),
+        ]);
+        let paper_source = repo.join("paper.tex");
+
+        let mut response = WorkerResponse {
+            snapshot: WorkingSnapshot {
+                present_nodes: BTreeSet::from([NodeId::from("Preamble"), node.clone()]),
+                ..WorkingSnapshot::default()
+            },
+            // The claim arrives IN this response; current kernel claims
+            // are empty.
+            node_reference_grounds: BTreeMap::from([(
+                node.clone(),
+                BTreeSet::from([ref_id.clone()]),
+            )]),
+            ..WorkerResponse::default()
+        };
+
+        populate_response_fingerprints(
+            &repo,
+            &BTreeSet::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &registry,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            Some(paper_source.as_path()),
+            &current_node_kinds,
+            &BTreeMap::new(),
+            &BTreeSet::new(),
+            &mut response,
+        )
+        .expect("populate_response_fingerprints");
+
+        let hydrated = response
+            .snapshot
+            .substantiveness_current_fingerprints
+            .get(&node)
+            .expect("substantiveness fingerprint populated")
+            .clone();
+        let parsed =
+            super::runtime_cli_observations::SubstantivenessFingerprint::from_storage_string(
+                &hydrated,
+            )
+            .expect("parse fingerprint");
+        assert!(
+            parsed.claimed_reference_shas.contains_key(&ref_id),
+            "hydrator must embed the POST-worker claim; got {:?}",
+            parsed.claimed_reference_shas
+        );
+
+        // Runtime-observe parity: observing the post-apply state (claims
+        // now in kernel state) yields the SAME storage string.
+        let post_apply_grounds =
+            BTreeMap::from([(node.clone(), BTreeSet::from([ref_id.clone()]))]);
+        let observed = super::runtime_cli_observations::observe_substantiveness_fingerprints(
+            &repo,
+            &BTreeSet::from([NodeId::from("Preamble"), node.clone()]),
+            Some(std::path::Path::new("paper.tex")),
+            &current_node_kinds,
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &registry,
+            &post_apply_grounds,
+        )
+        .expect("observe");
+        assert_eq!(
+            observed.get(&node),
+            Some(&hydrated),
+            "hydrator fingerprint must byte-match the next runtime observe (no double-reopen)"
+        );
+
+        // Explicit clear (empty replacement set) drops the claim from the
+        // fingerprint too.
+        let mut cleared = WorkerResponse {
+            snapshot: WorkingSnapshot {
+                present_nodes: BTreeSet::from([NodeId::from("Preamble"), node.clone()]),
+                ..WorkingSnapshot::default()
+            },
+            node_reference_grounds: BTreeMap::from([(node.clone(), BTreeSet::new())]),
+            ..WorkerResponse::default()
+        };
+        populate_response_fingerprints(
+            &repo,
+            &BTreeSet::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &BTreeMap::new(),
+            &registry,
+            &post_apply_grounds,
+            &BTreeMap::new(),
+            Some(paper_source.as_path()),
+            &current_node_kinds,
+            &BTreeMap::new(),
+            &BTreeSet::new(),
+            &mut cleared,
+        )
+        .expect("populate_response_fingerprints (clear)");
+        let cleared_fp = super::runtime_cli_observations::SubstantivenessFingerprint::from_storage_string(
+            cleared
+                .snapshot
+                .substantiveness_current_fingerprints
+                .get(&node)
+                .expect("fingerprint present"),
+        )
+        .expect("parse cleared fingerprint");
+        assert!(cleared_fp.claimed_reference_shas.is_empty());
+    }
+
+    // ────────────────────────────────────────────────────────────────
+    // Patch C-D local-closure runtime orchestration tests (plan §7.5/§7.10).
+    // ────────────────────────────────────────────────────────────────
+
+    mod local_closure {
+        use super::super::{
+            backfill_local_closure_record_hashes, build_failure_summary,
+            build_transport_error_summary, compute_local_closure_record_inputs,
+            deterministic_revalidate_at_cli_with_probe, hash_approved_axioms_for_node, hash_text,
+            load_persisted_record, local_closure_axcheck_required_for_repo,
+            local_closure_migration_skip_reason, local_closure_records_dir, persist_record_to_disk,
+            record_hashes_match_current, record_needs_hash_backfill,
+            rescind_records_with_stale_approved_axioms_hash_pure,
+            rescind_records_with_stale_axcheck_status_pure, run_migration_if_needed_with_probe,
+            run_pre_step_revalidation_if_needed_pure, CleanupRevalidationAdapter,
+            CLOSURE_HASH_SENTINEL, CLOSURE_VERSION, CLOSURE_VERSION_SENTINEL,
+            TRANSPORT_BACKOFF_MAX_CYCLES, TRANSPORT_RETRY_BUDGET,
+        };
+        use std::collections::{BTreeMap, BTreeSet};
+        use std::fs;
+        use std::path::Path;
+        use tempfile::tempdir;
+        use trellis_kernel::{
+            AxcheckStatus, AxiomizationCheckOutput, ErrorSummary, LocalClosureProbeOutput,
+            LocalClosureRecord, NodeId, Phase, ProtocolState, RequestKind, ResponseStatus,
+            RevalidationBatch, WorkerOutcome, WorkerResponse, WorkerValidationKind,
+            WorkingSnapshot, WrapperAdapter, WrapperRequest, WrapperResponse,
+        };
+
+        fn seed_repo(repo: &Path) {
+            fs::create_dir_all(repo.join("Tablet")).expect("create Tablet dir");
+            fs::write(repo.join("lean-toolchain"), "leanprover/lean4:v4.x.x\n")
+                .expect("write toolchain");
+            fs::write(repo.join("lake-manifest.json"), "{\"version\": 0}\n")
+                .expect("write manifest");
+            fs::write(repo.join("Tablet/Preamble.lean"), "-- preamble\n").expect("write preamble");
+        }
+
+        fn write_node(repo: &Path, name: &str, body: &str) {
+            fs::write(
+                repo.join("Tablet").join(format!("{name}.lean")),
+                format!("import Tablet.Preamble\ntheorem {name} : True := {body}\n"),
+            )
+            .expect("write node");
+        }
+
+        fn ok_probe(node: &NodeId) -> LocalClosureProbeOutput {
+            let _ = node;
+            LocalClosureProbeOutput {
+                status: "ok".to_string(),
+                kernel_axioms: BTreeSet::new(),
+                oracles_used: BTreeSet::new(),
+                boundary_theorems: BTreeMap::new(),
+                strict_theorem_deps: BTreeMap::new(),
+                strict_definition_deps: BTreeMap::new(),
+                errors: Vec::new(),
+                raw_stdout: String::new(),
+                raw_stderr: String::new(),
+                returncode: 0,
+                timed_out: false,
+                axiomization_check: None,
+                ..LocalClosureProbeOutput::default()
+            }
+        }
+
+        fn ok_probe_axcheck_agreed(node: &NodeId) -> LocalClosureProbeOutput {
+            let mut probe = ok_probe(node);
+            probe.axiomization_check = Some(AxiomizationCheckOutput {
+                agreed: true,
+                skipped: false,
+                ..AxiomizationCheckOutput::default()
+            });
+            probe
+        }
+
+        fn fail_probe() -> LocalClosureProbeOutput {
+            LocalClosureProbeOutput {
+                status: "axiom_violation".to_string(),
+                kernel_axioms: BTreeSet::from(["UnapprovedAx".to_string()]),
+                oracles_used: BTreeSet::new(),
+                boundary_theorems: BTreeMap::new(),
+                strict_theorem_deps: BTreeMap::new(),
+                strict_definition_deps: BTreeMap::new(),
+                errors: vec!["[axiom] active proof uses unapproved kernel axiom".to_string()],
+                raw_stdout: String::new(),
+                raw_stderr: String::new(),
+                returncode: 1,
+                timed_out: false,
+                axiomization_check: None,
+                ..LocalClosureProbeOutput::default()
+            }
+        }
+
+        #[test]
+        fn compute_record_inputs_produces_stable_hashes_for_stable_inputs() {
+            // Plan §7.10 / test 8 — hash computation is deterministic.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            let node = NodeId::from("Foo");
+            let r1 = compute_local_closure_record_inputs(
+                repo,
+                &node,
+                &BTreeSet::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                "snap1".to_string(),
+                AxcheckStatus::Agreed,
+            )
+            .expect("compute record inputs");
+            let r2 = compute_local_closure_record_inputs(
+                repo,
+                &node,
+                &BTreeSet::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                "snap1".to_string(),
+                AxcheckStatus::Agreed,
+            )
+            .expect("compute record inputs");
+            assert_eq!(r1.toolchain_hash, r2.toolchain_hash);
+            assert_eq!(r1.lake_manifest_hash, r2.lake_manifest_hash);
+            assert_eq!(r1.preamble_hash, r2.preamble_hash);
+            assert_eq!(r1.active_decl_hash, r2.active_decl_hash);
+            assert_eq!(r1.active_statement_hash, r2.active_statement_hash);
+            assert_eq!(r1.approved_axioms_hash, r2.approved_axioms_hash);
+            assert_eq!(r1.closure_version, CLOSURE_VERSION);
+
+            // Mutating .lean must change the hashes that depend on it.
+            write_node(repo, "Foo", "by trivial");
+            let r3 = compute_local_closure_record_inputs(
+                repo,
+                &node,
+                &BTreeSet::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                "snap1".to_string(),
+                AxcheckStatus::Agreed,
+            )
+            .expect("compute record inputs");
+            assert_ne!(r1.active_decl_hash, r3.active_decl_hash);
+        }
+
+        #[test]
+        fn backfill_replaces_sentinel_hashes() {
+            // Plan §7.0 — C-B writes sentinel placeholders; the C-D backfill
+            // pass replaces them with real hashes.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            let mut state = ProtocolState::default();
+            let mut record = LocalClosureRecord::default();
+            record.node = NodeId::from("Foo");
+            record.closure_version = CLOSURE_VERSION_SENTINEL.to_string();
+            record.toolchain_hash = CLOSURE_HASH_SENTINEL.to_string();
+            record.lake_manifest_hash = CLOSURE_HASH_SENTINEL.to_string();
+            record.preamble_hash = CLOSURE_HASH_SENTINEL.to_string();
+            record.approved_axioms_hash = CLOSURE_HASH_SENTINEL.to_string();
+            record.active_decl_hash = CLOSURE_HASH_SENTINEL.to_string();
+            record.active_statement_hash = CLOSURE_HASH_SENTINEL.to_string();
+            state
+                .local_closure_records
+                .insert(NodeId::from("Foo"), record);
+
+            let outcome = backfill_local_closure_record_hashes(&mut state, repo, 0);
+            assert!(outcome.mutated, "backfill must report state mutation");
+            assert!(
+                outcome.demoted_nodes.is_empty(),
+                "successful backfill must not demote any node; got {:?}",
+                outcome.demoted_nodes
+            );
+            let refreshed = &state.local_closure_records[&NodeId::from("Foo")];
+            assert_eq!(refreshed.closure_version, CLOSURE_VERSION);
+            assert_ne!(refreshed.toolchain_hash, CLOSURE_HASH_SENTINEL);
+            assert_ne!(refreshed.active_decl_hash, CLOSURE_HASH_SENTINEL);
+            assert_ne!(refreshed.active_statement_hash, CLOSURE_HASH_SENTINEL);
+        }
+
+        #[test]
+        fn backfill_is_idempotent_on_real_records() {
+            // Calling backfill twice must not change anything on the
+            // second pass — supports running the backfill at every step.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            let mut state = ProtocolState::default();
+            let record = compute_local_closure_record_inputs(
+                repo,
+                &NodeId::from("Foo"),
+                &BTreeSet::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                "snap1".to_string(),
+                AxcheckStatus::Agreed,
+            )
+            .expect("compute record inputs");
+            state
+                .local_closure_records
+                .insert(NodeId::from("Foo"), record);
+            let outcome_first = backfill_local_closure_record_hashes(&mut state, repo, 0);
+            assert!(
+                !outcome_first.mutated,
+                "real records should not be touched by backfill"
+            );
+            assert!(
+                outcome_first.demoted_nodes.is_empty(),
+                "idempotent backfill must not demote anything",
+            );
+        }
+
+        // ────────────────────────────────────────────────────────────
+        // Audit H-2 — approved-axiom rescission tests.
+        // ────────────────────────────────────────────────────────────
+
+        #[test]
+        fn rescission_is_idempotent_when_hashes_match_current_policy() {
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            fs::write(
+                repo.join("APPROVED_AXIOMS.json"),
+                r#"{"global":["propext"],"nodes":{}}"#,
+            )
+            .expect("write approved");
+            let current_hash = hash_approved_axioms_for_node(repo, "Foo").expect("hash");
+
+            let mut state = ProtocolState::default();
+            state.live.present_nodes.insert(NodeId::from("Foo"));
+            state.proof_nodes.insert(NodeId::from("Foo"));
+            let mut record = LocalClosureRecord::default();
+            record.node = NodeId::from("Foo");
+            record.closure_version = CLOSURE_VERSION.to_string();
+            record.approved_axioms_hash = current_hash;
+            record.axcheck_status = AxcheckStatus::Agreed;
+            state
+                .local_closure_records
+                .insert(NodeId::from("Foo"), record.clone());
+
+            let demoted = rescind_records_with_stale_approved_axioms_hash_pure(&mut state, repo, 1);
+            assert!(
+                demoted.is_empty(),
+                "matching-hash record must not be demoted; got {:?}",
+                demoted
+            );
+            assert!(state
+                .local_closure_records
+                .contains_key(&NodeId::from("Foo")));
+        }
+
+        #[test]
+        fn rescission_demotes_when_approved_axioms_load_fails() {
+            // Corrupt APPROVED_AXIOMS.json: the rescission must
+            // defensively demote (we can't prove the record's hash
+            // matches current policy).
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            fs::write(repo.join("APPROVED_AXIOMS.json"), "{ not valid json")
+                .expect("write corrupt");
+
+            let mut state = ProtocolState::default();
+            state.live.present_nodes.insert(NodeId::from("Foo"));
+            state.proof_nodes.insert(NodeId::from("Foo"));
+            let mut record = LocalClosureRecord::default();
+            record.node = NodeId::from("Foo");
+            record.closure_version = CLOSURE_VERSION.to_string();
+            record.approved_axioms_hash = "any-old-hash".to_string();
+            record.axcheck_status = AxcheckStatus::Agreed;
+            state
+                .local_closure_records
+                .insert(NodeId::from("Foo"), record);
+
+            let demoted = rescind_records_with_stale_approved_axioms_hash_pure(&mut state, repo, 2);
+            assert_eq!(
+                demoted,
+                vec![NodeId::from("Foo")],
+                "corrupt-policy must demote defensively"
+            );
+            assert!(
+                state
+                    .local_closure_unverified_nodes
+                    .contains(&NodeId::from("Foo")),
+                "defensively-demoted node must enter unverified"
+            );
+        }
+
+        // ────────────────────────────────────────────────────────────
+        // Audit H-4 — axcheck-status rescission tests.
+        // ────────────────────────────────────────────────────────────
+
+        #[test]
+        fn axcheck_rescission_demotes_skipped_record_when_policy_requires_axcheck() {
+            let mut state = ProtocolState::default();
+            state.live.present_nodes.insert(NodeId::from("Foo"));
+            state.proof_nodes.insert(NodeId::from("Foo"));
+            let mut record = LocalClosureRecord::default();
+            record.node = NodeId::from("Foo");
+            record.axcheck_status = AxcheckStatus::Skipped;
+            state
+                .local_closure_records
+                .insert(NodeId::from("Foo"), record);
+
+            let demoted = rescind_records_with_stale_axcheck_status_pure(&mut state, true, 23);
+            assert_eq!(demoted, vec![NodeId::from("Foo")]);
+            assert!(
+                !state
+                    .local_closure_records
+                    .contains_key(&NodeId::from("Foo")),
+                "skipped-axcheck record must leave records map when axcheck is required"
+            );
+            assert!(
+                state
+                    .local_closure_unverified_nodes
+                    .contains(&NodeId::from("Foo")),
+                "demoted node must enter unverified set"
+            );
+            let summary = &state.local_closure_failures[&NodeId::from("Foo")];
+            assert_eq!(summary.status, "internal_error");
+            assert_eq!(summary.captured_at_cycle, 23);
+        }
+
+        #[test]
+        fn axcheck_rescission_is_noop_when_policy_disables_axcheck() {
+            let mut state = ProtocolState::default();
+            state.live.present_nodes.insert(NodeId::from("Foo"));
+            state.proof_nodes.insert(NodeId::from("Foo"));
+            let mut record = LocalClosureRecord::default();
+            record.node = NodeId::from("Foo");
+            record.axcheck_status = AxcheckStatus::Skipped;
+            state
+                .local_closure_records
+                .insert(NodeId::from("Foo"), record);
+
+            let demoted = rescind_records_with_stale_axcheck_status_pure(&mut state, false, 23);
+            assert!(demoted.is_empty());
+            assert!(state
+                .local_closure_records
+                .contains_key(&NodeId::from("Foo")));
+        }
+
+        #[test]
+        fn record_hashes_match_current_rejects_skipped_axcheck_when_policy_requires_it() {
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            assert!(
+                local_closure_axcheck_required_for_repo(repo),
+                "missing config defaults to axcheck required"
+            );
+            let record = compute_local_closure_record_inputs(
+                repo,
+                &NodeId::from("Foo"),
+                &BTreeSet::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                "snap-skipped".to_string(),
+                AxcheckStatus::Skipped,
+            )
+            .expect("compute record inputs");
+            let state = ProtocolState::default();
+            assert!(
+                !record_hashes_match_current(&record, repo, &state),
+                "skipped-axcheck persisted record must not reinstall when policy requires axcheck"
+            );
+        }
+
+        #[test]
+        fn record_hashes_match_current_accepts_skipped_axcheck_when_policy_disables_it() {
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            fs::write(
+                repo.join("trellis.config.json"),
+                r#"{"local_closure_axcheck_enabled": false}"#,
+            )
+            .expect("write config");
+            assert!(
+                !local_closure_axcheck_required_for_repo(repo),
+                "explicit false disables axcheck requirement"
+            );
+            let record = compute_local_closure_record_inputs(
+                repo,
+                &NodeId::from("Foo"),
+                &BTreeSet::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                "snap-skipped".to_string(),
+                AxcheckStatus::Skipped,
+            )
+            .expect("compute record inputs");
+            let state = ProtocolState::default();
+            assert!(
+                record_hashes_match_current(&record, repo, &state),
+                "skipped-axcheck record remains valid only while policy disables axcheck"
+            );
+        }
+
+        #[test]
+        fn sentinel_record_backfill_failure_demotes_record_to_internal_error_failure() {
+            // Patch C-O MEDIUM 1 — when backfill cannot compute real
+            // hashes for a sentinel record (e.g. APPROVED_AXIOMS.json is
+            // corrupt), the record must NOT stay in the live set: that
+            // would let `formalization_complete` pass on a stale
+            // placeholder until the next restart. Fail closed: drop the
+            // record, install an `internal_error` failure summary, and
+            // re-add the node to the unverified set so it is reprobed.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            // Corrupt the approved-axioms file so hash backfill fails.
+            fs::write(repo.join("APPROVED_AXIOMS.json"), "{ not valid json")
+                .expect("write corrupt approved");
+
+            let mut state = ProtocolState::default();
+            let mut record = LocalClosureRecord::default();
+            record.node = NodeId::from("Foo");
+            record.closure_version = CLOSURE_VERSION_SENTINEL.to_string();
+            record.toolchain_hash = CLOSURE_HASH_SENTINEL.to_string();
+            record.lake_manifest_hash = CLOSURE_HASH_SENTINEL.to_string();
+            record.preamble_hash = CLOSURE_HASH_SENTINEL.to_string();
+            record.approved_axioms_hash = CLOSURE_HASH_SENTINEL.to_string();
+            record.active_decl_hash = CLOSURE_HASH_SENTINEL.to_string();
+            record.active_statement_hash = CLOSURE_HASH_SENTINEL.to_string();
+            state
+                .local_closure_records
+                .insert(NodeId::from("Foo"), record);
+
+            let outcome = backfill_local_closure_record_hashes(&mut state, repo, 42);
+            assert!(
+                outcome.mutated,
+                "backfill must report state mutation when it demotes a failed record"
+            );
+
+            // Record was removed.
+            assert!(
+                !state
+                    .local_closure_records
+                    .contains_key(&NodeId::from("Foo")),
+                "sentinel record must be removed when backfill cannot complete it"
+            );
+
+            // Internal-error failure summary installed.
+            let summary = state
+                .local_closure_failures
+                .get(&NodeId::from("Foo"))
+                .expect("failure summary must be installed");
+            assert_eq!(
+                summary.status, "internal_error",
+                "demoted record must surface as internal_error; got {}",
+                summary.status
+            );
+            assert!(
+                summary.stderr_excerpt.contains("backfill failed"),
+                "stderr_excerpt must mention backfill; got {:?}",
+                summary.stderr_excerpt
+            );
+            assert_eq!(summary.captured_at_cycle, 42);
+
+            // Node returns to the unverified set so a future probe will
+            // surface the real outcome.
+            assert!(
+                state
+                    .local_closure_unverified_nodes
+                    .contains(&NodeId::from("Foo")),
+                "demoted node must be re-added to the unverified set"
+            );
+
+            // Patch C-Q Q6 — demote must also surface a
+            // `demoted_nodes` entry so the caller deletes the stale
+            // persisted JSON file under
+            // `<runtime_root>/checker-state/local-closure-records/`.
+            // The caller in `step_runtime` uses
+            // `persisted_record_file_name` to compute the path and
+            // unlinks it; this assertion guarantees the data needed
+            // for that cleanup is surfaced.
+            assert_eq!(
+                outcome.demoted_nodes,
+                vec![NodeId::from("Foo")],
+                "demote path must surface the node so the caller can delete its persisted JSON"
+            );
+        }
+
+        #[test]
+        fn backfill_demote_keeps_closure_reverse_indices_in_sync() {
+            // Sibling of the `apply_sidecar_closure` reverse-index
+            // regression: the demote arm DELETES a record, and sentinel
+            // records carry the dep maps copied from live probe output.
+            // Dropping one without rebuilding
+            // `boundary_statement_consumers` / `strict_dep_consumers`
+            // left the in-memory state drifted, and the next
+            // `apply_event` refused its whole transition with
+            // "closure invariant: ... out of sync with records".
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            fs::write(repo.join("APPROVED_AXIOMS.json"), "{ not valid json")
+                .expect("write corrupt approved");
+
+            let mut state = ProtocolState::default();
+            let mut record = LocalClosureRecord::default();
+            record.node = NodeId::from("Foo");
+            record.closure_version = CLOSURE_VERSION_SENTINEL.to_string();
+            record.toolchain_hash = CLOSURE_HASH_SENTINEL.to_string();
+            record.lake_manifest_hash = CLOSURE_HASH_SENTINEL.to_string();
+            record.preamble_hash = CLOSURE_HASH_SENTINEL.to_string();
+            record.approved_axioms_hash = CLOSURE_HASH_SENTINEL.to_string();
+            record.active_decl_hash = CLOSURE_HASH_SENTINEL.to_string();
+            record.active_statement_hash = CLOSURE_HASH_SENTINEL.to_string();
+            // The load-bearing part: a sentinel record that NAMES deps.
+            record
+                .boundary_theorems
+                .insert(NodeId::from("Helper"), "bh".to_string());
+            record
+                .strict_definition_deps
+                .insert(NodeId::from("DefDep"), "sd".to_string());
+            state
+                .local_closure_records
+                .insert(NodeId::from("Foo"), record);
+            trellis_kernel::model::recompute_local_closure_reverse_indices(&mut state);
+            assert!(
+                state
+                    .boundary_statement_consumers
+                    .contains_key(&NodeId::from("Helper")),
+                "precondition: the index is populated before the demote"
+            );
+
+            let outcome = backfill_local_closure_record_hashes(&mut state, repo, 42);
+            assert!(outcome.mutated, "the demote arm must fire");
+
+            let mut recomputed = state.clone();
+            trellis_kernel::model::recompute_local_closure_reverse_indices(&mut recomputed);
+            assert_eq!(
+                state.boundary_statement_consumers, recomputed.boundary_statement_consumers,
+                "boundary_statement_consumers must survive the demote in sync"
+            );
+            assert_eq!(
+                state.strict_dep_consumers, recomputed.strict_dep_consumers,
+                "strict_dep_consumers must survive the demote in sync"
+            );
+            assert!(
+                state.boundary_statement_consumers.is_empty()
+                    && state.strict_dep_consumers.is_empty(),
+                "the demoted record was the only consumer, so both indices drain"
+            );
+        }
+
+        #[test]
+        fn backfill_demote_emits_delete_command_for_persisted_record() {
+            // Patch C-Q Q6 — when backfill demotes a sentinel record
+            // (e.g. APPROVED_AXIOMS.json corruption) the caller must
+            // delete the persisted JSON file too. Otherwise a future
+            // rewind or state-file loss can reload the sentinel from
+            // disk and clobber the `internal_error` failure we just
+            // installed. This test exercises the full demote path
+            // end-to-end: persist a sentinel record, corrupt the
+            // approved-axioms file so backfill must fail, run
+            // backfill, then manually invoke the cleanup the caller
+            // would perform (deleting via `persisted_record_file_name`)
+            // and assert the file is gone.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+
+            let runtime_root_dir = tempdir().expect("runtime root");
+            let runtime_root = runtime_root_dir.path();
+            let records_dir = local_closure_records_dir(runtime_root);
+
+            // Persist the sentinel record to disk so the demote has
+            // something to delete.
+            fs::create_dir_all(&records_dir).expect("records dir");
+            let mut record = LocalClosureRecord::default();
+            record.node = NodeId::from("Foo");
+            record.closure_version = CLOSURE_VERSION_SENTINEL.to_string();
+            record.toolchain_hash = CLOSURE_HASH_SENTINEL.to_string();
+            record.lake_manifest_hash = CLOSURE_HASH_SENTINEL.to_string();
+            record.preamble_hash = CLOSURE_HASH_SENTINEL.to_string();
+            record.approved_axioms_hash = CLOSURE_HASH_SENTINEL.to_string();
+            record.active_decl_hash = CLOSURE_HASH_SENTINEL.to_string();
+            record.active_statement_hash = CLOSURE_HASH_SENTINEL.to_string();
+            persist_record_to_disk(&records_dir, &record, 1).expect("persist sentinel");
+            let on_disk = records_dir.join(trellis_kernel::runtime::persisted_record_file_name(
+                &NodeId::from("Foo"),
+            ));
+            assert!(on_disk.exists(), "precondition: sentinel JSON exists");
+
+            // Corrupt approved-axioms so backfill fails.
+            fs::write(repo.join("APPROVED_AXIOMS.json"), "{ not valid json")
+                .expect("write corrupt approved");
+
+            let mut state = ProtocolState::default();
+            state
+                .local_closure_records
+                .insert(NodeId::from("Foo"), record);
+
+            let outcome = backfill_local_closure_record_hashes(&mut state, repo, 42);
+            assert!(outcome.mutated, "demote mutates state");
+            assert_eq!(outcome.demoted_nodes, vec![NodeId::from("Foo")]);
+
+            // Mirror the cleanup the production caller performs in
+            // `step_runtime` after `try_post_load_state_migration`.
+            for node in &outcome.demoted_nodes {
+                let path =
+                    records_dir.join(trellis_kernel::runtime::persisted_record_file_name(node));
+                let _ = fs::remove_file(&path);
+            }
+            assert!(
+                !on_disk.exists(),
+                "demote must result in the persisted JSON being unlinked"
+            );
+        }
+
+        #[test]
+        fn deterministic_revalidation_refreshes_passing_node() {
+            // Plan §7.5 / test 3 — a node that now probes "ok" is moved
+            // from unverified to refreshed.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            let mut state = ProtocolState::default();
+            state
+                .local_closure_unverified_nodes
+                .insert(NodeId::from("Foo"));
+            let batch =
+                deterministic_revalidate_at_cli_with_probe(&state, repo, 10, |_repo, node| {
+                    Ok(ok_probe(&NodeId::from(node)))
+                });
+            assert_eq!(batch.refreshed.len(), 1, "Foo must be refreshed");
+            assert_eq!(batch.still_unverified.len(), 0);
+            let (refreshed_node, refreshed_record) = &batch.refreshed[0];
+            assert_eq!(refreshed_node.as_str(), "Foo");
+            assert_eq!(refreshed_record.closure_version, CLOSURE_VERSION);
+        }
+
+        #[test]
+        fn deterministic_revalidation_records_authenticated_assumptions_support_dep() {
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            let support_bytes = b"def RustValidSliceU8 : Prop := True\n";
+            fs::write(repo.join("Tablet/Assumptions.lean"), support_bytes)
+                .expect("write support carrier");
+
+            let mut state = ProtocolState::default();
+            state.live.present_nodes.insert(NodeId::from("Foo"));
+            state.proof_nodes.insert(NodeId::from("Foo"));
+            state
+                .node_kinds
+                .insert(NodeId::from("Foo"), trellis_kernel::NodeKind::Proof);
+            state
+                .local_closure_unverified_nodes
+                .insert(NodeId::from("Foo"));
+            let evidence_root = trellis_kernel::trust_base::raw_sha256(b"evidence-root");
+            state.trust_base.mode = trellis_kernel::TrustBaseMode::RequiredV1;
+            state.trust_base.approved_evidence_tool_input_root = Some(evidence_root);
+            state.trust_base.seed_support_definitions.insert(
+                NodeId::from("Assumptions"),
+                trellis_kernel::TrustSeedSupportDefinition {
+                    logical_id: "aeneas-validity-definitions".to_owned(),
+                    evidence_relative_path: "model/Assumptions.lean".to_owned(),
+                    raw_sha256: trellis_kernel::trust_base::raw_sha256(support_bytes),
+                },
+            );
+
+            let batch = deterministic_revalidate_at_cli_with_probe(
+                &state,
+                repo,
+                33,
+                |_repo, node| {
+                    let mut probe = ok_probe(&NodeId::from(node));
+                    probe.strict_definition_deps.insert(
+                        NodeId::from("Assumptions"),
+                        "304544e0497cf744".to_owned(),
+                    );
+                    Ok(probe)
+                },
+            );
+
+            assert!(batch.still_unverified.is_empty());
+            let (_, record) = batch.refreshed.first().expect("refreshed record");
+            assert_eq!(
+                record.seed_support_definition_deps.get("Assumptions"),
+                Some(&"304544e0497cf744".to_owned())
+            );
+            assert_eq!(record.seed_support_evidence_root, Some(evidence_root));
+            assert!(!state.live.present_nodes.contains("Assumptions"));
+            assert!(record.is_consistent_with_state(&state, false).is_ok());
+        }
+
+        #[test]
+        fn deterministic_revalidation_rejects_changed_seed_support_bytes() {
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            fs::write(
+                repo.join("Tablet/Assumptions.lean"),
+                b"def RustValidSliceU8 : Prop := False\n",
+            )
+            .expect("write changed support carrier");
+            let mut state = ProtocolState::default();
+            state
+                .local_closure_unverified_nodes
+                .insert(NodeId::from("Foo"));
+            state.trust_base.mode = trellis_kernel::TrustBaseMode::RequiredV1;
+            state.trust_base.approved_evidence_tool_input_root =
+                Some(trellis_kernel::trust_base::raw_sha256(b"evidence-root"));
+            state.trust_base.seed_support_definitions.insert(
+                NodeId::from("Assumptions"),
+                trellis_kernel::TrustSeedSupportDefinition {
+                    logical_id: "aeneas-validity-definitions".to_owned(),
+                    evidence_relative_path: "model/Assumptions.lean".to_owned(),
+                    raw_sha256: trellis_kernel::trust_base::raw_sha256(
+                        b"def RustValidSliceU8 : Prop := True\n",
+                    ),
+                },
+            );
+
+            let batch = deterministic_revalidate_at_cli_with_probe(
+                &state,
+                repo,
+                33,
+                |_repo, node| Ok(ok_probe(&NodeId::from(node))),
+            );
+            assert!(batch.refreshed.is_empty());
+            assert!(batch.still_unverified[0]
+                .1
+                .strict_errors
+                .iter()
+                .any(|error| error.contains("digest_mismatch")));
+        }
+
+        #[test]
+        fn deterministic_revalidation_rejects_seed_support_during_open_revision() {
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            let support_bytes = b"def RustValidSliceU8 : Prop := True\n";
+            fs::write(repo.join("Tablet/Assumptions.lean"), support_bytes)
+                .expect("write support carrier");
+
+            let mut state = ProtocolState::default();
+            state
+                .local_closure_unverified_nodes
+                .insert(NodeId::from("Foo"));
+            state.trust_base.mode = trellis_kernel::TrustBaseMode::RequiredV1;
+            state.trust_base.approved_evidence_tool_input_root =
+                Some(trellis_kernel::trust_base::raw_sha256(b"prior-evidence-root"));
+            state.trust_base.active_revision_lane_id = Some("revision-1".to_owned());
+            state.trust_base.seed_support_definitions.insert(
+                NodeId::from("Assumptions"),
+                trellis_kernel::TrustSeedSupportDefinition {
+                    logical_id: "aeneas-validity-definitions".to_owned(),
+                    evidence_relative_path: "model/Assumptions.lean".to_owned(),
+                    raw_sha256: trellis_kernel::trust_base::raw_sha256(support_bytes),
+                },
+            );
+
+            let batch = deterministic_revalidate_at_cli_with_probe(
+                &state,
+                repo,
+                33,
+                |_repo, node| Ok(ok_probe(&NodeId::from(node))),
+            );
+            assert!(batch.refreshed.is_empty());
+            assert!(batch.still_unverified[0]
+                .1
+                .strict_errors
+                .iter()
+                .any(|error| error.contains("revision is unapproved")));
+        }
+
+        #[test]
+        fn deterministic_revalidation_rejects_probe_with_unmappable_boundary_dep() {
+            // Patch C-Q Q1 — `deterministic_revalidate_at_cli_with_probe`
+            // must call `validate_probe_present_nodes` before record
+            // construction. A probe whose `boundary_theorems` map
+            // contains a dep absent from `live.present_nodes` is a
+            // dep-name drift; the worker-side gate already rejects this
+            // (Patch C-K), and the deterministic path must do the same.
+            // The validator flips status to `internal_error`, which
+            // forces the still_unverified arm rather than installing
+            // a refreshed record with an unmappable dep key.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            let mut state = ProtocolState::default();
+            state.live.present_nodes.insert(NodeId::from("Foo"));
+            // Note: "Ghost" is NOT in present_nodes; the probe reports
+            // it as a boundary_theorems dep.
+            state
+                .local_closure_unverified_nodes
+                .insert(NodeId::from("Foo"));
+            let batch =
+                deterministic_revalidate_at_cli_with_probe(&state, repo, 10, |_repo, node| {
+                    let mut probe = ok_probe(&NodeId::from(node));
+                    probe
+                        .boundary_theorems
+                        .insert(NodeId::from("Ghost"), "h-ghost".to_string());
+                    Ok(probe)
+                });
+            assert!(
+                batch.refreshed.is_empty(),
+                "probe with unmappable boundary dep must NOT refresh a record"
+            );
+            assert_eq!(
+                batch.still_unverified.len(),
+                1,
+                "validator flip routes the entry to still_unverified",
+            );
+            let (still_node, summary) = &batch.still_unverified[0];
+            assert_eq!(still_node.as_str(), "Foo");
+            assert_eq!(
+                summary.status, "internal_error",
+                "validator must flip status to internal_error",
+            );
+            assert!(
+                summary.strict_errors.iter().any(|e| e.contains(
+                    "local-closure probe contains dep names not in kernel present_nodes"
+                ) || e.contains("Ghost")),
+                "stderr_excerpt/strict_errors must surface the unmappable dep; got {:?}",
+                summary.strict_errors,
+            );
+        }
+
+        #[test]
+        fn deterministic_revalidation_rejects_probe_with_kind_confused_dep() {
+            // Patch C-Q Q1 — additionally validate dep kinds.
+            // `boundary_theorems` and `strict_theorem_deps` must point
+            // at Proof-kind nodes; `strict_definition_deps` at
+            // Definition-kind nodes. A probe that places a Definition
+            // node under `boundary_theorems` is kind-confused; the
+            // worker-side gate rejects this (Patch C-N), and the
+            // deterministic path must too.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            let mut state = ProtocolState::default();
+            state.live.present_nodes.insert(NodeId::from("Foo"));
+            state.live.present_nodes.insert(NodeId::from("HelperDef"));
+            state
+                .node_kinds
+                .insert(NodeId::from("Foo"), trellis_kernel::NodeKind::Proof);
+            state.node_kinds.insert(
+                NodeId::from("HelperDef"),
+                trellis_kernel::NodeKind::Definition,
+            );
+            state
+                .local_closure_unverified_nodes
+                .insert(NodeId::from("Foo"));
+            let batch =
+                deterministic_revalidate_at_cli_with_probe(&state, repo, 10, |_repo, node| {
+                    let mut probe = ok_probe(&NodeId::from(node));
+                    // HelperDef is Definition-kind but placed under
+                    // boundary_theorems (which expects Proof-kind).
+                    probe
+                        .boundary_theorems
+                        .insert(NodeId::from("HelperDef"), "h-def".to_string());
+                    Ok(probe)
+                });
+            assert!(
+                batch.refreshed.is_empty(),
+                "probe with kind-confused dep must NOT refresh a record"
+            );
+            assert_eq!(
+                batch.still_unverified.len(),
+                1,
+                "validator flip routes the entry to still_unverified",
+            );
+            let (_node, summary) = &batch.still_unverified[0];
+            assert_eq!(summary.status, "internal_error");
+            assert!(
+                summary
+                    .strict_errors
+                    .iter()
+                    .any(|e| e.contains("kind does not match") || e.contains("HelperDef")),
+                "stderr_excerpt/strict_errors must surface the kind mismatch; got {:?}",
+                summary.strict_errors,
+            );
+        }
+
+        #[test]
+        fn deterministic_revalidation_keeps_failing_node_unverified() {
+            // Plan §7.5 / test 4 — a probe failure produces an
+            // ErrorSummary, node stays unverified.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            let mut state = ProtocolState::default();
+            state
+                .local_closure_unverified_nodes
+                .insert(NodeId::from("Foo"));
+            let batch =
+                deterministic_revalidate_at_cli_with_probe(&state, repo, 10, |_repo, _node| {
+                    Ok(fail_probe())
+                });
+            assert_eq!(batch.refreshed.len(), 0);
+            assert_eq!(batch.still_unverified.len(), 1);
+            let (still_node, summary) = &batch.still_unverified[0];
+            assert_eq!(still_node.as_str(), "Foo");
+            assert_eq!(summary.status, "axiom_violation");
+            assert!(
+                summary.axiom_violations.iter().any(|a| a == "UnapprovedAx"),
+                "axiom_violations must include the unapproved axiom"
+            );
+        }
+
+        #[test]
+        fn transport_error_backoff_skips_before_next_retry_cycle() {
+            // Plan §7.0 / test 5 — when prior failure status is
+            // transport_error and current_cycle < next_retry_cycle, the
+            // pass skips the node entirely (no probe call).
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            let mut state = ProtocolState::default();
+            state
+                .local_closure_unverified_nodes
+                .insert(NodeId::from("Foo"));
+            let mut prior = ErrorSummary::default();
+            prior.status = "transport_error".to_string();
+            prior.retry_count = 1;
+            prior.next_retry_cycle = 100;
+            state
+                .local_closure_failures
+                .insert(NodeId::from("Foo"), prior);
+
+            let mut calls = 0usize;
+            let batch =
+                deterministic_revalidate_at_cli_with_probe(&state, repo, 50, |_repo, _node| {
+                    calls += 1;
+                    Ok(ok_probe(&NodeId::from("Foo")))
+                });
+            assert_eq!(calls, 0, "probe must not run while in backoff window");
+            assert_eq!(batch.refreshed.len(), 0);
+            assert_eq!(batch.still_unverified.len(), 0);
+        }
+
+        #[test]
+        fn transport_error_retry_exhausted_skips_node() {
+            // Plan §7.0 / test 6 — after retry_exhausted, the pass
+            // permanently skips the node until operator intervention.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            let mut state = ProtocolState::default();
+            state
+                .local_closure_unverified_nodes
+                .insert(NodeId::from("Foo"));
+            let mut prior = ErrorSummary::default();
+            prior.status = "transport_error".to_string();
+            prior.retry_count = TRANSPORT_RETRY_BUDGET + 1;
+            prior.retry_exhausted = true;
+            prior.next_retry_cycle = 0;
+            state
+                .local_closure_failures
+                .insert(NodeId::from("Foo"), prior);
+
+            let mut calls = 0usize;
+            let _batch = deterministic_revalidate_at_cli_with_probe(
+                &state,
+                repo,
+                1_000_000,
+                |_repo, _node| {
+                    calls += 1;
+                    Ok(ok_probe(&NodeId::from("Foo")))
+                },
+            );
+            assert_eq!(calls, 0, "probe must not run when retry_exhausted=true");
+        }
+
+        #[test]
+        fn transport_error_summary_increments_and_caps_backoff() {
+            // Plan §7.4.1 — exponential backoff capped at
+            // TRANSPORT_BACKOFF_MAX_CYCLES; retry_exhausted set when count
+            // exceeds the budget.
+            let summary0 = build_transport_error_summary("socket down", None, 10);
+            assert_eq!(summary0.status, "transport_error");
+            assert_eq!(summary0.retry_count, 0);
+            assert_eq!(summary0.next_retry_cycle, 11); // 10 + 2^0
+            assert!(!summary0.retry_exhausted);
+
+            let summary1 = build_transport_error_summary("socket down", Some(&summary0), 11);
+            assert_eq!(summary1.retry_count, 1);
+            assert_eq!(summary1.next_retry_cycle, 13); // 11 + 2^1
+
+            // Beyond budget — retry_exhausted=true.
+            let mut prior = ErrorSummary::default();
+            prior.status = "transport_error".to_string();
+            prior.retry_count = TRANSPORT_RETRY_BUDGET;
+            let exhausted = build_transport_error_summary("socket down", Some(&prior), 50);
+            assert_eq!(exhausted.retry_count, TRANSPORT_RETRY_BUDGET + 1);
+            assert!(exhausted.retry_exhausted);
+
+            // Backoff cap.
+            let mut huge_prior = ErrorSummary::default();
+            huge_prior.status = "transport_error".to_string();
+            huge_prior.retry_count = 60; // 2^61 would overflow without cap.
+            let capped = build_transport_error_summary("socket down", Some(&huge_prior), 100);
+            assert_eq!(
+                capped.next_retry_cycle,
+                100 + TRANSPORT_BACKOFF_MAX_CYCLES,
+                "exponential backoff must be capped at TRANSPORT_BACKOFF_MAX_CYCLES"
+            );
+        }
+
+        #[test]
+        fn revalidation_pass_drains_full_unverified_set_in_one_call() {
+            // Patch C-M — chunking removed. Every node in the unverified
+            // set is probed in a single call. Operator decision:
+            // deferring probe work across cycles only blocks `Cleanup`
+            // longer for no benefit; the total probing work is identical
+            // either way.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            const N: usize = 15;
+            for i in 0..N {
+                write_node(repo, &format!("Foo{i}"), "trivial");
+            }
+            let mut state = ProtocolState::default();
+            for i in 0..N {
+                state
+                    .local_closure_unverified_nodes
+                    .insert(NodeId::from(format!("Foo{i}").as_str()));
+            }
+            let mut calls = 0usize;
+            let batch =
+                deterministic_revalidate_at_cli_with_probe(&state, repo, 10, |_repo, node| {
+                    calls += 1;
+                    Ok(ok_probe(&NodeId::from(node)))
+                });
+            assert_eq!(calls, N, "every node in the unverified set must be probed");
+            assert_eq!(
+                batch.refreshed.len(),
+                N,
+                "every passing probe must enter `refreshed`"
+            );
+        }
+
+        #[test]
+        fn pre_step_revalidation_drains_all_unverified_in_single_call() {
+            // Patch C-M — a 50+ node unverified set is fully drained in a
+            // single call to the pre-step hook. All nodes whose probe
+            // returns cleanly exit the unverified set via
+            // `apply_revalidation_batch` and land in
+            // `local_closure_records`. None remain naked-unverified after
+            // the call.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            const N: usize = 50;
+            for i in 0..N {
+                write_node(repo, &format!("Foo{i}"), "trivial");
+            }
+            let mut state = ProtocolState::default();
+            for i in 0..N {
+                let node = NodeId::from(format!("Foo{i}").as_str());
+                // Seed live/proof/present so `apply_revalidation_batch`
+                // installs the refreshed records (filters drop entries
+                // for absent or non-proof nodes).
+                state.live.present_nodes.insert(node.clone());
+                state.proof_nodes.insert(node.clone());
+                state.local_closure_unverified_nodes.insert(node);
+            }
+            state.cycle = 5;
+            let runtime_root = tempdir().expect("rt");
+            let mut probe_calls = 0usize;
+            let batch = run_pre_step_revalidation_if_needed_pure(
+                &mut state,
+                repo,
+                runtime_root.path(),
+                5,
+                |_repo, _node| {
+                    probe_calls += 1;
+                    Ok(ok_probe(&NodeId::from("Foo")))
+                },
+            );
+            let batch = batch.expect("pre-step hook must fire when set non-empty");
+            assert_eq!(
+                probe_calls, N,
+                "all {N} nodes must be probed in a single call"
+            );
+            assert_eq!(
+                batch.refreshed.len(),
+                N,
+                "all passing probes must enter `refreshed`"
+            );
+            assert!(
+                state.local_closure_unverified_nodes.is_empty(),
+                "no node may remain naked-unverified after the drain; got {:?}",
+                state.local_closure_unverified_nodes
+            );
+            assert_eq!(
+                state.local_closure_records.len(),
+                N,
+                "every refreshed record must be installed in `local_closure_records`"
+            );
+        }
+
+        #[test]
+        fn pre_step_revalidation_transport_errors_keep_node_unverified_but_not_naked() {
+            // Patch C-M — a node whose probe stub returns a transport
+            // error after the chunking cap is removed stays in
+            // `local_closure_unverified_nodes` BUT also has a
+            // `transport_error` failure entry, so it is "failed-unverified"
+            // (skipped by the auto-scheduler per C-F's logic) rather than
+            // "naked-unverified". The drain loop must not infinite-loop
+            // even when no probe succeeds; one call is one full pass over
+            // the set.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            let mut state = ProtocolState::default();
+            let node = NodeId::from("Foo");
+            state.live.present_nodes.insert(node.clone());
+            state.proof_nodes.insert(node.clone());
+            state.local_closure_unverified_nodes.insert(node.clone());
+            state.cycle = 5;
+            let runtime_root = tempdir().expect("rt");
+            let mut probe_calls = 0usize;
+            let batch = run_pre_step_revalidation_if_needed_pure(
+                &mut state,
+                repo,
+                runtime_root.path(),
+                5,
+                |_repo, _node| -> Result<LocalClosureProbeOutput, String> {
+                    probe_calls += 1;
+                    Err("socket closed".to_string())
+                },
+            );
+            let batch = batch.expect("pre-step hook must fire");
+            assert_eq!(probe_calls, 1, "transport error path probes once");
+            assert_eq!(
+                batch.still_unverified.len(),
+                1,
+                "transport error pushes to `still_unverified`"
+            );
+            assert!(
+                state.local_closure_unverified_nodes.contains(&node),
+                "transport error keeps node in the unverified set"
+            );
+            let summary = state
+                .local_closure_failures
+                .get(&node)
+                .expect("transport error must install a failure entry — not naked");
+            assert_eq!(
+                summary.status, "transport_error",
+                "failure entry must carry transport_error status"
+            );
+        }
+
+        #[test]
+        fn failure_summary_segregates_unapproved_axioms() {
+            // build_failure_summary populates axiom_violations only with
+            // axioms NOT in the approved set, so the diagnostic only
+            // surfaces the actual offenders.
+            let probe = LocalClosureProbeOutput {
+                status: "axiom_violation".to_string(),
+                kernel_axioms: BTreeSet::from([
+                    "Classical.choice".to_string(),
+                    "UnapprovedAx".to_string(),
+                ]),
+                ..LocalClosureProbeOutput::default()
+            };
+            let approved = BTreeSet::from(["Classical.choice".to_string()]);
+            let summary = build_failure_summary(&probe, &approved, 7);
+            assert_eq!(summary.axiom_violations, vec!["UnapprovedAx".to_string()]);
+            assert_eq!(summary.captured_at_cycle, 7);
+            assert!(!summary.retry_exhausted);
+        }
+
+        #[test]
+        fn persisted_record_roundtrip() {
+            // Plan §7.10 / test 9 — persist + load is identity, with the
+            // `_persisted_at_cycle` diagnostic stripped on load so it
+            // doesn't pollute hash recomputation.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            let record = compute_local_closure_record_inputs(
+                repo,
+                &NodeId::from("Foo"),
+                &BTreeSet::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                "snap-rt".to_string(),
+                AxcheckStatus::Agreed,
+            )
+            .expect("compute record inputs");
+            let runtime_root = tempdir().expect("runtime root");
+            let records_dir = local_closure_records_dir(runtime_root.path());
+            persist_record_to_disk(&records_dir, &record, 42).expect("persist");
+            let path = records_dir.join("Foo.json");
+            assert!(path.exists());
+            let loaded = load_persisted_record(&path).expect("load");
+            assert_eq!(loaded, record);
+        }
+
+        #[test]
+        fn migration_loads_record_with_matching_hashes() {
+            // Plan §7.10 / test 1 — persisted records that match current
+            // hashes get installed into state.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            let runtime_root = tempdir().expect("runtime root");
+            let records_dir = local_closure_records_dir(runtime_root.path());
+            let record = compute_local_closure_record_inputs(
+                repo,
+                &NodeId::from("Foo"),
+                &BTreeSet::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                "snap-m".to_string(),
+                AxcheckStatus::Agreed,
+            )
+            .expect("compute record inputs");
+            persist_record_to_disk(&records_dir, &record, 1).expect("persist");
+
+            let mut state = ProtocolState::default();
+            // Foo is a sorry-free proof_node lacking a record — without
+            // disk-load, it would enter unverified.
+            state.proof_nodes.insert(NodeId::from("Foo"));
+            // Plus the live snapshot says Foo is closed (sorry-free).
+            // (open_nodes empty by default.)
+            let mut probe_calls = 0usize;
+            let _ = run_migration_if_needed_with_probe(
+                &mut state,
+                repo,
+                runtime_root.path(),
+                100,
+                |_repo, _node| {
+                    probe_calls += 1;
+                    Ok(ok_probe(&NodeId::from("Foo")))
+                },
+            )
+            .expect("migration");
+            assert!(state
+                .local_closure_records
+                .contains_key(&NodeId::from("Foo")));
+            assert!(!state
+                .local_closure_unverified_nodes
+                .contains(&NodeId::from("Foo")));
+            assert_eq!(
+                probe_calls, 0,
+                "matching persisted record must skip the probe"
+            );
+        }
+
+        #[test]
+        fn migration_discards_record_with_mismatched_hashes() {
+            // Plan §7.10 / test 1 (negative half) — persisted record
+            // with stale hashes is discarded; node stays in unverified.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            let runtime_root = tempdir().expect("runtime root");
+            let records_dir = local_closure_records_dir(runtime_root.path());
+            // Persist a record with a wrong toolchain hash (forced).
+            let mut record = compute_local_closure_record_inputs(
+                repo,
+                &NodeId::from("Foo"),
+                &BTreeSet::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                "snap-stale".to_string(),
+                AxcheckStatus::Agreed,
+            )
+            .expect("compute record inputs");
+            record.toolchain_hash = hash_text("WRONG");
+            persist_record_to_disk(&records_dir, &record, 1).expect("persist");
+
+            let mut state = ProtocolState::default();
+            state.proof_nodes.insert(NodeId::from("Foo"));
+            // Patch C-Q Q4: needs_probe filter requires present_nodes
+            // membership; without this seed, the stale-record path
+            // wouldn't trigger the re-probe.
+            state.live.present_nodes.insert(NodeId::from("Foo"));
+            let mut probe_calls = 0usize;
+            let _ = run_migration_if_needed_with_probe(
+                &mut state,
+                repo,
+                runtime_root.path(),
+                100,
+                |_repo, _node| {
+                    probe_calls += 1;
+                    Ok(fail_probe())
+                },
+            )
+            .expect("migration");
+            assert!(!state
+                .local_closure_records
+                .contains_key(&NodeId::from("Foo")));
+            assert!(state
+                .local_closure_unverified_nodes
+                .contains(&NodeId::from("Foo")));
+            assert_eq!(probe_calls, 1, "stale record forces re-probe");
+        }
+
+        #[test]
+        fn migration_does_not_install_record_for_node_in_unverified_set() {
+            // Patch C-O HIGH 1 (a) — when a node is currently in
+            // `local_closure_unverified_nodes`, that membership is an
+            // explicit in-memory tombstone saying "the prior record was
+            // invalidated and must be re-probed." A stale persisted
+            // JSON file MUST NOT override the tombstone; migration must
+            // skip the disk record and force a probe.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            let runtime_root = tempdir().expect("runtime root");
+            let records_dir = local_closure_records_dir(runtime_root.path());
+            // The persisted record has matching hashes — pre-fix it
+            // would be installed.
+            let record = compute_local_closure_record_inputs(
+                repo,
+                &NodeId::from("Foo"),
+                &BTreeSet::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                "snap-tombstoned".to_string(),
+                AxcheckStatus::Agreed,
+            )
+            .expect("compute record inputs");
+            persist_record_to_disk(&records_dir, &record, 1).expect("persist");
+
+            let mut state = ProtocolState::default();
+            state.proof_nodes.insert(NodeId::from("Foo"));
+            // The tombstone: Foo is invalidated and awaiting re-probe.
+            state
+                .local_closure_unverified_nodes
+                .insert(NodeId::from("Foo"));
+
+            let mut probe_calls = 0usize;
+            let _ = run_migration_if_needed_with_probe(
+                &mut state,
+                repo,
+                runtime_root.path(),
+                100,
+                |_repo, _node| {
+                    probe_calls += 1;
+                    Ok(fail_probe())
+                },
+            )
+            .expect("migration");
+
+            assert!(
+                !state
+                    .local_closure_records
+                    .contains_key(&NodeId::from("Foo")),
+                "tombstoned node must NOT receive a record from disk"
+            );
+            assert!(
+                state
+                    .local_closure_unverified_nodes
+                    .contains(&NodeId::from("Foo")),
+                "tombstone must persist (migration may add a failure summary, but the unverified entry stays)"
+            );
+            assert_eq!(
+                probe_calls, 1,
+                "tombstone forces a re-probe rather than disk install"
+            );
+        }
+
+        #[test]
+        fn migration_does_not_install_record_for_node_with_failure_entry() {
+            // Patch C-O HIGH 1 (a) — same as the unverified-set check
+            // but for `local_closure_failures`. Either tombstone (or
+            // both) signals "do not install a disk record."
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            let runtime_root = tempdir().expect("runtime root");
+            let records_dir = local_closure_records_dir(runtime_root.path());
+            let record = compute_local_closure_record_inputs(
+                repo,
+                &NodeId::from("Foo"),
+                &BTreeSet::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                "snap-failure".to_string(),
+                AxcheckStatus::Agreed,
+            )
+            .expect("compute record inputs");
+            persist_record_to_disk(&records_dir, &record, 1).expect("persist");
+
+            let mut state = ProtocolState::default();
+            state.proof_nodes.insert(NodeId::from("Foo"));
+            // The tombstone: Foo has a recorded failure summary.
+            let mut summary = ErrorSummary::default();
+            summary.status = "axiom_violation".to_string();
+            state
+                .local_closure_failures
+                .insert(NodeId::from("Foo"), summary);
+
+            // Note: a node can be in failures without being in unverified
+            // if it was previously closed but the engine marked it bad.
+            // Either signal must block disk-install.
+            let mut probe_calls = 0usize;
+            let _ = run_migration_if_needed_with_probe(
+                &mut state,
+                repo,
+                runtime_root.path(),
+                100,
+                |_repo, _node| {
+                    probe_calls += 1;
+                    Ok(fail_probe())
+                },
+            )
+            .expect("migration");
+
+            assert!(
+                !state
+                    .local_closure_records
+                    .contains_key(&NodeId::from("Foo")),
+                "node with a failure tombstone must NOT receive a record from disk"
+            );
+        }
+
+        #[test]
+        fn migration_demotes_sentinel_record_in_memory_to_unverified() {
+            // Audit NR-1 — sentinel record persistence window. Scenario:
+            //   1. Engine installs a sentinel-hashed record via
+            //      `apply_local_closure_acceptance_bookkeeping` at the
+            //      sorry-free arm.
+            //   2. `step_with_checkpoint_sink` persists state.json with
+            //      the sentinel record.
+            //   3. Process dies BEFORE `step_runtime`'s post-step
+            //      backfill replaces the sentinel with real hashes.
+            //   4. On restart, state.local_closure_records.contains_key
+            //      is true → migration's record-load loop skips the
+            //      disk reload AND `needs_probe` filter excludes the
+            //      node.
+            //   5. `formalization_complete()` sees a present-but-
+            //      sentinel record and may incorrectly bless phase
+            //      advancement.
+            //
+            // Fix: at migration entry, sweep `state.local_closure_records`
+            // and demote sentinel records to `local_closure_unverified_nodes`
+            // so deterministic revalidation re-probes them.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            let runtime_root = tempdir().expect("runtime root");
+
+            // Simulate the state file that survived a crash between
+            // engine acceptance (sentinel install) and backfill: an
+            // in-memory record carrying sentinel hash placeholders.
+            let mut sentinel_record = LocalClosureRecord::default();
+            sentinel_record.node = NodeId::from("Foo");
+            sentinel_record.closure_version = CLOSURE_VERSION_SENTINEL.to_string();
+            sentinel_record.toolchain_hash = CLOSURE_HASH_SENTINEL.to_string();
+            sentinel_record.lake_manifest_hash = CLOSURE_HASH_SENTINEL.to_string();
+            sentinel_record.preamble_hash = CLOSURE_HASH_SENTINEL.to_string();
+            sentinel_record.approved_axioms_hash = CLOSURE_HASH_SENTINEL.to_string();
+            sentinel_record.active_decl_hash = CLOSURE_HASH_SENTINEL.to_string();
+            sentinel_record.active_statement_hash = CLOSURE_HASH_SENTINEL.to_string();
+            sentinel_record.accepted_at_snapshot_id = "snap-pre-crash".to_string();
+
+            let mut state = ProtocolState::default();
+            state.proof_nodes.insert(NodeId::from("Foo"));
+            state.live.present_nodes.insert(NodeId::from("Foo"));
+            // Inject the sentinel record (simulating a state.json that
+            // was persisted with engine-emitted sentinel hashes before
+            // backfill ran).
+            state
+                .local_closure_records
+                .insert(NodeId::from("Foo"), sentinel_record);
+
+            // Pre-condition: record exists, no unverified entry, no
+            // failure. Without the fix, migration would skip Foo
+            // entirely — needs_probe filter excludes nodes with records.
+            assert!(state
+                .local_closure_records
+                .contains_key(&NodeId::from("Foo")));
+            assert!(!state
+                .local_closure_unverified_nodes
+                .contains(&NodeId::from("Foo")));
+
+            let mut probe_calls = 0usize;
+            let _ = run_migration_if_needed_with_probe(
+                &mut state,
+                repo,
+                runtime_root.path(),
+                100,
+                |_repo, _node| {
+                    probe_calls += 1;
+                    Ok(ok_probe(&NodeId::from("Foo")))
+                },
+            )
+            .expect("migration");
+
+            // Post-condition: deterministic revalidation ran (because
+            // the sentinel sweep demoted Foo to unverified, the
+            // revalidation pass then probed it). The re-probe produced
+            // an `ok` result so Foo now has a real-hashed record.
+            assert_eq!(
+                probe_calls, 1,
+                "sentinel record must trigger re-probe via deterministic revalidation"
+            );
+            assert!(
+                state
+                    .local_closure_records
+                    .contains_key(&NodeId::from("Foo")),
+                "successful re-probe must install a real-hashed record"
+            );
+            let new_record = state
+                .local_closure_records
+                .get(&NodeId::from("Foo"))
+                .unwrap();
+            assert!(
+                !record_needs_hash_backfill(new_record),
+                "post-migration record must NOT carry sentinel hashes; got: closure_version={:?}, \
+                 toolchain_hash={:?}",
+                new_record.closure_version,
+                new_record.toolchain_hash
+            );
+            // The unverified entry was cleared by the successful
+            // revalidation.
+            assert!(
+                !state
+                    .local_closure_unverified_nodes
+                    .contains(&NodeId::from("Foo")),
+                "unverified entry must be cleared after successful re-probe"
+            );
+        }
+
+        #[test]
+        fn migration_rejects_sentinel_record_on_disk_load() {
+            // Audit NR-1 — belt-and-braces: a persisted disk record
+            // carrying sentinel hashes (rare but possible in synthetic
+            // tests or future refactors that persist records earlier)
+            // must be rejected at disk-load time. The migration
+            // installs the node in `local_closure_unverified_nodes`
+            // and lets deterministic revalidation re-probe.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            let runtime_root = tempdir().expect("runtime root");
+            let records_dir = local_closure_records_dir(runtime_root.path());
+
+            // Hand-write a sentinel-shaped persisted record.
+            let mut sentinel_record = LocalClosureRecord::default();
+            sentinel_record.node = NodeId::from("Foo");
+            sentinel_record.closure_version = CLOSURE_VERSION_SENTINEL.to_string();
+            sentinel_record.toolchain_hash = CLOSURE_HASH_SENTINEL.to_string();
+            sentinel_record.lake_manifest_hash = CLOSURE_HASH_SENTINEL.to_string();
+            sentinel_record.preamble_hash = CLOSURE_HASH_SENTINEL.to_string();
+            sentinel_record.approved_axioms_hash = CLOSURE_HASH_SENTINEL.to_string();
+            sentinel_record.active_decl_hash = CLOSURE_HASH_SENTINEL.to_string();
+            sentinel_record.active_statement_hash = CLOSURE_HASH_SENTINEL.to_string();
+            persist_record_to_disk(&records_dir, &sentinel_record, 1).expect("persist sentinel");
+
+            let mut state = ProtocolState::default();
+            state.proof_nodes.insert(NodeId::from("Foo"));
+            state.live.present_nodes.insert(NodeId::from("Foo"));
+            // Pre-condition: no in-memory record yet (only disk).
+            assert!(!state
+                .local_closure_records
+                .contains_key(&NodeId::from("Foo")));
+
+            let mut probe_calls = 0usize;
+            let _ = run_migration_if_needed_with_probe(
+                &mut state,
+                repo,
+                runtime_root.path(),
+                100,
+                |_repo, _node| {
+                    probe_calls += 1;
+                    Ok(ok_probe(&NodeId::from("Foo")))
+                },
+            )
+            .expect("migration");
+
+            // Post-condition: re-probe happened (instead of disk load
+            // installing the sentinel).
+            assert_eq!(
+                probe_calls, 1,
+                "disk sentinel record must trigger re-probe instead of install"
+            );
+            assert!(
+                state
+                    .local_closure_records
+                    .contains_key(&NodeId::from("Foo")),
+                "re-probe must install a real-hashed record"
+            );
+            let new_record = state
+                .local_closure_records
+                .get(&NodeId::from("Foo"))
+                .unwrap();
+            assert!(
+                !record_needs_hash_backfill(new_record),
+                "post-migration record must NOT carry sentinel hashes"
+            );
+        }
+
+        #[test]
+        fn record_hashes_match_current_rejects_record_with_changed_boundary_dep_fingerprint_no_other_consumer(
+        ) {
+            // Patch C-P HIGH 1 (b) — single-consumer staleness via
+            // kernel `semantic_hash` mismatch. The record's
+            // `kernel_semantic_hashes` map carries the dep's hash as it
+            // was at probe time; current `corr_current_fingerprints`
+            // disagrees → reject. Replaces C-O's strict-signal trigger
+            // (dep in unverified set) with the canonical drift check.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+
+            let mut state = ProtocolState::default();
+            state.live.present_nodes.insert(NodeId::from("Helper"));
+            // Current kernel hash for Helper is the post-edit value.
+            state
+                .live
+                .corr_current_fingerprints
+                .insert(NodeId::from("Helper"), "kernel-helper-new".to_string());
+
+            let mut foo_boundary = BTreeMap::new();
+            foo_boundary.insert(NodeId::from("Helper"), "any-statement-hash".to_string());
+            let mut foo_record =
+                record_for_dep_test(repo, "Foo", foo_boundary, BTreeMap::new(), BTreeMap::new());
+            // The record was written when Helper's kernel hash was the
+            // OLD value — stale relative to current state.
+            foo_record
+                .kernel_semantic_hashes
+                .insert(NodeId::from("Helper"), "kernel-helper-old".to_string());
+
+            assert!(
+                !record_hashes_match_current(&foo_record, repo, &state),
+                "single-consumer record whose boundary dep's kernel hash drifted must reject"
+            );
+        }
+
+        #[test]
+        fn record_hashes_match_current_rejects_record_with_changed_strict_theorem_dep_fingerprint_no_other_consumer(
+        ) {
+            // Patch C-P HIGH 1 (b) — single-consumer staleness via
+            // kernel `semantic_hash` mismatch for `strict_theorem_deps`.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+
+            let mut state = ProtocolState::default();
+            state.live.present_nodes.insert(NodeId::from("ThmT"));
+            state
+                .live
+                .corr_current_fingerprints
+                .insert(NodeId::from("ThmT"), "kernel-thmt-new".to_string());
+
+            let mut foo_strict_thm = BTreeMap::new();
+            foo_strict_thm.insert(NodeId::from("ThmT"), "any-val".to_string());
+            let mut foo_record = record_for_dep_test(
+                repo,
+                "Foo",
+                BTreeMap::new(),
+                foo_strict_thm,
+                BTreeMap::new(),
+            );
+            foo_record
+                .kernel_semantic_hashes
+                .insert(NodeId::from("ThmT"), "kernel-thmt-old".to_string());
+
+            assert!(
+                !record_hashes_match_current(&foo_record, repo, &state),
+                "single-consumer record whose strict_theorem_deps dep's kernel hash drifted must reject"
+            );
+        }
+
+        #[test]
+        fn record_hashes_match_current_rejects_record_with_changed_strict_definition_dep_fingerprint_no_other_consumer(
+        ) {
+            // Patch C-P HIGH 1 (b) — single-consumer staleness via
+            // kernel `semantic_hash` mismatch for `strict_definition_deps`.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+
+            let mut state = ProtocolState::default();
+            state.live.present_nodes.insert(NodeId::from("DefD"));
+            state
+                .live
+                .corr_current_fingerprints
+                .insert(NodeId::from("DefD"), "kernel-defd-new".to_string());
+
+            let mut foo_strict_def = BTreeMap::new();
+            foo_strict_def.insert(NodeId::from("DefD"), "any-sem".to_string());
+            let mut foo_record = record_for_dep_test(
+                repo,
+                "Foo",
+                BTreeMap::new(),
+                BTreeMap::new(),
+                foo_strict_def,
+            );
+            foo_record
+                .kernel_semantic_hashes
+                .insert(NodeId::from("DefD"), "kernel-defd-old".to_string());
+
+            assert!(
+                !record_hashes_match_current(&foo_record, repo, &state),
+                "single-consumer record whose strict_definition_deps dep's kernel hash drifted must reject"
+            );
+        }
+
+        #[test]
+        fn record_hashes_match_current_rejects_record_with_silently_changed_dep_hash_no_flag() {
+            // Patch C-P HIGH 1 (b) — the case C-O's strict-signal
+            // approach could NOT catch. A dep's content silently
+            // drifted (e.g. an off-protocol edit between supervisor
+            // stops; or the engine's invalidation propagation has a
+            // bug). The dep is NOT in unverified/failures (no
+            // tombstone). The record's recorded `kernel_semantic_hash`
+            // disagrees with current state → reject.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+
+            let mut state = ProtocolState::default();
+            state.live.present_nodes.insert(NodeId::from("Helper"));
+            // Current kernel hash for Helper has drifted, but no
+            // tombstone (Helper is NOT in unverified or failures).
+            state
+                .live
+                .corr_current_fingerprints
+                .insert(NodeId::from("Helper"), "kernel-helper-drifted".to_string());
+            assert!(!state
+                .local_closure_unverified_nodes
+                .contains(&NodeId::from("Helper")));
+            assert!(!state
+                .local_closure_failures
+                .contains_key(&NodeId::from("Helper")));
+
+            let mut foo_boundary = BTreeMap::new();
+            foo_boundary.insert(NodeId::from("Helper"), "any-stmt".to_string());
+            let mut foo_record =
+                record_for_dep_test(repo, "Foo", foo_boundary, BTreeMap::new(), BTreeMap::new());
+            foo_record
+                .kernel_semantic_hashes
+                .insert(NodeId::from("Helper"), "kernel-helper-original".to_string());
+
+            assert!(
+                !record_hashes_match_current(&foo_record, repo, &state),
+                "silent dep drift (no tombstone) must still reject — kernel hash is authoritative"
+            );
+        }
+
+        #[test]
+        fn record_hashes_match_current_rejects_two_stale_records_mutually_referencing_each_other() {
+            // Patch C-P HIGH 1 (b) — mutual-stale scenario that C-O's
+            // strict signals + cross-record evidence couldn't catch.
+            // Two persisted records A and H reference each other; both
+            // are stale (their recorded kernel hashes don't match
+            // current). Under C-O, because neither dep is in unverified
+            // and cross-record evidence comes from the OTHER stale
+            // record, they would mutually validate. Under C-P, the
+            // kernel hash check rejects each independently.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "A", "trivial");
+            write_node(repo, "H", "trivial");
+
+            let mut state = ProtocolState::default();
+            state.live.present_nodes.insert(NodeId::from("A"));
+            state.live.present_nodes.insert(NodeId::from("H"));
+            // Current kernel hashes — both deps drifted from their
+            // record-write-time values.
+            state
+                .live
+                .corr_current_fingerprints
+                .insert(NodeId::from("A"), "kernel-A-new".to_string());
+            state
+                .live
+                .corr_current_fingerprints
+                .insert(NodeId::from("H"), "kernel-H-new".to_string());
+
+            // A's record names H as a boundary dep with a stale stmt-hash;
+            // A's kernel_semantic_hashes records H's OLD kernel hash.
+            let mut a_boundary = BTreeMap::new();
+            a_boundary.insert(NodeId::from("H"), "stale-stmt-hash".to_string());
+            let mut a_record =
+                record_for_dep_test(repo, "A", a_boundary, BTreeMap::new(), BTreeMap::new());
+            a_record
+                .kernel_semantic_hashes
+                .insert(NodeId::from("H"), "kernel-H-old".to_string());
+
+            // H's record names A as a boundary dep with a stale stmt-hash;
+            // H's kernel_semantic_hashes records A's OLD kernel hash.
+            let mut h_boundary = BTreeMap::new();
+            h_boundary.insert(NodeId::from("A"), "stale-stmt-hash".to_string());
+            let mut h_record =
+                record_for_dep_test(repo, "H", h_boundary, BTreeMap::new(), BTreeMap::new());
+            h_record
+                .kernel_semantic_hashes
+                .insert(NodeId::from("A"), "kernel-A-old".to_string());
+
+            // Put both records into state (mimicking a partial-restart
+            // where one was installed and the migration is about to
+            // consider the other). Under C-O, mutual cross-record
+            // agreement (stale-stmt-hash matches on both sides) would
+            // not surface a disagreement; only kernel-hash drift catches
+            // this.
+            state
+                .local_closure_records
+                .insert(NodeId::from("A"), a_record.clone());
+
+            assert!(
+                !record_hashes_match_current(&h_record, repo, &state),
+                "H's record must reject: its recorded kernel hash for A drifted"
+            );
+            // And vice versa.
+            state.local_closure_records.remove(&NodeId::from("A"));
+            state
+                .local_closure_records
+                .insert(NodeId::from("H"), h_record);
+            assert!(
+                !record_hashes_match_current(&a_record, repo, &state),
+                "A's record must reject: its recorded kernel hash for H drifted"
+            );
+        }
+
+        #[test]
+        fn record_hashes_match_current_passes_when_all_dep_hashes_match_current() {
+            // Patch C-P HIGH 1 (b) — positive control. With kernel
+            // hashes recorded and matching current state, the record
+            // installs cleanly.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+
+            let mut state = ProtocolState::default();
+            state.live.present_nodes.insert(NodeId::from("Helper"));
+            state.live.present_nodes.insert(NodeId::from("ThmT"));
+            state.live.present_nodes.insert(NodeId::from("DefD"));
+            state
+                .live
+                .corr_current_fingerprints
+                .insert(NodeId::from("Helper"), "k-helper".to_string());
+            state
+                .live
+                .corr_current_fingerprints
+                .insert(NodeId::from("ThmT"), "k-thmt".to_string());
+            state
+                .live
+                .corr_current_fingerprints
+                .insert(NodeId::from("DefD"), "k-defd".to_string());
+
+            let mut foo_boundary = BTreeMap::new();
+            foo_boundary.insert(NodeId::from("Helper"), "stmt-helper".to_string());
+            let mut foo_strict_thm = BTreeMap::new();
+            foo_strict_thm.insert(NodeId::from("ThmT"), "val-thmt".to_string());
+            let mut foo_strict_def = BTreeMap::new();
+            foo_strict_def.insert(NodeId::from("DefD"), "sem-defd".to_string());
+            let mut foo_record =
+                record_for_dep_test(repo, "Foo", foo_boundary, foo_strict_thm, foo_strict_def);
+            foo_record
+                .kernel_semantic_hashes
+                .insert(NodeId::from("Helper"), "k-helper".to_string());
+            foo_record
+                .kernel_semantic_hashes
+                .insert(NodeId::from("ThmT"), "k-thmt".to_string());
+            foo_record
+                .kernel_semantic_hashes
+                .insert(NodeId::from("DefD"), "k-defd".to_string());
+
+            assert!(
+                record_hashes_match_current(&foo_record, repo, &state),
+                "record with all dep kernel hashes matching current must accept"
+            );
+        }
+
+        #[test]
+        fn record_hashes_match_current_rejects_record_with_dep_missing_from_current_fingerprints() {
+            // Patch C-P HIGH 1 (b) — a recorded `kernel_semantic_hash`
+            // for a dep whose `corr_current_fingerprints` entry has
+            // been deleted (dep removed from kernel state since the
+            // record was written) must reject. Note: this is distinct
+            // from the present_nodes check at the top of the function
+            // (the dep can still be in present_nodes but have its
+            // fingerprint pruned, e.g. during a corr-invalidation pass).
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+
+            let mut state = ProtocolState::default();
+            state.live.present_nodes.insert(NodeId::from("Helper"));
+            // No entry in corr_current_fingerprints — Helper's
+            // fingerprint was removed (e.g. live state lost it during
+            // a partial restore).
+            assert!(!state
+                .live
+                .corr_current_fingerprints
+                .contains_key(&NodeId::from("Helper")));
+
+            let mut foo_boundary = BTreeMap::new();
+            foo_boundary.insert(NodeId::from("Helper"), "stmt".to_string());
+            let mut foo_record =
+                record_for_dep_test(repo, "Foo", foo_boundary, BTreeMap::new(), BTreeMap::new());
+            foo_record
+                .kernel_semantic_hashes
+                .insert(NodeId::from("Helper"), "k-helper-original".to_string());
+
+            assert!(
+                !record_hashes_match_current(&foo_record, repo, &state),
+                "record whose dep is missing from current fingerprints must reject"
+            );
+        }
+
+        #[test]
+        fn migration_enters_sorry_free_proof_nodes_into_unverified_set() {
+            // Plan §7.10 / test 2 — sorry-free proof_nodes lacking a
+            // record enter unverified; sorryd ones do not.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Free", "trivial");
+            write_node(repo, "Sorryd", "sorry");
+            let runtime_root = tempdir().expect("runtime root");
+
+            let mut state = ProtocolState::default();
+            state.proof_nodes.insert(NodeId::from("Free"));
+            state.proof_nodes.insert(NodeId::from("Sorryd"));
+            state.live.present_nodes.insert(NodeId::from("Free"));
+            state.live.present_nodes.insert(NodeId::from("Sorryd"));
+            state.live.open_nodes.insert(NodeId::from("Sorryd"));
+            let _ = run_migration_if_needed_with_probe(
+                &mut state,
+                repo,
+                runtime_root.path(),
+                10,
+                // Make the probe fail so Free stays unverified.
+                |_repo, _node| Ok(fail_probe()),
+            )
+            .expect("migration");
+            assert!(state
+                .local_closure_unverified_nodes
+                .contains(&NodeId::from("Free")));
+            assert!(!state
+                .local_closure_unverified_nodes
+                .contains(&NodeId::from("Sorryd")));
+        }
+
+        #[test]
+        fn migration_skips_non_present_node() {
+            // Patch C-Q Q4 — `needs_probe` filter must require
+            // `live.present_nodes` membership. A node listed in
+            // `proof_nodes` but absent from `present_nodes` (e.g. a
+            // node that's been removed from the live tablet but not
+            // pruned from `proof_nodes`) used to slip through and land
+            // in `local_closure_unverified_nodes`, even though
+            // `apply_revalidation_batch` would later drop the batch
+            // entry. The unverified-set insert violates the §7.0
+            // invariant `unverified ⊆ present_nodes`; the C-Q filter
+            // adds a `present_nodes` membership check to prevent it.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Present", "trivial");
+            // No write_node for "Absent" — it's in proof_nodes but not
+            // on disk and not in present_nodes.
+            let runtime_root = tempdir().expect("runtime root");
+
+            let mut state = ProtocolState::default();
+            state.proof_nodes.insert(NodeId::from("Present"));
+            state.proof_nodes.insert(NodeId::from("Absent"));
+            state.live.present_nodes.insert(NodeId::from("Present"));
+            // Deliberately omit "Absent" from `live.present_nodes`.
+            let _ = run_migration_if_needed_with_probe(
+                &mut state,
+                repo,
+                runtime_root.path(),
+                10,
+                |_repo, _node| Ok(fail_probe()),
+            )
+            .expect("migration");
+            assert!(
+                state
+                    .local_closure_unverified_nodes
+                    .contains(&NodeId::from("Present")),
+                "present sorry-free proof node enters unverified set",
+            );
+            assert!(
+                !state
+                    .local_closure_unverified_nodes
+                    .contains(&NodeId::from("Absent")),
+                "absent proof node must NOT enter unverified set — \
+                 violates §7.0 invariant `unverified ⊆ present_nodes`",
+            );
+        }
+
+        #[test]
+        fn record_hashes_match_current_detects_drift() {
+            // The install-time guard (plan §7.10 step 3) compares every
+            // hash field; any drift returns false.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            let record = compute_local_closure_record_inputs(
+                repo,
+                &NodeId::from("Foo"),
+                &BTreeSet::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                "snap-match".to_string(),
+                AxcheckStatus::Agreed,
+            )
+            .expect("compute record inputs");
+            let empty_state = ProtocolState::default();
+            assert!(record_hashes_match_current(&record, repo, &empty_state));
+            // Mutate the active-decl file.
+            write_node(repo, "Foo", "by trivial");
+            assert!(!record_hashes_match_current(&record, repo, &empty_state));
+        }
+
+        struct StubAdapter {
+            responses: Vec<WrapperResponse>,
+        }
+        impl WrapperAdapter for StubAdapter {
+            fn dispatch(&mut self, _request: &WrapperRequest) -> Result<WrapperResponse, String> {
+                Ok(self.responses.remove(0))
+            }
+        }
+
+        #[test]
+        fn cleanup_revalidation_adapter_injects_batch_into_worker_response() {
+            // Plan §7.7 — the cleanup adapter wrapper must populate the
+            // outgoing `WorkerResponse.local_closure_revalidation` so the
+            // engine's `formalization_complete` check sees the refreshed
+            // records before deciding whether to accept/reject the burst.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            let mut state = ProtocolState::default();
+            state.cycle = 9;
+            state.live.present_nodes.insert(NodeId::from("Foo"));
+            state.proof_nodes.insert(NodeId::from("Foo"));
+            state
+                .local_closure_unverified_nodes
+                .insert(NodeId::from("Foo"));
+
+            let mut worker_response = trellis_kernel::WorkerResponse::default();
+            worker_response.snapshot = state.live.clone();
+            worker_response.local_closure_revalidation = None;
+            let responses = vec![WrapperResponse::Worker(worker_response)];
+            let inner = StubAdapter { responses };
+
+            let _runtime_root = tempdir().expect("runtime root");
+            let shared: std::rc::Rc<std::cell::RefCell<Option<RevalidationBatch>>> =
+                std::rc::Rc::new(std::cell::RefCell::new(None));
+            let mut wrapper = CleanupRevalidationAdapter {
+                inner,
+                state: &state,
+                repo: repo.to_path_buf(),
+                current_cycle: 9,
+                shared_batch: shared.clone(),
+            };
+
+            // Build a synthetic cleanup-validation Worker request.
+            let mut request = WrapperRequest::default();
+            request.kind = RequestKind::Worker;
+            request.worker_context.validation_kind = WorkerValidationKind::Cleanup;
+
+            // Because we can't easily invoke the real probe in unit tests,
+            // verify the wrapper at least invokes the pass (it tries to
+            // call run_local_closure_axioms; on the empty repo this will
+            // produce a transport_error which still proves the wrapper
+            // wired the pass — `local_closure_revalidation` becomes
+            // `Some(...)`).
+            let response = wrapper.dispatch(&request).expect("dispatch");
+            let WrapperResponse::Worker(worker) = response else {
+                panic!("expected Worker response");
+            };
+            assert!(
+                worker.local_closure_revalidation.is_some(),
+                "cleanup wrapper must populate local_closure_revalidation"
+            );
+            // Patch C-Q Q2 — the shared cell also gets a clone of the
+            // batch (used by `step_runtime`'s post-acceptance
+            // persistence sweep).
+            assert!(
+                shared.borrow().is_some(),
+                "Q2: cleanup adapter must populate the shared batch cell",
+            );
+        }
+
+        #[test]
+        fn cleanup_revalidation_adapter_covers_same_burst_invalidations() {
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Consumer", "trivial");
+            write_node(repo, "Helper", "trivial");
+
+            let consumer = NodeId::from("Consumer");
+            let helper = NodeId::from("Helper");
+            let mut state = ProtocolState::default();
+            state.phase = Phase::Cleanup;
+            state.cycle = 9;
+            state.live.present_nodes.insert(consumer.clone());
+            state.live.present_nodes.insert(helper.clone());
+            state.proof_nodes.insert(consumer.clone());
+            state.proof_nodes.insert(helper.clone());
+            state
+                .live
+                .corr_current_fingerprints
+                .insert(helper.clone(), "helper-before".to_string());
+            let mut boundary = BTreeMap::new();
+            boundary.insert(helper.clone(), "stmt-before".to_string());
+            state.local_closure_records.insert(
+                consumer.clone(),
+                record_for_dep_test(repo, "Consumer", boundary, BTreeMap::new(), BTreeMap::new()),
+            );
+            trellis_kernel::model::recompute_local_closure_reverse_indices(&mut state);
+            assert!(
+                state.local_closure_unverified_nodes.is_empty(),
+                "regression setup starts with no pre-burst unverified nodes"
+            );
+
+            let mut snapshot = state.live.clone();
+            snapshot
+                .corr_current_fingerprints
+                .insert(helper.clone(), "helper-after".to_string());
+            let worker = WorkerResponse {
+                request_id: 1,
+                cycle: 9,
+                status: ResponseStatus::Ok,
+                outcome: WorkerOutcome::Valid,
+                snapshot,
+                ..WorkerResponse::default()
+            };
+            let shared = std::rc::Rc::new(std::cell::RefCell::new(None));
+            let mut wrapper = CleanupRevalidationAdapter {
+                inner: StubAdapter {
+                    responses: vec![WrapperResponse::Worker(worker)],
+                },
+                state: &state,
+                repo: repo.to_path_buf(),
+                current_cycle: 9,
+                shared_batch: shared.clone(),
+            };
+            let mut request = WrapperRequest::default();
+            request.kind = RequestKind::Worker;
+            request.phase = Phase::Cleanup;
+            request.worker_context.validation_kind = WorkerValidationKind::Cleanup;
+
+            let response = wrapper.dispatch(&request).expect("dispatch");
+            let WrapperResponse::Worker(worker) = response else {
+                panic!("expected Worker response");
+            };
+            let batch = worker
+                .local_closure_revalidation
+                .expect("same-burst invalidation must trigger cleanup revalidation");
+            let touched: BTreeSet<NodeId> = batch
+                .refreshed
+                .iter()
+                .map(|(node, _)| node.clone())
+                .chain(batch.still_unverified.iter().map(|(node, _)| node.clone()))
+                .collect();
+            assert!(
+                touched.contains(&consumer),
+                "consumer invalidated by Helper drift must be revalidated in the same burst"
+            );
+            assert!(
+                shared.borrow().as_ref().is_some_and(|batch| {
+                    batch.refreshed.iter().any(|(node, _)| node == &consumer)
+                        || batch
+                            .still_unverified
+                            .iter()
+                            .any(|(node, _)| node == &consumer)
+                }),
+                "post-acceptance persistence cell must see the same consumer batch",
+            );
+        }
+
+        #[test]
+        fn proof_worker_local_closure_results_get_same_burst_real_hash_batch() {
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+
+            let node = NodeId::from("Foo");
+            let mut state = ProtocolState::default();
+            state.phase = Phase::ProofFormalization;
+            state.cycle = 35;
+            state.live.present_nodes.insert(node.clone());
+            state.proof_nodes.insert(node.clone());
+
+            let mut request = WrapperRequest::default();
+            request.kind = RequestKind::Worker;
+            request.phase = Phase::ProofFormalization;
+            request.cycle = 35;
+            request.id = 681;
+
+            let mut local_closure_results = BTreeMap::new();
+            local_closure_results.insert(node.clone(), ok_probe(&node));
+            let mut snapshot = WorkingSnapshot::default();
+            snapshot.present_nodes.insert(node.clone());
+            let worker = WorkerResponse {
+                request_id: 681,
+                cycle: 35,
+                status: ResponseStatus::Ok,
+                outcome: WorkerOutcome::Valid,
+                snapshot,
+                local_closure_results,
+                ..WorkerResponse::default()
+            };
+            let shared = std::rc::Rc::new(std::cell::RefCell::new(None));
+            let mut wrapper = CleanupRevalidationAdapter {
+                inner: StubAdapter {
+                    responses: vec![WrapperResponse::Worker(worker)],
+                },
+                state: &state,
+                repo: repo.to_path_buf(),
+                current_cycle: 35,
+                shared_batch: shared.clone(),
+            };
+
+            let response = wrapper.dispatch(&request).expect("dispatch");
+            let WrapperResponse::Worker(worker) = response else {
+                panic!("expected Worker response");
+            };
+            let batch = worker
+                .local_closure_revalidation
+                .expect("wrapper must attach same-burst real-hash batch");
+            assert_eq!(batch.refreshed.len(), 1);
+            let (refreshed_node, record) = &batch.refreshed[0];
+            assert_eq!(refreshed_node, &node);
+            assert!(
+                record.accepted_at_snapshot_id.starts_with(
+                    trellis_kernel::model::WORKER_RESULT_LOCAL_CLOSURE_BACKFILL_PREFIX
+                ),
+                "record must carry same-burst marker: {:?}",
+                record.accepted_at_snapshot_id
+            );
+            assert!(
+                !record.is_sentinel_hashed(),
+                "same-burst batch must carry real runtime hashes"
+            );
+            assert!(
+                shared
+                    .borrow()
+                    .as_ref()
+                    .is_some_and(|batch| batch.refreshed.len() == 1),
+                "same-burst batch must be available to post-acceptance persistence"
+            );
+        }
+
+        #[test]
+        fn pre_review_hook_fires_when_generating_review_prompt_with_unverified_nonempty() {
+            // Patch C-O HIGH 2 (was C-F's
+            // pre_step_revalidation_fires_on_review_request_...): the
+            // pre-review hook fires when (i) the unverified set is
+            // non-empty AND (ii) no request is in flight OR the
+            // in-flight request is Review. Here we exercise the Review
+            // case: a Review prompt is about to be re-generated and the
+            // hook must drain the unverified set first.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            let mut state = ProtocolState::default();
+            state.in_flight_request = Some(state.expected_request(1, RequestKind::Review));
+            state.cycle = 5;
+            // C-G's HIGH 6 batch filter requires every revalidation-batch
+            // entry's node to be present + proof-bearing + not-open.
+            state.live.present_nodes.insert(NodeId::from("Foo"));
+            state.proof_nodes.insert(NodeId::from("Foo"));
+            state
+                .local_closure_unverified_nodes
+                .insert(NodeId::from("Foo"));
+            let runtime_root = tempdir().expect("rt");
+            let mut probe_calls = 0usize;
+            let batch = run_pre_step_revalidation_if_needed_pure(
+                &mut state,
+                repo,
+                runtime_root.path(),
+                5,
+                |_repo, _node| {
+                    probe_calls += 1;
+                    Ok(ok_probe(&NodeId::from("Foo")))
+                },
+            );
+            let batch = batch.expect("pre-review hook must produce a batch");
+            assert_eq!(batch.refreshed.len(), 1);
+            assert_eq!(batch.still_unverified.len(), 0);
+            assert!(state
+                .local_closure_records
+                .contains_key(&NodeId::from("Foo")));
+            assert!(!state
+                .local_closure_unverified_nodes
+                .contains(&NodeId::from("Foo")));
+            assert_eq!(probe_calls, 1);
+        }
+
+        #[test]
+        fn pre_review_hook_does_not_fire_for_worker_or_paper_or_corr_or_sound_request_kinds() {
+            // Patch C-O HIGH 2 — the pre-review hook MUST NOT fire when
+            // a non-Review request is in flight: those don't consult
+            // the unverified set (workers don't care, and the
+            // auto-scheduler post-C-F only schedules on failure
+            // records, not naked-unverified). Probing during a
+            // Worker/Paper/Corr/Sound burst risks capturing unaccepted
+            // disk state AND drifts the dispatched prompt's legality
+            // context.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+
+            for kind in [
+                RequestKind::Worker,
+                RequestKind::Paper,
+                RequestKind::Corr,
+                RequestKind::Sound,
+            ] {
+                let mut state = ProtocolState::default();
+                state.in_flight_request = Some(state.expected_request(1, kind));
+                state.cycle = 5;
+                state.live.present_nodes.insert(NodeId::from("Foo"));
+                state.proof_nodes.insert(NodeId::from("Foo"));
+                state
+                    .local_closure_unverified_nodes
+                    .insert(NodeId::from("Foo"));
+                let runtime_root = tempdir().expect("rt");
+                let mut probe_calls = 0usize;
+                let batch = run_pre_step_revalidation_if_needed_pure(
+                    &mut state,
+                    repo,
+                    runtime_root.path(),
+                    5,
+                    |_repo, _node| {
+                        probe_calls += 1;
+                        Ok(ok_probe(&NodeId::from("Foo")))
+                    },
+                );
+                assert!(
+                    batch.is_none(),
+                    "pre-review hook must NOT fire with {kind:?} in flight; got Some(batch)"
+                );
+                assert_eq!(probe_calls, 0, "probe must not run with {kind:?} in flight");
+                // Unverified set must remain untouched.
+                assert!(
+                    state
+                        .local_closure_unverified_nodes
+                        .contains(&NodeId::from("Foo")),
+                    "unverified node must remain in set when {kind:?} blocks hook"
+                );
+            }
+        }
+
+        #[test]
+        fn worker_burst_does_not_trigger_pre_review_revalidation_during_in_flight_request() {
+            // Patch C-O HIGH 2 — sanity check that the WIP-hazard never
+            // materializes: with a Worker in flight (carrying potentially
+            // unaccepted edits on disk), the hook does NOT probe / persist
+            // records. The Worker response handler will run bookkeeping
+            // when consumed, and any unverified entries either get cleared
+            // there or wait for the next request-boundary Review hook.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            let mut state = ProtocolState::default();
+            state.in_flight_request = Some(state.expected_request(7, RequestKind::Worker));
+            state.cycle = 5;
+            state.live.present_nodes.insert(NodeId::from("Foo"));
+            state.proof_nodes.insert(NodeId::from("Foo"));
+            state
+                .local_closure_unverified_nodes
+                .insert(NodeId::from("Foo"));
+            // Add a real failure so we'd otherwise want to re-probe.
+            state.local_closure_failures.insert(
+                NodeId::from("Foo"),
+                ErrorSummary {
+                    status: "axiom_violation".to_string(),
+                    ..Default::default()
+                },
+            );
+            let runtime_root = tempdir().expect("rt");
+            let records_dir = runtime_root
+                .path()
+                .join("checker-state/local-closure-records");
+            let mut probe_calls = 0usize;
+            let batch = run_pre_step_revalidation_if_needed_pure(
+                &mut state,
+                repo,
+                runtime_root.path(),
+                5,
+                |_repo, _node| {
+                    probe_calls += 1;
+                    Ok(ok_probe(&NodeId::from("Foo")))
+                },
+            );
+            assert!(
+                batch.is_none(),
+                "WIP-hazard guard must prevent the hook from firing during in-flight Worker"
+            );
+            assert_eq!(probe_calls, 0, "probe must not run during Worker WIP");
+            // No persisted record file must have been written (we
+            // shouldn't capture WIP disk state).
+            assert!(
+                !records_dir.exists()
+                    || fs::read_dir(&records_dir).map(|d| d.count()).unwrap_or(0) == 0,
+                "no record file may be persisted under WIP-hazard guard"
+            );
+        }
+
+        #[test]
+        fn pre_step_revalidation_no_op_when_unverified_set_empty() {
+            // Patch C-F — the pre-step hook is a no-op when the unverified
+            // set is empty: nothing to probe, no batch produced, no probe
+            // closure invoked. This is the fast-path that avoids
+            // gratuitous I/O on clean steps.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            let mut state = ProtocolState::default();
+            state.in_flight_request = Some(state.expected_request(1, RequestKind::Worker));
+            // local_closure_unverified_nodes intentionally empty.
+            let runtime_root = tempdir().expect("rt");
+            let mut probe_calls = 0usize;
+            let batch = run_pre_step_revalidation_if_needed_pure(
+                &mut state,
+                repo,
+                runtime_root.path(),
+                5,
+                |_repo, _node| {
+                    probe_calls += 1;
+                    Ok(ok_probe(&NodeId::from("Foo")))
+                },
+            );
+            assert!(batch.is_none(), "empty unverified set must skip the hook");
+            assert_eq!(probe_calls, 0);
+        }
+
+        #[test]
+        fn naked_unverified_node_exits_set_via_revalidation_not_worker_dispatch() {
+            // Patch C-F integration — a naked unverified node (in the
+            // unverified set but WITH NO failure record) passes through
+            // the pre-step revalidation hook and exits the set via the
+            // cheap server-side probe, never reaching the auto-scheduler.
+            // This is the migration-cold-start / dep-invalidated scenario
+            // that the C-F fix targets: such nodes must NOT trigger
+            // worker dispatch (~30-60s) when a probe (~2-15s) suffices.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            let mut state = ProtocolState::default();
+            // Patch C-O HIGH 2: hook only fires when no request is in
+            // flight or a Review is in flight. The original C-F test
+            // used Worker in flight; this is now disallowed. The
+            // naked-unverified-cleared semantic is unchanged for the
+            // no-in-flight scenario, which is the canonical path.
+            state.cycle = 5;
+            // C-G's HIGH 6 batch filter requires every revalidation-batch
+            // entry's node to be present + proof-bearing + not-open.
+            state.live.present_nodes.insert(NodeId::from("Foo"));
+            state.proof_nodes.insert(NodeId::from("Foo"));
+            // Naked: in unverified set but NO entry in
+            // local_closure_failures.
+            state
+                .local_closure_unverified_nodes
+                .insert(NodeId::from("Foo"));
+            assert!(state.local_closure_failures.is_empty());
+
+            let runtime_root = tempdir().expect("rt");
+            let mut probe_calls = 0usize;
+            let batch = run_pre_step_revalidation_if_needed_pure(
+                &mut state,
+                repo,
+                runtime_root.path(),
+                5,
+                |_repo, _node| {
+                    probe_calls += 1;
+                    Ok(ok_probe(&NodeId::from("Foo")))
+                },
+            );
+            let _batch = batch.expect("hook fires on naked unverified too");
+            // The probe succeeded; the node has exited the unverified
+            // set via revalidation, NOT via worker dispatch.
+            assert_eq!(probe_calls, 1);
+            assert!(
+                !state
+                    .local_closure_unverified_nodes
+                    .contains(&NodeId::from("Foo")),
+                "naked unverified must exit set via revalidation"
+            );
+            assert!(
+                state
+                    .local_closure_records
+                    .contains_key(&NodeId::from("Foo")),
+                "successful probe installs a fresh record"
+            );
+        }
+
+        // Patch C-O HIGH 2 — DELETED:
+        //   - `pre_step_revalidation_regenerates_in_flight_request_after_batch_apply`
+        //     (regeneration is no longer needed: hook only fires when
+        //     in-flight is None or Review, and a Review prompt is built
+        //     fresh against post-hook state by the engine, so there's
+        //     nothing to silently rewrite.)
+        //   - `worker_request_in_flight_gets_regenerated_just_like_review`
+        //     (was asserting the unsafe behavior; the hook never fires
+        //     during in-flight Worker post-C-O.)
+        //
+        // The `no_regenerate_when_no_in_flight_request` test is kept
+        // below — under the new gate, no-in-flight is one of the two
+        // permitted firing conditions.
+
+        #[test]
+        fn pre_review_hook_regenerates_in_flight_review_request_after_batch_mutates_unverified_set()
+        {
+            // Patch C-Q Q3 — when the in-flight request is `Review` AND
+            // the batch actually refreshed/failed something, the hook
+            // must regenerate `state.in_flight_request` via
+            // `expected_request(prev.id, Review)`. Otherwise the
+            // already-materialized Review prompt's `local_closure_unverified`
+            // map references state that no longer matches the kernel
+            // (the reviewer would see a stale failure-context snapshot).
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            let mut state = ProtocolState::default();
+            state.cycle = 5;
+            state.live.present_nodes.insert(NodeId::from("Foo"));
+            state.proof_nodes.insert(NodeId::from("Foo"));
+            // Stage 1: Foo is in unverified with a stale failure
+            // entry; the original Review request carries that snapshot.
+            state
+                .local_closure_unverified_nodes
+                .insert(NodeId::from("Foo"));
+            let mut stale_failure = ErrorSummary::default();
+            stale_failure.status = "axiom_violation".to_string();
+            stale_failure.stderr_excerpt = "STALE".to_string();
+            state
+                .local_closure_failures
+                .insert(NodeId::from("Foo"), stale_failure);
+            let original = state.expected_request(17, RequestKind::Review);
+            state.in_flight_request = Some(original.clone());
+            // Snapshot the original's `local_closure_unverified` map
+            // for after-comparison.
+            assert!(
+                original
+                    .local_closure_unverified
+                    .contains_key(&NodeId::from("Foo")),
+                "original Review request must carry the stale Foo entry",
+            );
+
+            // Run the hook with a probe that returns ok → Foo exits
+            // unverified, fresh record installed, no failure entry.
+            let runtime_root = tempdir().expect("rt");
+            let batch = run_pre_step_revalidation_if_needed_pure(
+                &mut state,
+                repo,
+                runtime_root.path(),
+                5,
+                |_repo, _node| Ok(ok_probe(&NodeId::from("Foo"))),
+            );
+            let batch = batch.expect("hook fires under Review-in-flight");
+            assert!(
+                !batch.refreshed.is_empty(),
+                "batch must have refreshed Foo (probe ok)"
+            );
+
+            // Foo is no longer in unverified.
+            assert!(
+                !state
+                    .local_closure_unverified_nodes
+                    .contains(&NodeId::from("Foo")),
+                "post-batch state must not have Foo in unverified"
+            );
+
+            // The in-flight Review request must have been regenerated:
+            // its `local_closure_unverified` must be empty now (Foo
+            // exited the set and its failure entry was cleared).
+            let regenerated = state
+                .in_flight_request
+                .as_ref()
+                .expect("Review must still be in flight");
+            assert_eq!(
+                regenerated.kind,
+                RequestKind::Review,
+                "regenerated request stays Review-kind"
+            );
+            assert_eq!(
+                regenerated.id, 17,
+                "regenerated request keeps the original request id"
+            );
+            assert!(
+                regenerated.local_closure_unverified.is_empty(),
+                "Q3: regenerated Review must reflect post-batch state — \
+                 Foo's stale failure entry must be gone; got {:?}",
+                regenerated.local_closure_unverified,
+            );
+        }
+
+        #[test]
+        fn pre_review_hook_does_not_regenerate_worker_or_other_request_kinds() {
+            // Patch C-Q Q3 — regeneration is intentionally Review-only.
+            // The gate blocks the hook entirely for Worker/Paper/Corr/Sound
+            // (see `pre_review_hook_does_not_fire_for_worker_or_paper_or_corr_or_sound_request_kinds`),
+            // so by definition no regeneration runs for those kinds.
+            // This test is the explicit pin: if a future edit relaxes
+            // the gate to also fire under, say, Worker, regeneration
+            // must NOT happen for Worker (it would silently rewrite
+            // the worker's already-dispatched prompt).
+            //
+            // We exercise the contract directly: with a Worker in
+            // flight, the hook returns None (gate blocks), and the
+            // in-flight request must be exactly what we put there —
+            // no clone, no mutation.
+            for kind in [
+                RequestKind::Worker,
+                RequestKind::Paper,
+                RequestKind::Corr,
+                RequestKind::Sound,
+            ] {
+                let dir = tempdir().expect("tempdir");
+                let repo = dir.path();
+                seed_repo(repo);
+                write_node(repo, "Foo", "trivial");
+                let mut state = ProtocolState::default();
+                state.cycle = 5;
+                state.live.present_nodes.insert(NodeId::from("Foo"));
+                state.proof_nodes.insert(NodeId::from("Foo"));
+                state
+                    .local_closure_unverified_nodes
+                    .insert(NodeId::from("Foo"));
+                let original = state.expected_request(99, kind);
+                state.in_flight_request = Some(original.clone());
+                let runtime_root = tempdir().expect("rt");
+                let _ = run_pre_step_revalidation_if_needed_pure(
+                    &mut state,
+                    repo,
+                    runtime_root.path(),
+                    5,
+                    |_repo, _node| Ok(ok_probe(&NodeId::from("Foo"))),
+                );
+                assert_eq!(
+                    state.in_flight_request.as_ref().expect("still in flight"),
+                    &original,
+                    "Q3: in-flight {kind:?} request must NOT be regenerated by the pre-review hook",
+                );
+            }
+        }
+
+        #[test]
+        fn pre_step_revalidation_no_regenerate_when_no_in_flight_request() {
+            // Patch C-O HIGH 2 — when no request is in flight, the hook
+            // still fires (one of the two permitted conditions) and
+            // mutates state. Regeneration is no longer attempted; the
+            // test stays as a sanity check that no panic occurs.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            let mut state = ProtocolState::default();
+            state.cycle = 5;
+            state.live.present_nodes.insert(NodeId::from("Foo"));
+            state.proof_nodes.insert(NodeId::from("Foo"));
+            state
+                .local_closure_unverified_nodes
+                .insert(NodeId::from("Foo"));
+            // No in_flight_request.
+            assert!(state.in_flight_request.is_none());
+            let runtime_root = tempdir().expect("rt");
+            let batch = run_pre_step_revalidation_if_needed_pure(
+                &mut state,
+                repo,
+                runtime_root.path(),
+                5,
+                |_repo, _node| Ok(ok_probe(&NodeId::from("Foo"))),
+            );
+            assert!(batch.is_some(), "hook fires when no request is in flight");
+            assert!(
+                state.in_flight_request.is_none(),
+                "missing in-flight request must stay None — no spurious creation"
+            );
+        }
+
+        #[test]
+        fn cleanup_revalidation_adapter_passes_non_cleanup_through() {
+            // The wrapper must not modify non-cleanup responses.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            let mut state = ProtocolState::default();
+            state
+                .local_closure_unverified_nodes
+                .insert(NodeId::from("Foo"));
+            let worker_response = trellis_kernel::WorkerResponse::default();
+            let responses = vec![WrapperResponse::Worker(worker_response)];
+            let inner = StubAdapter { responses };
+            let _runtime_root = tempdir().expect("runtime root");
+            let shared: std::rc::Rc<std::cell::RefCell<Option<RevalidationBatch>>> =
+                std::rc::Rc::new(std::cell::RefCell::new(None));
+            let mut wrapper = CleanupRevalidationAdapter {
+                inner,
+                state: &state,
+                repo: repo.to_path_buf(),
+                current_cycle: 9,
+                shared_batch: shared.clone(),
+            };
+            let mut request = WrapperRequest::default();
+            request.kind = RequestKind::Worker;
+            request.worker_context.validation_kind = WorkerValidationKind::ProofLocal;
+            let response = wrapper.dispatch(&request).expect("dispatch");
+            let WrapperResponse::Worker(worker) = response else {
+                panic!("expected Worker response");
+            };
+            assert!(
+                worker.local_closure_revalidation.is_none(),
+                "non-cleanup wrapper must NOT populate local_closure_revalidation"
+            );
+            assert!(
+                shared.borrow().is_none(),
+                "Q2: non-cleanup must NOT populate the shared batch cell",
+            );
+        }
+
+        #[test]
+        fn cleanup_revalidation_does_not_persist_records_before_engine_acceptance() {
+            // Patch C-Q Q2 — the adapter must NOT touch
+            // `<runtime_root>/checker-state/local-closure-records/`
+            // during dispatch. Persistence is deferred to after the
+            // engine accepts the cleanup response (post-`step_with_checkpoint_sink`).
+            // This test exercises the adapter directly and asserts the
+            // records dir stays empty regardless of what the adapter
+            // would otherwise persist.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            let mut state = ProtocolState::default();
+            state.cycle = 9;
+            state.live.present_nodes.insert(NodeId::from("Foo"));
+            state.proof_nodes.insert(NodeId::from("Foo"));
+            state
+                .local_closure_unverified_nodes
+                .insert(NodeId::from("Foo"));
+
+            // A Valid cleanup burst that carries a probe result for the
+            // unverified node. Under bd513b5 the adapter builds the
+            // same-burst backfill batch from this attached probe payload
+            // (no disk probe), stashes it in the shared cell, and defers
+            // ALL persistence to the post-acceptance sweep. `merge_
+            // revalidation_batch` skips empty batches, so a real batch is
+            // required to exercise the "stash without persisting" contract
+            // (a default/empty response would legitimately leave the cell
+            // None — nothing to defer). The engine simulation inside the
+            // cleanup post-delta branch installs Foo's record and clears it
+            // from the unverified set, so that branch returns an empty batch
+            // and never touches the live probe runner.
+            let mut probe = LocalClosureProbeOutput::default();
+            probe.status = "ok".to_string();
+            let mut snapshot = trellis_kernel::WorkingSnapshot::default();
+            snapshot.present_nodes.insert(NodeId::from("Foo"));
+            let mut worker_response = trellis_kernel::WorkerResponse::default();
+            worker_response.status = ResponseStatus::Ok;
+            worker_response.outcome = WorkerOutcome::Valid;
+            worker_response.snapshot = snapshot;
+            worker_response
+                .local_closure_results
+                .insert(NodeId::from("Foo"), probe);
+            let responses = vec![WrapperResponse::Worker(worker_response)];
+            let inner = StubAdapter { responses };
+            let runtime_root_dir = tempdir().expect("runtime root");
+            let runtime_root = runtime_root_dir.path();
+            let records_dir = local_closure_records_dir(runtime_root);
+            let shared: std::rc::Rc<std::cell::RefCell<Option<RevalidationBatch>>> =
+                std::rc::Rc::new(std::cell::RefCell::new(None));
+            let mut wrapper = CleanupRevalidationAdapter {
+                inner,
+                state: &state,
+                repo: repo.to_path_buf(),
+                current_cycle: 9,
+                shared_batch: shared.clone(),
+            };
+            let mut request = WrapperRequest::default();
+            request.kind = RequestKind::Worker;
+            request.worker_context.validation_kind = WorkerValidationKind::Cleanup;
+
+            let _ = wrapper.dispatch(&request).expect("dispatch");
+
+            // The records dir must NOT have been created or populated
+            // by the adapter. Even if the dispatch failed (transport
+            // error on the empty repo), the adapter must not have
+            // written any persisted JSON.
+            let records_present = records_dir.exists()
+                && fs::read_dir(&records_dir).map(|d| d.count()).unwrap_or(0) > 0;
+            assert!(
+                !records_present,
+                "Q2: cleanup adapter must NOT persist records to disk during dispatch — \
+                 persistence is deferred to post-acceptance. Records dir state: \
+                 exists={}, entry count={}",
+                records_dir.exists(),
+                if records_dir.exists() {
+                    fs::read_dir(&records_dir).map(|d| d.count()).unwrap_or(0)
+                } else {
+                    0
+                },
+            );
+            // The batch is stashed in the shared cell for the post-
+            // acceptance sweep (`step_runtime` reads it).
+            assert!(
+                shared.borrow().is_some(),
+                "Q2: cleanup adapter must populate the shared batch cell for the post-acceptance sweep",
+            );
+        }
+
+        #[test]
+        fn cleanup_revalidation_persists_records_only_after_engine_acceptance() {
+            // Patch C-Q Q2 — partner test: the records dir gets
+            // populated only by `step_runtime`'s post-acceptance
+            // persistence sweep, which reads the shared cell. This
+            // test simulates that sweep manually (the runtime/engine
+            // wiring is exercised in the audit-flagged
+            // integration-style harness; here we pin the unit-level
+            // contract that the shared cell carries the batch and
+            // that the sweep semantics are "persist iff the entry is
+            // still in `state.local_closure_records`").
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            let mut state = ProtocolState::default();
+            state.cycle = 9;
+            state.live.present_nodes.insert(NodeId::from("Foo"));
+            state.proof_nodes.insert(NodeId::from("Foo"));
+            state
+                .local_closure_unverified_nodes
+                .insert(NodeId::from("Foo"));
+
+            // Pretend the engine accepted the batch and routed it
+            // through `apply_revalidation_batch`, which inserted Foo
+            // into `state.local_closure_records`. We mock that by
+            // synthesizing a record directly.
+            let record = compute_local_closure_record_inputs(
+                repo,
+                &NodeId::from("Foo"),
+                &BTreeSet::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                "snap".to_string(),
+                AxcheckStatus::Agreed,
+            )
+            .expect("compute record");
+            state
+                .local_closure_records
+                .insert(NodeId::from("Foo"), record.clone());
+            state
+                .local_closure_unverified_nodes
+                .remove(&NodeId::from("Foo"));
+
+            // Build the batch the adapter would have produced.
+            let mut batch = RevalidationBatch::default();
+            batch.refreshed.push((NodeId::from("Foo"), record.clone()));
+
+            // Manually emulate the `step_runtime` post-acceptance sweep.
+            let runtime_root_dir = tempdir().expect("rt root");
+            let runtime_root = runtime_root_dir.path();
+            let records_dir = local_closure_records_dir(runtime_root);
+            for (node, _r) in &batch.refreshed {
+                if let Some(accepted) = state.local_closure_records.get(node) {
+                    persist_record_to_disk(&records_dir, accepted, 9).expect("persist");
+                }
+            }
+            let on_disk = records_dir.join(trellis_kernel::runtime::persisted_record_file_name(
+                &NodeId::from("Foo"),
+            ));
+            assert!(
+                on_disk.exists(),
+                "Q2: after engine acceptance, the record must land on disk via the post-acceptance sweep",
+            );
+        }
+
+        #[test]
+        fn cleanup_revalidation_post_acceptance_sweep_skips_engine_rejected_entries() {
+            // Patch C-Q Q2 — defense in depth: the post-acceptance
+            // sweep filters by `state.local_closure_records.contains_key`.
+            // If the engine dropped a batch entry (e.g.
+            // `apply_revalidation_batch`'s eligibility filter rejected
+            // it because the node became `Open` during the cleanup
+            // delta), the sweep must NOT persist that entry — on-disk
+            // state must mirror the kernel's view.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            let mut state = ProtocolState::default();
+            state.cycle = 9;
+            // Foo is in batch.refreshed but engine rejected
+            // (not present in state.local_closure_records).
+            // (Don't insert into records.)
+            let record = compute_local_closure_record_inputs(
+                repo,
+                &NodeId::from("Foo"),
+                &BTreeSet::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                &BTreeMap::new(),
+                "snap".to_string(),
+                AxcheckStatus::Agreed,
+            )
+            .expect("compute record");
+            let mut batch = RevalidationBatch::default();
+            batch.refreshed.push((NodeId::from("Foo"), record));
+
+            let runtime_root_dir = tempdir().expect("rt root");
+            let runtime_root = runtime_root_dir.path();
+            let records_dir = local_closure_records_dir(runtime_root);
+            for (node, _r) in &batch.refreshed {
+                if let Some(accepted) = state.local_closure_records.get(node) {
+                    persist_record_to_disk(&records_dir, accepted, 9).expect("persist");
+                }
+            }
+            let on_disk = records_dir.join(trellis_kernel::runtime::persisted_record_file_name(
+                &NodeId::from("Foo"),
+            ));
+            assert!(
+                !on_disk.exists(),
+                "Q2: post-acceptance sweep must NOT persist an entry that the engine dropped",
+            );
+        }
+
+        // ---- Patch C-E gap-fill tests ----------------------------------
+
+        #[test]
+        fn migration_persists_successful_records_for_resumability() {
+            // Plan §7.10 / test 25 — when a migration probe succeeds, the
+            // refreshed record is persisted to disk; a subsequent restart
+            // loads it back without re-probing. This is the load-bearing
+            // resumability invariant.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            let runtime_root = tempdir().expect("runtime root");
+
+            // First migration: probes once, persists.
+            let mut state = ProtocolState::default();
+            // C-G's HIGH 6 batch filter requires nodes to be present +
+            // proof-bearing + not-open; populate present_nodes alongside
+            // proof_nodes so the migration's batch entries survive the
+            // filter.
+            state.live.present_nodes.insert(NodeId::from("Foo"));
+            state.proof_nodes.insert(NodeId::from("Foo"));
+            let mut first_probe_calls = 0usize;
+            let _ = run_migration_if_needed_with_probe(
+                &mut state,
+                repo,
+                runtime_root.path(),
+                10,
+                |_repo, _node| {
+                    first_probe_calls += 1;
+                    Ok(ok_probe_axcheck_agreed(&NodeId::from("Foo")))
+                },
+            )
+            .expect("first migration");
+            assert_eq!(first_probe_calls, 1, "first run probes Foo once");
+            assert!(state
+                .local_closure_records
+                .contains_key(&NodeId::from("Foo")));
+            // Verify the on-disk record exists.
+            let records_dir = local_closure_records_dir(runtime_root.path());
+            assert!(records_dir.join("Foo.json").exists());
+
+            // Simulate restart: drop the in-memory state and rerun the
+            // migration. With the persisted record present, the second
+            // run loads it and skips the probe entirely.
+            let mut state2 = ProtocolState::default();
+            // Same filter setup as state above.
+            state2.live.present_nodes.insert(NodeId::from("Foo"));
+            state2.proof_nodes.insert(NodeId::from("Foo"));
+            let mut second_probe_calls = 0usize;
+            let _ = run_migration_if_needed_with_probe(
+                &mut state2,
+                repo,
+                runtime_root.path(),
+                20,
+                |_repo, _node| {
+                    second_probe_calls += 1;
+                    Ok(ok_probe(&NodeId::from("Foo")))
+                },
+            )
+            .expect("second migration");
+            assert_eq!(
+                second_probe_calls, 0,
+                "resumed migration must skip probe when persisted record is fresh"
+            );
+            assert!(state2
+                .local_closure_records
+                .contains_key(&NodeId::from("Foo")));
+        }
+
+        #[test]
+        fn deterministic_revalidation_returns_empty_batch_when_no_unverified_nodes() {
+            // Plan §7.5 — when `local_closure_unverified_nodes` is empty,
+            // the deterministic pass is a no-op: no probes called, empty
+            // batch returned. This is the "phase-complete" fast-path.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            let state = ProtocolState::default(); // unverified set is empty
+            let mut probe_calls = 0usize;
+            let batch =
+                deterministic_revalidate_at_cli_with_probe(&state, repo, 10, |_repo, _node| {
+                    probe_calls += 1;
+                    Ok(ok_probe(&NodeId::from("Foo")))
+                });
+            assert_eq!(probe_calls, 0, "no nodes to revalidate → no probe calls");
+            assert!(batch.refreshed.is_empty());
+            assert!(batch.still_unverified.is_empty());
+        }
+
+        // ────────────────────────────────────────────────────────────
+        // Audit HIGH 1 — persisted record dep-hash validation.
+        // ────────────────────────────────────────────────────────────
+
+        /// Helper: build a sorry-free record for `node` with given dep
+        /// hashes against `repo`. Caller adds the dep-hash payload after.
+        fn record_for_dep_test(
+            repo: &Path,
+            node: &str,
+            boundary_theorems: BTreeMap<NodeId, String>,
+            strict_theorem_deps: BTreeMap<NodeId, String>,
+            strict_definition_deps: BTreeMap<NodeId, String>,
+        ) -> LocalClosureRecord {
+            compute_local_closure_record_inputs(
+                repo,
+                &NodeId::from(node),
+                &BTreeSet::new(),
+                &boundary_theorems,
+                &strict_theorem_deps,
+                &strict_definition_deps,
+                format!("snap-{node}"),
+                AxcheckStatus::Agreed,
+            )
+            .expect("compute record inputs")
+        }
+
+        #[test]
+        fn record_hashes_match_current_rejects_record_with_stale_boundary_hash() {
+            // Audit HIGH 1 — a persisted record's `boundary_theorems` dep
+            // hash must agree with any other in-state record's hash for
+            // the same dep. Disagreement implies one of the records is
+            // stale; the candidate is rejected (return false).
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            write_node(repo, "Bar", "trivial");
+
+            let mut state = ProtocolState::default();
+            // Patch C-O HIGH 1 (b): dep must be present in live for the
+            // sanity-check arm to pass after the strict-signal filter.
+            state.live.present_nodes.insert(NodeId::from("Helper"));
+            // Existing in-state record Bar references Helper with the
+            // NEW hash (post-edit). The candidate Foo also references
+            // Helper but recorded the OLD hash — disagreement → stale.
+            let mut bar_boundary = BTreeMap::new();
+            bar_boundary.insert(NodeId::from("Helper"), "new-hash".to_string());
+            let bar_record =
+                record_for_dep_test(repo, "Bar", bar_boundary, BTreeMap::new(), BTreeMap::new());
+            state
+                .local_closure_records
+                .insert(NodeId::from("Bar"), bar_record);
+
+            let mut foo_boundary = BTreeMap::new();
+            foo_boundary.insert(NodeId::from("Helper"), "old-hash".to_string());
+            let foo_record =
+                record_for_dep_test(repo, "Foo", foo_boundary, BTreeMap::new(), BTreeMap::new());
+
+            assert!(
+                !record_hashes_match_current(&foo_record, repo, &state),
+                "stale boundary hash must reject the candidate"
+            );
+
+            // Sanity check: agreement passes.
+            let mut foo_boundary_agree = BTreeMap::new();
+            foo_boundary_agree.insert(NodeId::from("Helper"), "new-hash".to_string());
+            let foo_record_agree = record_for_dep_test(
+                repo,
+                "Foo",
+                foo_boundary_agree,
+                BTreeMap::new(),
+                BTreeMap::new(),
+            );
+            assert!(
+                record_hashes_match_current(&foo_record_agree, repo, &state),
+                "matching boundary hash must accept the candidate"
+            );
+        }
+
+        #[test]
+        fn record_hashes_match_current_rejects_record_with_stale_strict_theorem_hash() {
+            // Audit HIGH 1 — same as boundary check but for
+            // `strict_theorem_deps`. Disagreement → reject.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            write_node(repo, "Bar", "trivial");
+
+            let mut state = ProtocolState::default();
+            // Patch C-O HIGH 1 (b): dep must be present in live so the
+            // strict-signal filter doesn't reject before we even hit the
+            // cross-record disagreement check.
+            state.live.present_nodes.insert(NodeId::from("ThmT"));
+            let mut bar_strict_thm = BTreeMap::new();
+            bar_strict_thm.insert(NodeId::from("ThmT"), "new-val".to_string());
+            let bar_record = record_for_dep_test(
+                repo,
+                "Bar",
+                BTreeMap::new(),
+                bar_strict_thm,
+                BTreeMap::new(),
+            );
+            state
+                .local_closure_records
+                .insert(NodeId::from("Bar"), bar_record);
+
+            let mut foo_strict_thm = BTreeMap::new();
+            foo_strict_thm.insert(NodeId::from("ThmT"), "old-val".to_string());
+            let foo_record = record_for_dep_test(
+                repo,
+                "Foo",
+                BTreeMap::new(),
+                foo_strict_thm,
+                BTreeMap::new(),
+            );
+
+            assert!(
+                !record_hashes_match_current(&foo_record, repo, &state),
+                "stale strict_theorem_deps hash must reject the candidate"
+            );
+        }
+
+        #[test]
+        fn record_hashes_match_current_rejects_record_with_stale_strict_definition_hash() {
+            // Audit HIGH 1 — same as boundary check but for
+            // `strict_definition_deps`. Disagreement → reject.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            write_node(repo, "Bar", "trivial");
+
+            let mut state = ProtocolState::default();
+            // Patch C-O HIGH 1 (b): dep must be present in live so the
+            // strict-signal filter doesn't reject before we even hit the
+            // cross-record disagreement check.
+            state.live.present_nodes.insert(NodeId::from("DefD"));
+            let mut bar_strict_def = BTreeMap::new();
+            bar_strict_def.insert(NodeId::from("DefD"), "new-sem".to_string());
+            let bar_record = record_for_dep_test(
+                repo,
+                "Bar",
+                BTreeMap::new(),
+                BTreeMap::new(),
+                bar_strict_def,
+            );
+            state
+                .local_closure_records
+                .insert(NodeId::from("Bar"), bar_record);
+
+            let mut foo_strict_def = BTreeMap::new();
+            foo_strict_def.insert(NodeId::from("DefD"), "old-sem".to_string());
+            let foo_record = record_for_dep_test(
+                repo,
+                "Foo",
+                BTreeMap::new(),
+                BTreeMap::new(),
+                foo_strict_def,
+            );
+
+            assert!(
+                !record_hashes_match_current(&foo_record, repo, &state),
+                "stale strict_definition_deps hash must reject the candidate"
+            );
+        }
+
+        // ────────────────────────────────────────────────────────────
+        // Audit HIGH 5 — migration runs at unsafe times.
+        // ────────────────────────────────────────────────────────────
+
+        #[test]
+        fn migration_skips_when_phase_is_cleanup() {
+            // Audit HIGH 5 — migration must not run in Cleanup phase:
+            // introducing unverified nodes there would block
+            // `formalization_complete` and prevent Cleanup `Done`.
+            let mut state = ProtocolState::default();
+            state.phase = Phase::Cleanup;
+            // No in_flight_request — only the phase should trigger skip.
+            let reason = local_closure_migration_skip_reason(&state)
+                .expect("Cleanup phase must produce a skip reason");
+            assert!(
+                reason.contains("Cleanup"),
+                "skip reason must mention Cleanup phase; got {reason}"
+            );
+        }
+
+        #[test]
+        fn migration_skips_when_worker_response_is_in_flight() {
+            // Audit HIGH 5 / Patch C-O MEDIUM 2 — migration must not run
+            // while a Worker request is in flight: the repo may contain
+            // unaccepted edits that would be captured in persisted
+            // records. Patch C-O generalized this to "any in-flight
+            // request kind"; the Worker case is preserved here.
+            let mut state = ProtocolState::default();
+            state.phase = Phase::ProofFormalization;
+            state.in_flight_request = Some(state.expected_request(7, RequestKind::Worker));
+            let reason = local_closure_migration_skip_reason(&state)
+                .expect("Worker in-flight must produce a skip reason");
+            assert!(
+                reason.contains("Worker"),
+                "skip reason must mention Worker kind; got {reason}"
+            );
+        }
+
+        #[test]
+        fn migration_runs_when_phase_is_proof_formalization_with_no_in_flight_request() {
+            // Audit HIGH 5 — safe path: ProofFormalization phase with no
+            // in-flight Worker request → migration runs (skip reason is
+            // None).
+            let mut state = ProtocolState::default();
+            state.phase = Phase::ProofFormalization;
+            // No in_flight_request.
+            assert!(
+                local_closure_migration_skip_reason(&state).is_none(),
+                "ProofFormalization with no in-flight request must allow migration"
+            );
+        }
+
+        #[test]
+        fn migration_skips_when_review_is_in_flight() {
+            // Patch C-O MEDIUM 2 — tightened from "Worker only" to "any
+            // in-flight request": a Review prompt already references a
+            // particular blocker/legality snapshot and silently mutating
+            // state via migration drifts the prompt from what the
+            // response is checked against.
+            let mut state = ProtocolState::default();
+            state.phase = Phase::ProofFormalization;
+            state.in_flight_request = Some(state.expected_request(1, RequestKind::Review));
+            let reason = local_closure_migration_skip_reason(&state)
+                .expect("Review in-flight must produce a skip reason after Patch C-O");
+            assert!(
+                reason.contains("Review"),
+                "skip reason must mention Review kind; got {reason}"
+            );
+        }
+
+        // ────────────────────────────────────────────────────────────
+        // Audit MEDIUM — approved-axioms load errors propagate.
+        // ────────────────────────────────────────────────────────────
+
+        #[test]
+        fn approved_axioms_load_error_propagates_as_internal_error_failure() {
+            // Audit MEDIUM — when `APPROVED_AXIOMS.json` is corrupted,
+            // the deterministic revalidation pass must NOT silently
+            // substitute an empty approved set and "successfully" bless
+            // the node. Instead it must record an `internal_error`
+            // failure summary so the operator sees the load failure.
+            let dir = tempdir().expect("tempdir");
+            let repo = dir.path();
+            seed_repo(repo);
+            write_node(repo, "Foo", "trivial");
+            // Write a corrupted approved-axioms file.
+            fs::write(repo.join("APPROVED_AXIOMS.json"), "{ not valid json")
+                .expect("write corrupt approved");
+
+            let mut state = ProtocolState::default();
+            state
+                .local_closure_unverified_nodes
+                .insert(NodeId::from("Foo"));
+
+            let batch =
+                deterministic_revalidate_at_cli_with_probe(&state, repo, 10, |_repo, _node| {
+                    Ok(ok_probe(&NodeId::from("Foo")))
+                });
+
+            // Probe ok, but approved-axioms load failed: no refreshed
+            // entry, an internal_error failure summary instead.
+            assert!(
+                batch.refreshed.is_empty(),
+                "load error must NOT install a record; got {} refreshed",
+                batch.refreshed.len()
+            );
+            assert_eq!(
+                batch.still_unverified.len(),
+                1,
+                "load error must surface as a still_unverified entry"
+            );
+            let (node, summary) = &batch.still_unverified[0];
+            assert_eq!(*node, NodeId::from("Foo"));
+            assert_eq!(
+                summary.status, "internal_error",
+                "load error must be categorized as internal_error, not as a clean record"
+            );
+            assert!(
+                summary.stderr_excerpt.contains("approved")
+                    || summary.stderr_excerpt.contains("APPROVED"),
+                "stderr_excerpt must mention the approved-axioms load failure; got {:?}",
+                summary.stderr_excerpt
+            );
+        }
+    }
+
+    // --- segment-event-log migration splitter -------------------------------
+
+    /// Build a synthetic monolith line for a given global index + cycle.
+    fn synthetic_record_line(index: u64, cycle: u32) -> String {
+        let record = EventLogRecord {
+            index,
+            event: ProtocolEvent::StartCycle,
+            commands: vec![],
+            phase: Phase::TheoremStating,
+            stage: Stage::Start,
+            cycle,
+            ts_ms: 1_700_000_000_000 + index,
+        };
+        serde_json::to_string(&record).unwrap()
+    }
+
+    /// Multi-cycle monolith: cycles 1 (2 records), 2 (1), 3 (2). Returns the
+    /// raw text (with trailing newline) and the record count.
+    fn synthetic_monolith() -> (String, u64) {
+        let lines = [
+            synthetic_record_line(0, 1),
+            synthetic_record_line(1, 1),
+            synthetic_record_line(2, 2),
+            synthetic_record_line(3, 3),
+            synthetic_record_line(4, 3),
+        ];
+        (format!("{}\n", lines.join("\n")), lines.len() as u64)
+    }
+
+    #[test]
+    fn segment_splits_monolith_with_byte_identity_and_density() {
+        let dir = tempdir().unwrap();
+        let runtime = dir.path().join("runtime");
+        let repo = dir.path().join("repo");
+        fs::create_dir_all(&runtime).unwrap();
+        fs::create_dir_all(&repo).unwrap();
+        let (text, total) = synthetic_monolith();
+        fs::write(runtime.join("event_log.jsonl"), &text).unwrap();
+
+        let out = segment_event_log(&runtime, &repo, false).unwrap();
+        assert!(!out.dry_run);
+        assert!(!out.already_segmented);
+        assert_eq!(out.total_records, total);
+        assert_eq!(out.max_index, total - 1);
+        assert_eq!(out.cycles.len(), 3);
+
+        let event_log_dir = repo.join(".trellis-history").join("event-log");
+        // Per-cycle membership.
+        assert_eq!(
+            fs::read_to_string(event_log_dir.join("cycle-000001.jsonl"))
+                .unwrap()
+                .lines()
+                .count(),
+            2
+        );
+        assert_eq!(
+            fs::read_to_string(event_log_dir.join("cycle-000002.jsonl"))
+                .unwrap()
+                .lines()
+                .count(),
+            1
+        );
+        // Byte-identity: in-order concatenation equals the monolith.
+        let mut concat = String::new();
+        for c in [
+            "cycle-000001.jsonl",
+            "cycle-000002.jsonl",
+            "cycle-000003.jsonl",
+        ] {
+            concat.push_str(&fs::read_to_string(event_log_dir.join(c)).unwrap());
+        }
+        assert_eq!(concat, text);
+    }
+
+    #[test]
+    fn segment_is_idempotent_and_refuses_overwrite_on_mismatch() {
+        let dir = tempdir().unwrap();
+        let runtime = dir.path().join("runtime");
+        let repo = dir.path().join("repo");
+        fs::create_dir_all(&runtime).unwrap();
+        fs::create_dir_all(&repo).unwrap();
+        let (text, _) = synthetic_monolith();
+        fs::write(runtime.join("event_log.jsonl"), &text).unwrap();
+
+        segment_event_log(&runtime, &repo, false).unwrap();
+        // Re-run: existing verifying dir → no-op success.
+        let again = segment_event_log(&runtime, &repo, false).unwrap();
+        assert!(again.already_segmented);
+
+        // Corrupt one cycle file → re-run must fail loud, not overwrite.
+        let event_log_dir = repo.join(".trellis-history").join("event-log");
+        fs::write(event_log_dir.join("cycle-000001.jsonl"), "tampered\n").unwrap();
+        let err = segment_event_log(&runtime, &repo, false).unwrap_err();
+        assert!(
+            err.contains("differ"),
+            "expected mismatch refusal, got: {err}"
+        );
+    }
+
+    #[test]
+    fn segment_dry_run_writes_nothing() {
+        let dir = tempdir().unwrap();
+        let runtime = dir.path().join("runtime");
+        let repo = dir.path().join("repo");
+        fs::create_dir_all(&runtime).unwrap();
+        fs::create_dir_all(&repo).unwrap();
+        let (text, total) = synthetic_monolith();
+        fs::write(runtime.join("event_log.jsonl"), &text).unwrap();
+
+        let out = segment_event_log(&runtime, &repo, true).unwrap();
+        assert!(out.dry_run);
+        assert_eq!(out.total_records, total);
+        assert!(
+            !repo.join(".trellis-history").join("event-log").exists(),
+            "dry-run must not write the event-log dir"
+        );
+    }
+
+    #[test]
+    fn segment_reports_dirty_uncheckpointed_tail() {
+        let dir = tempdir().unwrap();
+        let runtime = dir.path().join("runtime");
+        let repo = dir.path().join("repo");
+        fs::create_dir_all(&runtime).unwrap();
+        fs::create_dir_all(repo.join(".trellis-history")).unwrap();
+        let (text, total) = synthetic_monolith();
+        fs::write(runtime.join("event_log.jsonl"), &text).unwrap();
+        // Last checkpoint stopped at event_count=2 (triggering event index 2),
+        // i.e. 3 checkpointed lines; the monolith has `total` lines, so the
+        // dirty tail is total-3 records.
+        fs::write(
+            repo.join(".trellis-history").join("supervisor_state.json"),
+            r#"{"event_count": 2}"#,
+        )
+        .unwrap();
+        let out = segment_event_log(&runtime, &repo, true).unwrap();
+        assert_eq!(out.supervisor_event_count, Some(2));
+        assert_eq!(out.dirty_tail_records, total - 3);
+    }
+
+    #[test]
+    fn segment_fails_loud_on_index_gap() {
+        let dir = tempdir().unwrap();
+        let runtime = dir.path().join("runtime");
+        let repo = dir.path().join("repo");
+        fs::create_dir_all(&runtime).unwrap();
+        fs::create_dir_all(&repo).unwrap();
+        // indices 0, 2 — gap at 1.
+        let text = format!(
+            "{}\n{}\n",
+            synthetic_record_line(0, 1),
+            synthetic_record_line(2, 1)
+        );
+        fs::write(runtime.join("event_log.jsonl"), &text).unwrap();
+        let err = segment_event_log(&runtime, &repo, true).unwrap_err();
+        assert!(err.contains("index"), "expected density error, got: {err}");
+    }
+
+    // --- per-cycle truncation (replay rewind boundary) ----------------------
+
+    /// Write the synthetic monolith (cycles 1,2,3) as per-cycle files in
+    /// `dir` and return (paths, lines) parallel to `replay_to_event_count`.
+    fn write_synthetic_cycle_files(dir: &std::path::Path) -> (Vec<PathBuf>, Vec<Vec<String>>) {
+        let cycles: Vec<(u32, Vec<String>)> = vec![
+            (
+                1,
+                vec![synthetic_record_line(0, 1), synthetic_record_line(1, 1)],
+            ),
+            (2, vec![synthetic_record_line(2, 2)]),
+            (
+                3,
+                vec![synthetic_record_line(3, 3), synthetic_record_line(4, 3)],
+            ),
+        ];
+        let mut paths = Vec::new();
+        let mut lines = Vec::new();
+        for (cycle, recs) in cycles {
+            let path = dir.join(format!("cycle-{cycle:06}.jsonl"));
+            fs::write(&path, format!("{}\n", recs.join("\n"))).unwrap();
+            paths.push(path);
+            lines.push(recs);
+        }
+        (paths, lines)
+    }
+
+    #[test]
+    fn truncate_at_cycle_boundary_deletes_whole_tail_files() {
+        // keep=3 lands exactly on the cycle-2/cycle-3 boundary: cycle-3 is a
+        // whole tail file and must be deleted; cycles 1 and 2 untouched.
+        let dir = tempdir().unwrap();
+        let (paths, lines) = write_synthetic_cycle_files(dir.path());
+        truncate_event_log_files_to(&paths, &lines, 3).unwrap();
+        assert!(paths[0].exists());
+        assert!(paths[1].exists());
+        assert!(!paths[2].exists(), "tail cycle file must be deleted");
+        assert_eq!(fs::read_to_string(&paths[1]).unwrap().lines().count(), 1);
+    }
+
+    #[test]
+    fn truncate_mid_cycle_rewrites_partial_file() {
+        // keep=4 falls inside cycle-3 (which holds indices 3,4): rewrite it to
+        // keep only index 3; cycles 1 and 2 untouched.
+        let dir = tempdir().unwrap();
+        let (paths, lines) = write_synthetic_cycle_files(dir.path());
+        truncate_event_log_files_to(&paths, &lines, 4).unwrap();
+        assert!(paths[2].exists(), "partially-kept file must survive");
+        assert_eq!(
+            fs::read_to_string(&paths[2]).unwrap().lines().count(),
+            1,
+            "cycle-3 must keep exactly its index-3 record"
+        );
+    }
+
+    /// Phase IV step 11 config back-compat: `target_from_config` reads
+    /// `workflow.default_target`. An ABSENT key (no `workflow`, or no
+    /// `default_target`) ⇒ `Lean` — the guarantee that every existing config
+    /// (incl. the live run's) seeds `Lean`. An explicit `"lean"` ⇒ `Lean`. A
+    /// present unknown value is a typed `Err` (fail-loud at init).
+    #[test]
+    fn target_from_config_back_compat() {
+        use trellis_kernel::backend::BackendId;
+        let dir = tempdir().expect("tempdir");
+        let cfg = dir.path().join("trellis.config.json");
+
+        // No `workflow` object at all ⇒ Lean.
+        fs::write(&cfg, r#"{}"#).expect("write config");
+        assert_eq!(
+            super::target_from_config(&cfg).expect("absent workflow defaults to Lean"),
+            BackendId::Lean
+        );
+
+        // `workflow` present but no `default_target` key ⇒ Lean.
+        fs::write(&cfg, r#"{"workflow": {"main_result_targets": []}}"#).expect("write config");
+        assert_eq!(
+            super::target_from_config(&cfg).expect("absent default_target defaults to Lean"),
+            BackendId::Lean
+        );
+
+        // Explicit `"lean"` ⇒ Lean.
+        fs::write(&cfg, r#"{"workflow": {"default_target": "lean"}}"#).expect("write config");
+        assert_eq!(
+            super::target_from_config(&cfg).expect("\"lean\" parses to Lean"),
+            BackendId::Lean
+        );
+
+        // Explicit `"isabelle_hol"` ⇒ IsabelleHol (the new variant now
+        // PARSES; it only flows into the passive `tablet_target` — the live
+        // config has no `default_target` so the run is unaffected).
+        fs::write(&cfg, r#"{"workflow": {"default_target": "isabelle_hol"}}"#)
+            .expect("write config");
+        assert_eq!(
+            super::target_from_config(&cfg).expect("\"isabelle_hol\" parses to IsabelleHol"),
+            BackendId::IsabelleHol
+        );
+
+        // `"isabelle_zf"` is NOT a variant yet ⇒ typed Err (fail-loud), the
+        // guard that an unrecognized default_target is never a silent default.
+        fs::write(&cfg, r#"{"workflow": {"default_target": "isabelle_zf"}}"#)
+            .expect("write config");
+        assert!(
+            super::target_from_config(&cfg).is_err(),
+            "an unrecognized default_target must be a typed error, not a silent default"
+        );
+    }
+
+    // ── PV Phase 2 Slice 2: the toolchain pin as a gating fingerprint ─────
+    // The canonical extraction-toolchain hash is a SOUND drift detector: it is
+    // stable for an unchanged toolchain (the reconcile no-op / inheritance path)
+    // and changes for any changed toolchain (the reopen path). The drift smoke
+    // proves both directions on the raw hash function Slice 3's reconcile keys
+    // on.
+
+    /// The canonical hash is deterministic and order-insensitive in the stack
+    /// (the stack is sorted before hashing), so re-presenting the SAME toolchain
+    /// — even with the stack reordered — yields the SAME hash (no spurious
+    /// drift). This is the "unchanged ⇒ inherit" foundation.
+    #[test]
+    fn extraction_toolchain_hash_stable_for_unchanged_toolchain() {
+        let stack_a = vec!["charon@v1".to_string(), "aeneas@v0".to_string()];
+        let stack_b = vec!["aeneas@v0".to_string(), "charon@v1".to_string()];
+        let toolchain = serde_json::json!({"charon": "v1", "aeneas": "v0", "lean": "4.30"});
+        assert_eq!(
+            pv_extraction_toolchain_sha256(&stack_a, &toolchain),
+            pv_extraction_toolchain_sha256(&stack_b, &toolchain),
+            "the same toolchain (stack reordered) must hash identically — no spurious drift"
+        );
+    }
+
+    /// Any real toolchain change — a new stack entry, or a changed
+    /// extraction_toolchain field — flips the hash. This is the "changed ⇒
+    /// reopen" foundation Slice 3 relies on.
+    #[test]
+    fn extraction_toolchain_hash_changes_on_toolchain_drift() {
+        let stack = vec!["aeneas@v0".to_string()];
+        let toolchain = serde_json::json!({"charon": "v1", "aeneas": "v0", "lean": "4.30"});
+        let base = pv_extraction_toolchain_sha256(&stack, &toolchain);
+
+        // A bumped stack version.
+        let stack_bumped = vec!["aeneas@v1".to_string()];
+        assert_ne!(
+            base,
+            pv_extraction_toolchain_sha256(&stack_bumped, &toolchain),
+            "a changed extractor_stack must change the toolchain hash"
+        );
+
+        // A changed extraction_toolchain field.
+        let toolchain_bumped = serde_json::json!({"charon": "v1", "aeneas": "v0", "lean": "4.31"});
+        assert_ne!(
+            base,
+            pv_extraction_toolchain_sha256(&stack, &toolchain_bumped),
+            "a changed extraction_toolchain field must change the toolchain hash"
+        );
+
+        // The base hash is a 64-hex SHA-256.
+        assert_eq!(base.len(), 64);
+        assert!(base.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    // ── PV Phase 2 Slice 3: the source→model drift smoke ──────────────────
+    // A minimal PV tablet: the ExtractionModel node `gcdModel` (claims target
+    // `model:gcdModel`, role ExtractionModel) and the bound Correctness theorem
+    // `GcdCorrect` that DEPENDS on it (`deps[GcdCorrect] = {gcdModel}`) at corr
+    // Pass. reconcile_pv_provenance must reopen `GcdCorrect` on a source→model
+    // drift and leave it Pass when the model is unchanged.
+
+    use trellis_kernel::{
+        ChallengeResolution, ChallengeTargetId, ChallengeTargetKind, ChallengeTargetProvenance,
+        ChallengeTargetSpec, CorrStatus, CurrentCheckState, PvRole,
+    };
+
+    const PV_MODEL_LEAN: &str = "def gcdModel : Nat :=\n  0";
+    const PV_MODEL_SOURCE_SHA: &str = "source-v1";
+
+    /// Write a `pv_tablet` config with one extraction model; the caller controls
+    /// the source_sha256, the toolchain stack, and the model lean text so each
+    /// test can present a drifted or unchanged config.
+    fn write_pv_config(
+        dir: &std::path::Path,
+        source_sha256: &str,
+        extractor_stack: &[&str],
+        model_lean: &str,
+    ) -> PathBuf {
+        let config_path = dir.join("trellis.config.json");
+        let stack: Vec<serde_json::Value> = extractor_stack
+            .iter()
+            .map(|s| serde_json::json!(s))
+            .collect();
+        fs::write(
+            &config_path,
+            serde_json::json!({
+                "repo_path": "../repo",
+                "pv_tablet": {
+                    "language": "rust",
+                    "verification_backend": "lean",
+                    "extractor_stack": stack,
+                    "extraction_toolchain": {"charon": "v1", "aeneas": "v0", "lean": "4.30"},
+                    "extraction_models": [{
+                        "id": "model:gcdModel",
+                        "node": "gcdModel",
+                        "name": "gcdModel",
+                        "lean": model_lean,
+                        "namespace_context": "",
+                        "provenance": {"source_sha256": source_sha256}
+                    }]
+                }
+            })
+            .to_string(),
+        )
+        .expect("write pv config");
+        config_path
+    }
+
+    /// Build the baseline state: GcdCorrect corr Pass, bound to gcdModel via
+    /// deps, with `approved_extraction_provenance` seeded to match the baseline
+    /// config (`source-v1`, the same toolchain `write_pv_config` produces for
+    /// `["aeneas@v0"]`). Returns the state primed as if a prior run had approved
+    /// the bound theorem against the baseline model.
+    fn pv_drift_state(toolchain_sha256: &str) -> ProtocolState {
+        let model = NodeId::from("gcdModel");
+        let theorem = NodeId::from("GcdCorrect");
+        let preamble = NodeId::from("Preamble");
+        let present: BTreeSet<NodeId> =
+            BTreeSet::from([preamble.clone(), model.clone(), theorem.clone()]);
+
+        let mut state = ProtocolState::default();
+        state.live.present_nodes = present.clone();
+        state.committed.present_nodes = present.clone();
+        // The bound theorem requires (depends on) the model node.
+        state
+            .deps
+            .insert(theorem.clone(), BTreeSet::from([model.clone()]));
+        state.deps.insert(model.clone(), BTreeSet::new());
+        state.deps.insert(preamble.clone(), BTreeSet::new());
+        state.committed_deps = state.deps.clone();
+
+        // The model node carries the ExtractionModel role and claims the target.
+        state
+            .node_role
+            .insert(model.clone(), PvRole::ExtractionModel);
+        state.challenge_claims.insert(
+            model.clone(),
+            BTreeSet::from([ChallengeTargetId::from("model:gcdModel")]),
+        );
+
+        // The registered (prior) spec: baseline lean + baseline provenance.
+        let provenance = ChallengeTargetProvenance {
+            problem_id: String::new(),
+            source_file: String::new(),
+            source_sha256: PV_MODEL_SOURCE_SHA.to_string(),
+            extractor_toolchain_sha256: toolchain_sha256.to_string(),
+        };
+        let spec = ChallengeTargetSpec {
+            kind: ChallengeTargetKind::Def,
+            name: "gcdModel".to_string(),
+            lean: PV_MODEL_LEAN.to_string(),
+            provenance: provenance.clone(),
+            ..ChallengeTargetSpec::default()
+        };
+        state
+            .configured_challenge_targets
+            .insert(ChallengeTargetId::from("model:gcdModel"), spec);
+        // The approved-side provenance baseline (D2).
+        state
+            .approved_extraction_provenance
+            .insert(ChallengeTargetId::from("model:gcdModel"), provenance);
+
+        // The bound theorem is at corr Pass (status Pass + current==approved,
+        // both non-empty) — what current_corr_state requires for Pass.
+        state
+            .corr_approved_fingerprints
+            .insert(theorem.clone(), "corr-fp".to_string());
+        state
+            .live
+            .corr_current_fingerprints
+            .insert(theorem.clone(), "corr-fp".to_string());
+        state.corr_status.insert(theorem.clone(), CorrStatus::Pass);
+        state.committed = state.live.clone();
+        state
+    }
+
+    /// The toolchain hash `write_pv_config(["aeneas@v0"])` produces — the
+    /// baseline against which drift is measured.
+    fn baseline_toolchain_sha() -> String {
+        pv_extraction_toolchain_sha256(
+            &["aeneas@v0".to_string()],
+            &serde_json::json!({"charon": "v1", "aeneas": "v0", "lean": "4.30"}),
+        )
+    }
+
+    /// (ii) UNCHANGED provenance: reconcile is a no-op for the reopen — the
+    /// bound theorem stays corr Pass (inherited, NOT spuriously reopened).
+    #[test]
+    fn reconcile_pv_provenance_unchanged_keeps_bound_theorem_pass() {
+        let tmp = tempdir().unwrap();
+        let mut state = pv_drift_state(&baseline_toolchain_sha());
+        let theorem = NodeId::from("GcdCorrect");
+        assert_eq!(state.current_corr_state(&theorem), CurrentCheckState::Pass);
+
+        // A config presenting the EXACT baseline model (same source, stack, text).
+        let cfg = write_pv_config(
+            tmp.path(),
+            PV_MODEL_SOURCE_SHA,
+            &["aeneas@v0"],
+            PV_MODEL_LEAN,
+        );
+        let mutated = reconcile_pv_provenance(&mut state, &cfg).expect("reconcile");
+
+        assert!(
+            !mutated,
+            "an unchanged model must not mutate state (no spurious reopen / re-baseline)"
+        );
+        assert_eq!(
+            state.current_corr_state(&theorem),
+            CurrentCheckState::Pass,
+            "an unchanged model must leave the bound theorem at corr Pass (inherited)"
+        );
+    }
+
+    /// (i) CHANGED source_sha256: reconcile reopens the bound theorem
+    /// (current_corr_state == Unknown via reverse_dep_closure force-invalidate),
+    /// then re-baselines the approved provenance.
+    #[test]
+    fn reconcile_pv_provenance_changed_source_reopens_bound_theorem() {
+        let tmp = tempdir().unwrap();
+        let mut state = pv_drift_state(&baseline_toolchain_sha());
+        let theorem = NodeId::from("GcdCorrect");
+        assert_eq!(state.current_corr_state(&theorem), CurrentCheckState::Pass);
+
+        // A re-extracted model: a NEW source_sha256 (the source the model was
+        // extracted from changed).
+        let cfg = write_pv_config(tmp.path(), "source-v2", &["aeneas@v0"], PV_MODEL_LEAN);
+        let mutated = reconcile_pv_provenance(&mut state, &cfg).expect("reconcile");
+
+        assert!(mutated, "a changed source must mutate state");
+        assert_eq!(
+            state.current_corr_state(&theorem),
+            CurrentCheckState::Unknown,
+            "a changed source_sha256 must REOPEN the bound theorem (corr Unknown)"
+        );
+        // The approved baseline advanced to the new source.
+        assert_eq!(
+            state.approved_extraction_provenance[&ChallengeTargetId::from("model:gcdModel")]
+                .source_sha256,
+            "source-v2"
+        );
+    }
+
+    /// (i, toolchain): a changed extractor_stack (toolchain drift) reopens.
+    #[test]
+    fn reconcile_pv_provenance_changed_toolchain_reopens_bound_theorem() {
+        let tmp = tempdir().unwrap();
+        let mut state = pv_drift_state(&baseline_toolchain_sha());
+        let theorem = NodeId::from("GcdCorrect");
+
+        // Same source + text, but a bumped extractor toolchain ⇒ a different
+        // toolchain fingerprint.
+        let cfg = write_pv_config(
+            tmp.path(),
+            PV_MODEL_SOURCE_SHA,
+            &["aeneas@v1"],
+            PV_MODEL_LEAN,
+        );
+        let mutated = reconcile_pv_provenance(&mut state, &cfg).expect("reconcile");
+
+        assert!(mutated, "a changed toolchain must mutate state");
+        assert_eq!(
+            state.current_corr_state(&theorem),
+            CurrentCheckState::Unknown,
+            "a changed toolchain must REOPEN the bound theorem (corr Unknown)"
+        );
+    }
+
+    /// (i, text): a changed model lean text reopens.
+    #[test]
+    fn reconcile_pv_provenance_changed_model_text_reopens_bound_theorem() {
+        let tmp = tempdir().unwrap();
+        let mut state = pv_drift_state(&baseline_toolchain_sha());
+        let theorem = NodeId::from("GcdCorrect");
+
+        // Same source + toolchain, but a different generated model body.
+        let cfg = write_pv_config(
+            tmp.path(),
+            PV_MODEL_SOURCE_SHA,
+            &["aeneas@v0"],
+            "def gcdModel : Nat :=\n  1",
+        );
+        let mutated = reconcile_pv_provenance(&mut state, &cfg).expect("reconcile");
+
+        assert!(mutated, "a changed model text must mutate state");
+        assert_eq!(
+            state.current_corr_state(&theorem),
+            CurrentCheckState::Unknown,
+            "a changed model text must REOPEN the bound theorem (corr Unknown)"
+        );
+        // The byte-pin prescription advanced to the new model text.
+        assert_eq!(
+            state.configured_challenge_targets[&ChallengeTargetId::from("model:gcdModel")].lean,
+            "def gcdModel : Nat :=\n  1"
+        );
+    }
+
+    /// (iii) The unmatched⇒Changed fail-closed safeguard: a model ABSENT from
+    /// the approved snapshot reopens its dependents (NEVER inherit on
+    /// uncertainty — the revision_import.rs:397-405 lesson).
+    #[test]
+    fn reconcile_pv_provenance_model_absent_from_approved_reopens_dependents() {
+        let tmp = tempdir().unwrap();
+        let mut state = pv_drift_state(&baseline_toolchain_sha());
+        let theorem = NodeId::from("GcdCorrect");
+        // Simulate a baseline that never recorded this model (e.g. a state
+        // migrated forward without the approved snapshot for it).
+        state.approved_extraction_provenance.clear();
+        assert_eq!(state.current_corr_state(&theorem), CurrentCheckState::Pass);
+
+        // The config presents the SAME baseline model, but it is unmatched in the
+        // approved snapshot ⇒ Changed ⇒ reopen.
+        let cfg = write_pv_config(
+            tmp.path(),
+            PV_MODEL_SOURCE_SHA,
+            &["aeneas@v0"],
+            PV_MODEL_LEAN,
+        );
+        let mutated = reconcile_pv_provenance(&mut state, &cfg).expect("reconcile");
+
+        assert!(mutated, "an unmatched model must be treated as Changed");
+        assert_eq!(
+            state.current_corr_state(&theorem),
+            CurrentCheckState::Unknown,
+            "a model absent from the approved snapshot must REOPEN its dependents (unknown⇒Changed)"
+        );
+    }
+
+    /// FINDING 1 repro (the fail-OPEN this fix closes): a target whose
+    /// provenance DRIFTED but whose ExtractionModel node is transiently
+    /// ABSENT/unclaimed must NOT advance its baseline (no reopen happened, so
+    /// baking in the drift would let the stale proof survive when the node
+    /// returns). The baseline stays at the OLD value; the bound theorem reopens
+    /// on the LATER resume that restores the node — the drift is deferred, never
+    /// lost.
+    #[test]
+    fn reconcile_pv_provenance_changed_but_model_absent_defers_baseline_then_reopens_on_restore() {
+        let tmp = tempdir().unwrap();
+        let mut state = pv_drift_state(&baseline_toolchain_sha());
+        let model = NodeId::from("gcdModel");
+        let theorem = NodeId::from("GcdCorrect");
+        let target = ChallengeTargetId::from("model:gcdModel");
+        assert_eq!(state.current_corr_state(&theorem), CurrentCheckState::Pass);
+
+        // The model node is transiently absent (e.g. a partial resume that has
+        // not yet restored / re-claimed it): drop it from present + its claim,
+        // while the config presents a DRIFTED source_sha256.
+        state.live.present_nodes.remove(&model);
+        state.committed.present_nodes.remove(&model);
+        state.challenge_claims.remove(&model);
+        let cfg = write_pv_config(tmp.path(), "source-v2", &["aeneas@v0"], PV_MODEL_LEAN);
+
+        let mutated = reconcile_pv_provenance(&mut state, &cfg).expect("reconcile (absent)");
+
+        // No present ExtractionModel claimant ⇒ no reopen happened: the bound
+        // theorem (its dependent) is NOT touched and stays at corr Pass.
+        assert_eq!(
+            state.current_corr_state(&theorem),
+            CurrentCheckState::Pass,
+            "with the model node absent there is nothing to reopen yet"
+        );
+        // THE FIX: the approved baseline must NOT have advanced to the drifted
+        // `source-v2`; it stays at the old `source-v1` so the drift re-detects.
+        assert_eq!(
+            state.approved_extraction_provenance[&target].source_sha256,
+            PV_MODEL_SOURCE_SHA,
+            "a changed-but-unreconciled target must NOT advance its baseline (drift must not be baked in)"
+        );
+        // Likewise the byte-pin prescription must stay at the OLD model spec.
+        assert_eq!(
+            state.configured_challenge_targets[&target]
+                .provenance
+                .source_sha256,
+            PV_MODEL_SOURCE_SHA,
+            "the prescription baseline must also stay at the old value for a deferred target"
+        );
+        // `mutated` is purely informational here; the substantive assertions are
+        // the un-advanced baseline + the reopen on restore below.
+        let _ = mutated;
+
+        // LATER resume: the ExtractionModel node returns (present + re-claims the
+        // target). Reconcile against the SAME drifted config now sees the drift
+        // (approved still `source-v1` ≠ configured `source-v2`) AND a present
+        // claimant ⇒ it REOPENS the bound theorem.
+        state.live.present_nodes.insert(model.clone());
+        state.committed.present_nodes.insert(model.clone());
+        state
+            .challenge_claims
+            .insert(model.clone(), BTreeSet::from([target.clone()]));
+
+        let mutated2 = reconcile_pv_provenance(&mut state, &cfg).expect("reconcile (restored)");
+
+        assert!(
+            mutated2,
+            "the deferred drift must take effect when the node returns"
+        );
+        assert_eq!(
+            state.current_corr_state(&theorem),
+            CurrentCheckState::Unknown,
+            "the deferred drift must REOPEN the bound theorem once the model node returns"
+        );
+        // Now reconciled ⇒ the baseline finally advances to the configured value.
+        assert_eq!(
+            state.approved_extraction_provenance[&target].source_sha256, "source-v2",
+            "a reconciled target advances its baseline to the configured value"
+        );
+    }
+
+    /// FINDING 1 corner: an UNMATCHED target (absent from the approved snapshot,
+    /// thus always `changed`) with NO present claimant must STAY ABSENT — never
+    /// advanced to the configured value — so the next resume still reads it as
+    /// unmatched ⇒ `changed` and reopens its claimant on return. (Guards against
+    /// the `unwrap_or` that would otherwise bake the drift in for an unmatched
+    /// deferred target.)
+    #[test]
+    fn reconcile_pv_provenance_unmatched_and_model_absent_stays_absent() {
+        let tmp = tempdir().unwrap();
+        let mut state = pv_drift_state(&baseline_toolchain_sha());
+        let model = NodeId::from("gcdModel");
+        let target = ChallengeTargetId::from("model:gcdModel");
+        // Unmatched in the approved snapshot AND the model node is absent.
+        state.approved_extraction_provenance.clear();
+        state.live.present_nodes.remove(&model);
+        state.committed.present_nodes.remove(&model);
+        state.challenge_claims.remove(&model);
+
+        let cfg = write_pv_config(
+            tmp.path(),
+            PV_MODEL_SOURCE_SHA,
+            &["aeneas@v0"],
+            PV_MODEL_LEAN,
+        );
+        let _ = reconcile_pv_provenance(&mut state, &cfg).expect("reconcile (unmatched, absent)");
+
+        assert!(
+            !state.approved_extraction_provenance.contains_key(&target),
+            "an unmatched deferred target must stay ABSENT, not be advanced to the configured value"
+        );
+    }
+
+    /// Behavior-preservation: an all-math state (no pv_tablet, empty configured +
+    /// empty approved) reconciles to a no-op even against a config with no
+    /// pv_tablet block. The math run is byte-identical.
+    #[test]
+    fn reconcile_pv_provenance_all_math_is_noop() {
+        let tmp = tempdir().unwrap();
+        let cfg = tmp.path().join("trellis.config.json");
+        fs::write(&cfg, r#"{"repo_path": "../repo", "workflow": {}}"#).expect("write config");
+
+        let mut state = ProtocolState::default();
+        // A non-PV node at corr Pass — must be untouched.
+        let node = NodeId::from("MainTheorem");
+        state.live.present_nodes = BTreeSet::from([node.clone()]);
+        state
+            .corr_approved_fingerprints
+            .insert(node.clone(), "fp".to_string());
+        state
+            .live
+            .corr_current_fingerprints
+            .insert(node.clone(), "fp".to_string());
+        state.corr_status.insert(node.clone(), CorrStatus::Pass);
+
+        let mutated = reconcile_pv_provenance(&mut state, &cfg).expect("reconcile");
+        assert!(!mutated, "all-math reconcile must be a no-op");
+        assert_eq!(state.current_corr_state(&node), CurrentCheckState::Pass);
+    }
+
+    // ── PV Phase 8: the monotonicity reconcile (reconcile_pv_spec_monotonicity)
+
+    /// A valid correspondence-fingerprint storage string with the given
+    /// `own_tex`. Both `from_storage_string` and `corr_reopen_triggered` parse
+    /// it; two strings with different `own_tex` are "a statement change".
+    fn corr_fp(own_tex: &str) -> String {
+        serde_json::json!({
+            "own_tex": own_tex,
+            "lean_semantic_closure": "sem-closure-v1",
+        })
+        .to_string()
+    }
+
+    // ── PV mode B: seed-time node registration + auto-claim ───────────────
+    // The mode-B nodes are pre-written on disk by setup; the seed must bring
+    // each present with its kind and auto-claim it 1:1 against its target, so
+    // the first worker burst sees the seeded nodes (not Preamble-only) and the
+    // worker neither places nor claims.
+
+    /// Write a mode-B config + the seeded node files into a temp dir, returning
+    /// (config_path, repo_path). The config declares one ExtractionModel def,
+    /// one contract-predicate def, and one goal Theorem statement.
+    fn write_mode_b_repo(dir: &std::path::Path) -> (PathBuf, PathBuf) {
+        let repo = dir.join("repo");
+        let tablet = repo.join("Tablet");
+        fs::create_dir_all(&tablet).expect("mk tablet");
+        // Seed the node FILES the kernel's disk-existence check requires.
+        for name in ["gcdModel", "GcdInputPre", "Gcd_Spec"] {
+            fs::write(
+                tablet.join(format!("{name}.lean")),
+                format!("-- [TABLET NODE: {name}]\n-- BODY\n"),
+            )
+            .expect("write node file");
+        }
+        let config_path = dir.join("trellis.config.json");
+        fs::write(
+            &config_path,
+            serde_json::json!({
+                "repo_path": repo.to_string_lossy(),
+                "workflow": {},
+                "pv_tablet": {
+                    "language": "rust",
+                    "verification_backend": "lean",
+                    "goal_mode": "spec",
+                    "extractor_stack": ["aeneas@v0"],
+                    "extraction_toolchain": {"aeneas": "v0"},
+                    "extraction_models": [{
+                        "id": "model:gcdModel",
+                        "node": "gcdModel",
+                        "name": "gcdModel",
+                        "lean": "def gcdModel : Nat := 0",
+                        "namespace_context": "",
+                        "provenance": {"source_sha256": "src-v1"}
+                    }],
+                    "verification_target_definitions": [{
+                        "id": "def:GcdInputPre",
+                        "node": "GcdInputPre",
+                        "name": "GcdInputPre",
+                        "role": "precondition",
+                        "lean": "def GcdInputPre (n : Nat) : Prop := True",
+                        "namespace_context": ""
+                    }],
+                    "verification_target_statements": [{
+                        "id": "goal:Gcd_Spec",
+                        "node": "Gcd_Spec",
+                        "name": "Gcd_Spec",
+                        "role": "spec",
+                        "lean": "theorem Gcd_Spec : True := by",
+                        "namespace_context": ""
+                    }]
+                }
+            })
+            .to_string(),
+        )
+        .expect("write config");
+        (config_path, repo)
+    }
+
+    #[test]
+    fn pv_mode_b_seed_registers_and_autoclaims_nodes() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (config_path, repo) = write_mode_b_repo(dir.path());
+        let metadata = RuntimeMetadata {
+            repo_path: Some(repo),
+            config_path: Some(config_path),
+            native_history_kinds: Default::default(),
+            initial_planning_seeded: false,
+        ..RuntimeMetadata::default()
+        };
+        let mut state = ProtocolState::default();
+        seed_state_from_config(&mut state, &metadata).expect("seed");
+        state.normalize_all_structural_state();
+
+        for node in state
+            .live
+            .present_nodes
+            .iter()
+            .chain(state.committed.present_nodes.iter())
+        {
+            assert!(
+                state.node_difficulty.contains_key(node),
+                "fresh seeded node {node} must have difficulty metadata before runtime validation"
+            );
+            assert!(
+                state.easy_attempts.contains_key(node),
+                "fresh seeded node {node} must have an easy-attempt counter before runtime validation"
+            );
+        }
+
+        // Every seeded node is present with the right kind.
+        for (name, kind) in [
+            ("gcdModel", NodeKind::Definition),
+            ("GcdInputPre", NodeKind::Definition),
+            ("Gcd_Spec", NodeKind::Proof),
+        ] {
+            let node = NodeId::from(name);
+            assert!(
+                state.live.present_nodes.contains(&node),
+                "{name} should be present after seed"
+            );
+            assert_eq!(state.node_kinds.get(&node), Some(&kind), "{name} node kind");
+            assert_eq!(
+                state.committed_node_kinds.get(&node),
+                Some(&kind),
+                "{name} committed node kind"
+            );
+        }
+        // First-burst request summary lists the seeded nodes, not Preamble-only.
+        assert!(
+            state.live.present_nodes.len() >= 4,
+            "present_nodes must include Preamble + the 3 seeded nodes, got {:?}",
+            state.live.present_nodes
+        );
+
+        // Each node auto-claims its matching challenge target 1:1, so every
+        // configured target is already covered at the first burst.
+        for (node, target) in [
+            ("gcdModel", "model:gcdModel"),
+            ("GcdInputPre", "def:GcdInputPre"),
+            ("Gcd_Spec", "goal:Gcd_Spec"),
+        ] {
+            assert!(
+                state
+                    .challenge_claims
+                    .get(&NodeId::from(node))
+                    .map(|c| c.contains(&ChallengeTargetId::from(target)))
+                    .unwrap_or(false),
+                "{node} must claim {target}"
+            );
+        }
+        for target in ["model:gcdModel", "def:GcdInputPre", "goal:Gcd_Spec"] {
+            let covered = state
+                .live
+                .challenge_coverage
+                .get(&ChallengeTargetId::from(target))
+                .map(|nodes| !nodes.is_empty())
+                .unwrap_or(false);
+            assert!(covered, "target {target} must be covered after seed");
+        }
+    }
+
+    #[test]
+    fn pv_mode_b_seed_prepins_empty_assumptions_scaffold() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (config_path, repo) = write_mode_b_repo(dir.path());
+        let metadata = RuntimeMetadata {
+            repo_path: Some(repo.clone()),
+            config_path: Some(config_path),
+            native_history_kinds: Default::default(),
+            initial_planning_seeded: false,
+        ..RuntimeMetadata::default()
+        };
+        let mut state = ProtocolState::default();
+        seed_state_from_config(&mut state, &metadata).expect("seed");
+
+        let assumptions = NodeId::from(trellis_kernel::assumptions_registry::ASSUMPTIONS_NODE);
+        assert!(
+            !trellis_kernel::assumptions_registry::has_worker_authored_staged_assumption(&repo)
+                .unwrap(),
+            "empty scaffold template comments must not count as staged assumptions"
+        );
+        assert!(state.is_under_model_assumptions_node(&assumptions));
+        assert_eq!(
+            state.current_corr_state(&assumptions),
+            CurrentCheckState::Pass,
+            "bootstrap Assumptions should be corr-pass with the empty fingerprint"
+        );
+        assert_eq!(
+            state
+                .corr_approved_fingerprints
+                .get(&assumptions)
+                .map(String::as_str),
+            Some("")
+        );
+        assert_eq!(
+            state
+                .live
+                .corr_current_fingerprints
+                .get(&assumptions)
+                .map(String::as_str),
+            Some("")
+        );
+        assert!(
+            !state.corr_verify_nodes().contains(&assumptions),
+            "bootstrap Assumptions must not enter the corr frontier on a fresh PV init"
+        );
+    }
+
+    #[test]
+    fn pv_mode_b_seed_leaves_real_staged_assumptions_corr_unknown() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (config_path, repo) = write_mode_b_repo(dir.path());
+        let tablet = repo.join("Tablet");
+        fs::write(
+            tablet.join("Assumptions.lean"),
+            format!(
+                "{}\n{}a1\naxiom dec2flt.slice_len_le_isize_max : True\n{}a1\n",
+                trellis_kernel::assumptions_registry::empty_assumptions_lean_scaffold(),
+                trellis_kernel::assumptions_registry::LEAN_ASSUMPTION_BEGIN_PREFIX,
+                trellis_kernel::assumptions_registry::LEAN_ASSUMPTION_END_PREFIX,
+            ),
+        )
+        .expect("write staged assumptions lean");
+        fs::write(
+            tablet.join("Assumptions.tex"),
+            format!(
+                "{}\n{}a1\nEvery Rust slice length is at most isize::MAX.\n{}a1\n",
+                trellis_kernel::assumptions_registry::empty_assumptions_tex_scaffold(),
+                trellis_kernel::assumptions_registry::TEX_ASSUMPTION_BEGIN_PREFIX,
+                trellis_kernel::assumptions_registry::TEX_ASSUMPTION_END_PREFIX,
+            ),
+        )
+        .expect("write staged assumptions tex");
+
+        let metadata = RuntimeMetadata {
+            repo_path: Some(repo.clone()),
+            config_path: Some(config_path),
+            native_history_kinds: Default::default(),
+            initial_planning_seeded: false,
+        ..RuntimeMetadata::default()
+        };
+        let mut state = ProtocolState::default();
+        seed_state_from_config(&mut state, &metadata).expect("seed");
+
+        let assumptions = NodeId::from(trellis_kernel::assumptions_registry::ASSUMPTIONS_NODE);
+        assert!(
+            trellis_kernel::assumptions_registry::has_worker_authored_staged_assumption(&repo)
+                .unwrap(),
+            "a concrete marker id should make Assumptions eligible for ordinary corr"
+        );
+        assert!(state.is_under_model_assumptions_node(&assumptions));
+        assert_eq!(
+            state.current_corr_state(&assumptions),
+            CurrentCheckState::Unknown,
+            "real staged assumptions must not be pre-pinned as corr-pass"
+        );
+        assert!(
+            state.corr_verify_nodes().contains(&assumptions),
+            "real staged assumptions should enter the ordinary corr frontier"
+        );
+    }
+
+    #[test]
+    fn all_math_seed_ignores_assumptions_markers_without_pv_role() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = dir.path().join("repo");
+        let tablet = repo.join("Tablet");
+        fs::create_dir_all(&tablet).expect("mk tablet");
+        fs::write(
+            tablet.join("Assumptions.lean"),
+            format!(
+                "{}a1\naxiom ordinary_assumption : True\n{}a1\n",
+                trellis_kernel::assumptions_registry::LEAN_ASSUMPTION_BEGIN_PREFIX,
+                trellis_kernel::assumptions_registry::LEAN_ASSUMPTION_END_PREFIX,
+            ),
+        )
+        .expect("write assumptions lean");
+        fs::write(
+            tablet.join("Assumptions.tex"),
+            format!(
+                "{}a1\nOrdinary math text.\n{}a1\n",
+                trellis_kernel::assumptions_registry::TEX_ASSUMPTION_BEGIN_PREFIX,
+                trellis_kernel::assumptions_registry::TEX_ASSUMPTION_END_PREFIX,
+            ),
+        )
+        .expect("write assumptions tex");
+        let config_path = dir.path().join("trellis.config.json");
+        fs::write(
+            &config_path,
+            serde_json::json!({
+                "repo_path": repo.to_string_lossy(),
+                "workflow": {
+                    "main_result_targets": [
+                        {"start_line": 1, "end_line": 2, "tex_label": "thm:main"}
+                    ]
+                }
+            })
+            .to_string(),
+        )
+        .expect("write config");
+
+        let metadata = RuntimeMetadata {
+            repo_path: Some(repo),
+            config_path: Some(config_path),
+            native_history_kinds: Default::default(),
+            initial_planning_seeded: false,
+        ..RuntimeMetadata::default()
+        };
+        let mut state = ProtocolState::default();
+        seed_state_from_config(&mut state, &metadata).expect("seed");
+
+        let assumptions = NodeId::from(trellis_kernel::assumptions_registry::ASSUMPTIONS_NODE);
+        assert!(
+            !state.is_under_model_assumptions_node(&assumptions),
+            "Assumptions markers alone must not activate PV under-model semantics"
+        );
+        assert!(
+            !state.live.present_nodes.contains(&assumptions),
+            "ordinary math seed should not auto-register Assumptions"
+        );
+    }
+
+    #[test]
+    fn pv_mode_b_seed_fails_loud_on_missing_node_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let (config_path, repo) = write_mode_b_repo(dir.path());
+        // Remove a seeded node file: the config still declares the target, so
+        // seeding must fail loud rather than hand the worker an unsatisfiable claim.
+        fs::remove_file(repo.join("Tablet").join("Gcd_Spec.lean")).expect("rm node file");
+        let metadata = RuntimeMetadata {
+            repo_path: Some(repo),
+            config_path: Some(config_path),
+            native_history_kinds: Default::default(),
+            initial_planning_seeded: false,
+        ..RuntimeMetadata::default()
+        };
+        let mut state = ProtocolState::default();
+        let err = seed_state_from_config(&mut state, &metadata)
+            .expect_err("seed must fail when a configured target has no node file");
+        assert!(
+            err.contains("Gcd_Spec") && err.contains("no seeded node file"),
+            "error should name the missing node, got: {err}"
+        );
+    }
+
+    // ===== Fresh-run initial-planning seed (seed_state_from_config) =====
+
+    /// A math/paper config: one paper-faithfulness target + a manuscript path.
+    fn write_math_paper_repo(dir: &std::path::Path) -> (PathBuf, PathBuf) {
+        let repo = dir.join("repo");
+        fs::create_dir_all(repo.join("Tablet")).expect("tablet dir");
+        let config_path = dir.join("trellis.config.json");
+        fs::write(
+            &config_path,
+            serde_json::json!({
+                "repo_path": repo,
+                "worker": {"provider": "codex", "model": "w", "label": "w"},
+                "reviewer": {"provider": "codex", "model": "r", "label": "r"},
+                "workflow": {
+                    "paper_tex_path": "paper/main.tex",
+                    "main_result_targets": [
+                        {"start_line": 1, "end_line": 2, "tex_label": "thm:main"}
+                    ]
+                }
+            })
+            .to_string(),
+        )
+        .expect("write config");
+        (config_path, repo)
+    }
+
+    /// Math/paper run: `PaperManuscript` source at the configured
+    /// (repo-relative) manuscript path, configured target ids the plan routes,
+    /// and the latch activated with a pinned trigger.
+    #[test]
+    fn initial_planning_seed_math_paper_source() {
+        let dir = tempdir().expect("tempdir");
+        let (config_path, repo) = write_math_paper_repo(dir.path());
+        let metadata = RuntimeMetadata {
+            repo_path: Some(repo),
+            config_path: Some(config_path),
+            native_history_kinds: Default::default(),
+            initial_planning_seeded: true,
+        coverage_replanning_seeded: true,
+        ..RuntimeMetadata::default()
+        };
+        let mut state = ProtocolState::default();
+        seed_state_from_config(&mut state, &metadata).expect("seed");
+        let ctx = state
+            .stuck_math_audit
+            .initial_planning
+            .as_ref()
+            .expect("math paper run seeds an initial-planning carrier");
+        assert_eq!(
+            ctx.source,
+            trellis_kernel::InitialPlanningSource::PaperManuscript {
+                paper_tex_path: "paper/main.tex".into()
+            }
+        );
+        assert!(ctx.configured_target_ids.contains("thm:main"));
+        assert!(state.stuck_math_audit.active);
+        assert!(!state.stuck_math_audit.trigger.is_empty());
+    }
+
+    /// A math config WITHOUT `workflow.paper_tex_path`: no source to plan from,
+    /// so the run starts worker-first (no carrier) exactly as before the
+    /// feature.
+    #[test]
+    fn initial_planning_seed_math_paperless_config_no_carrier() {
+        let dir = tempdir().expect("tempdir");
+        let repo = dir.path().join("repo");
+        fs::create_dir_all(repo.join("Tablet")).expect("tablet dir");
+        let config_path = dir.path().join("trellis.config.json");
+        fs::write(
+            &config_path,
+            serde_json::json!({
+                "repo_path": repo,
+                "worker": {"provider": "codex", "model": "w", "label": "w"},
+                "reviewer": {"provider": "codex", "model": "r", "label": "r"},
+                "workflow": {
+                    "main_result_targets": [
+                        {"start_line": 1, "end_line": 2, "tex_label": "thm:main"}
+                    ]
+                }
+            })
+            .to_string(),
+        )
+        .expect("write config");
+        let metadata = RuntimeMetadata {
+            repo_path: Some(repo),
+            config_path: Some(config_path),
+            native_history_kinds: Default::default(),
+            initial_planning_seeded: true,
+        coverage_replanning_seeded: true,
+        ..RuntimeMetadata::default()
+        };
+        let mut state = ProtocolState::default();
+        seed_state_from_config(&mut state, &metadata).expect("seed");
+        assert!(state.stuck_math_audit.initial_planning.is_none());
+    }
+
+    /// PV mode A (prose goals): `PvGoalProse` source; with no `goal_file` key
+    /// the kernel mirrors `trellis/config.py`'s `GOAL.md` default (the KEEP IN
+    /// SYNC contract).
+    #[test]
+    fn initial_planning_seed_pv_mode_a_goal_prose_default_goal_file() {
+        let dir = tempdir().expect("tempdir");
+        let repo = dir.path().join("repo");
+        let tablet = repo.join("Tablet");
+        fs::create_dir_all(&tablet).expect("tablet dir");
+        fs::write(
+            tablet.join("fModel.lean"),
+            "-- [TABLET NODE: fModel]\n-- BODY\n",
+        )
+        .expect("node file");
+        let config_path = dir.path().join("trellis.config.json");
+        fs::write(
+            &config_path,
+            serde_json::json!({
+                "repo_path": repo,
+                "worker": {"provider": "codex", "model": "w", "label": "w"},
+                "reviewer": {"provider": "codex", "model": "r", "label": "r"},
+                "workflow": {},
+                "pv_tablet": {
+                    "language": "rust",
+                    "verification_backend": "lean",
+                    "goal_mode": "prose",
+                    "verification_targets": ["f"],
+                    "extractor_stack": ["aeneas@v0"],
+                    "extraction_toolchain": {"charon": "v1", "aeneas": "v0", "lean": "4.30"},
+                    "extraction_models": [{
+                        "id": "model:fModel",
+                        "node": "fModel",
+                        "name": "fModel",
+                        "lean": "def fModel : Nat :=\n  0",
+                        "namespace_context": "",
+                        "provenance": {"source_sha256": "deadbeef"}
+                    }]
+                }
+            })
+            .to_string(),
+        )
+        .expect("write config");
+        let metadata = RuntimeMetadata {
+            repo_path: Some(repo),
+            config_path: Some(config_path),
+            native_history_kinds: Default::default(),
+            initial_planning_seeded: true,
+        coverage_replanning_seeded: true,
+        ..RuntimeMetadata::default()
+        };
+        let mut state = ProtocolState::default();
+        seed_state_from_config(&mut state, &metadata).expect("seed");
+        let ctx = state
+            .stuck_math_audit
+            .initial_planning
+            .as_ref()
+            .expect("mode-A prose run seeds a carrier");
+        assert_eq!(
+            ctx.source,
+            trellis_kernel::InitialPlanningSource::PvGoalProse {
+                goal_path: "GOAL.md".into()
+            }
+        );
+        assert!(ctx.configured_target_ids.contains("f"));
+    }
+
+    /// PV init seed: `tcb_manifest.json` gains the `extraction_provenance`
+    /// section (verbatim toolchain pins + extractor stack + DEDUPED model
+    /// source digests + honest `not_recorded` list), and the refresh helper is
+    /// an idempotent no-op on a second pass — the offline
+    /// `refresh_tcb_extraction_provenance` CLI action drives the same helper.
+    #[test]
+    fn seed_pv_config_records_extraction_provenance_in_tcb_manifest() {
+        let dir = tempdir().expect("tempdir");
+        let repo = dir.path().join("repo");
+        fs::create_dir_all(repo.join("Tablet")).expect("tablet dir");
+        let config_path = dir.path().join("trellis.config.json");
+        fs::write(
+            &config_path,
+            serde_json::json!({
+                "repo_path": repo,
+                "worker": {"provider": "codex", "model": "w", "label": "w"},
+                "reviewer": {"provider": "codex", "model": "r", "label": "r"},
+                "workflow": {},
+                "pv_tablet": {
+                    "language": "rust",
+                    "verification_backend": "lean",
+                    "goal_mode": "prose",
+                    "verification_targets": ["f"],
+                    "extractor_stack": ["charon@0.1.216", "aeneas@fa699427"],
+                    "extraction_toolchain": {"charon": "0.1.216", "aeneas": "fa699427", "lean": "4.30.0-rc2"},
+                    "extraction_models": [
+                        {
+                            "id": "model:fModel",
+                            "node": "fModel",
+                            "name": "fModel",
+                            "lean": "def fModel : Nat :=\n  0",
+                            "namespace_context": "",
+                            "provenance": {"source_file": "src/lib.rs", "source_sha256": "deadbeef"}
+                        },
+                        {
+                            "id": "model:gModel",
+                            "node": "gModel",
+                            "name": "gModel",
+                            "lean": "def gModel : Nat :=\n  1",
+                            "namespace_context": "",
+                            "provenance": {"source_file": "src/lib.rs", "source_sha256": "deadbeef"}
+                        }
+                    ]
+                }
+            })
+            .to_string(),
+        )
+        .expect("write config");
+        let metadata = RuntimeMetadata {
+            repo_path: Some(repo.clone()),
+            config_path: Some(config_path.clone()),
+            native_history_kinds: Default::default(),
+            initial_planning_seeded: true,
+        coverage_replanning_seeded: true,
+        ..RuntimeMetadata::default()
+        };
+        let mut state = ProtocolState::default();
+        seed_state_from_config(&mut state, &metadata).expect("seed");
+
+        let manifest_path = repo.join("tcb_manifest.json");
+        let tcb: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&manifest_path).expect("manifest written"))
+                .expect("manifest parses");
+        let prov = &tcb["extraction_provenance"];
+        assert_eq!(
+            prov["extraction_toolchain"],
+            serde_json::json!({"charon": "0.1.216", "aeneas": "fa699427", "lean": "4.30.0-rc2"})
+        );
+        assert_eq!(
+            prov["extractor_stack"],
+            serde_json::json!(["charon@0.1.216", "aeneas@fa699427"])
+        );
+        assert_eq!(
+            prov["source_digests"],
+            serde_json::json!([{"source_file": "src/lib.rs", "source_sha256": "deadbeef"}]),
+            "two models sharing one crate file collapse to one digest"
+        );
+        assert_eq!(
+            prov["not_recorded"],
+            serde_json::json!(["rustc", "target_triple", "docs_corpus_revision"]),
+            "pins the config does not carry are disclosed, never implied"
+        );
+
+        // The offline-action data path: parse config → refresh → no-op.
+        let pv = pv_tablet_from_config(&config_path).expect("parse pv block");
+        assert!(
+            !refresh_tcb_extraction_provenance(&repo, &pv).expect("refresh"),
+            "an unchanged config must be an idempotent no-op"
+        );
+    }
+
+    /// PV mode B (Lean goals): `PvChallengeSpecs` carries the pinned goal
+    /// statement VERBATIM from the seeded challenge registry, keyed by target
+    /// id — never a config-file pointer.
+    #[test]
+    fn initial_planning_seed_pv_mode_b_verbatim_specs() {
+        let dir = tempdir().expect("tempdir");
+        let (config_path, repo) = write_mode_b_repo(dir.path());
+        let metadata = RuntimeMetadata {
+            repo_path: Some(repo),
+            config_path: Some(config_path),
+            native_history_kinds: Default::default(),
+            initial_planning_seeded: true,
+        coverage_replanning_seeded: true,
+        ..RuntimeMetadata::default()
+        };
+        let mut state = ProtocolState::default();
+        seed_state_from_config(&mut state, &metadata).expect("seed");
+        let ctx = state
+            .stuck_math_audit
+            .initial_planning
+            .as_ref()
+            .expect("mode-B run seeds a carrier");
+        match &ctx.source {
+            trellis_kernel::InitialPlanningSource::PvChallengeSpecs { specs } => {
+                let id = trellis_kernel::ChallengeTargetId::from("goal:Gcd_Spec");
+                assert_eq!(
+                    specs.get(&id).map(String::as_str),
+                    Some("theorem Gcd_Spec : True := by"),
+                    "the pinned goal statement is carried verbatim"
+                );
+            }
+            other => panic!("expected PvChallengeSpecs, got {other:?}"),
+        }
+    }
+
+    /// B2 freshness guard: a non-fresh state (cycle != 0) piped through the
+    /// seeder (Init{state}) must NOT receive an initial-planning carrier, even
+    /// with the replay gate set and a paper config.
+    #[test]
+    fn initial_planning_seed_freshness_guard_rejects_nonfresh_state() {
+        let dir = tempdir().expect("tempdir");
+        let (config_path, repo) = write_math_paper_repo(dir.path());
+        let metadata = RuntimeMetadata {
+            repo_path: Some(repo),
+            config_path: Some(config_path),
+            native_history_kinds: Default::default(),
+            initial_planning_seeded: true,
+        coverage_replanning_seeded: true,
+        ..RuntimeMetadata::default()
+        };
+        let mut state = ProtocolState::default();
+        state.cycle = 3;
+        seed_state_from_config(&mut state, &metadata).expect("seed");
+        assert!(
+            state.stuck_math_audit.initial_planning.is_none(),
+            "a non-fresh state must not be seeded with the initial planner"
+        );
+    }
+
+    /// G3 replay gate: pre-feature metadata (`initial_planning_seeded=false`)
+    /// reseeds a fresh state WITHOUT the carrier, byte-identically to a
+    /// pre-feature run.
+    #[test]
+    fn initial_planning_seed_replay_gate_off_skips_seed() {
+        let dir = tempdir().expect("tempdir");
+        let (config_path, repo) = write_math_paper_repo(dir.path());
+        let metadata = RuntimeMetadata {
+            repo_path: Some(repo),
+            config_path: Some(config_path),
+            native_history_kinds: Default::default(),
+            initial_planning_seeded: false,
+        ..RuntimeMetadata::default()
+        };
+        let mut state = ProtocolState::default();
+        seed_state_from_config(&mut state, &metadata).expect("seed");
+        assert!(
+            state.stuck_math_audit.initial_planning.is_none(),
+            "the replay gate off must skip the initial-planning seed"
+        );
+    }
+
+    // ===== Coverage re-planning seed (seed_state_from_config) =====
+
+    /// Post-feature fresh init (both gates stamped, as Init/InitFromConfig
+    /// do): the coverage source is armed and mirrors the cycle-1 carrier's
+    /// source; the carrier itself stays a plain cycle-1 carrier (never the
+    /// coverage variant).
+    #[test]
+    fn coverage_replanning_seed_arms_source_mirroring_initial_planning() {
+        let dir = tempdir().expect("tempdir");
+        let (config_path, repo) = write_math_paper_repo(dir.path());
+        let metadata = RuntimeMetadata {
+            repo_path: Some(repo),
+            config_path: Some(config_path),
+            native_history_kinds: Default::default(),
+            initial_planning_seeded: true,
+            coverage_replanning_seeded: true,
+            ..RuntimeMetadata::default()
+        };
+        let mut state = ProtocolState::default();
+        seed_state_from_config(&mut state, &metadata).expect("seed");
+        let ctx = state
+            .stuck_math_audit
+            .initial_planning
+            .as_ref()
+            .expect("carrier");
+        assert_eq!(
+            state.coverage_replanning_source.as_ref(),
+            Some(&ctx.source),
+            "the coverage source mirrors initial_planning.source"
+        );
+        assert!(!ctx.coverage_replanning, "cycle-1 carrier is never the coverage variant");
+    }
+
+    /// Initial-planner-era metadata shape (`initial_planning_seeded=true`,
+    /// coverage flag absent ⇒ false): the cycle-1 carrier still seeds but the
+    /// coverage source stays unarmed, so the trigger is dead at replay —
+    /// replay of initial-planner-era logs stays byte-identical.
+    #[test]
+    fn coverage_replanning_seed_gate_off_leaves_source_unarmed() {
+        let dir = tempdir().expect("tempdir");
+        let (config_path, repo) = write_math_paper_repo(dir.path());
+        let metadata = RuntimeMetadata {
+            repo_path: Some(repo),
+            config_path: Some(config_path),
+            native_history_kinds: Default::default(),
+            initial_planning_seeded: true,
+            coverage_replanning_seeded: false,
+            ..RuntimeMetadata::default()
+        };
+        let mut state = ProtocolState::default();
+        seed_state_from_config(&mut state, &metadata).expect("seed");
+        assert!(
+            state.stuck_math_audit.initial_planning.is_some(),
+            "the cycle-1 seed is independent of the coverage gate"
+        );
+        assert!(
+            state.coverage_replanning_source.is_none(),
+            "coverage gate off must leave the source unarmed"
+        );
+        assert!(!state.stuck_math_audit_coverage_replanning_trigger());
+    }
+
+    /// B2 freshness guard covers the coverage source too: a mid-run state
+    /// piped through Init{state} arms nothing, both gates set.
+    #[test]
+    fn coverage_replanning_seed_freshness_guard_rejects_nonfresh_state() {
+        let dir = tempdir().expect("tempdir");
+        let (config_path, repo) = write_math_paper_repo(dir.path());
+        let metadata = RuntimeMetadata {
+            repo_path: Some(repo),
+            config_path: Some(config_path),
+            native_history_kinds: Default::default(),
+            initial_planning_seeded: true,
+            coverage_replanning_seeded: true,
+            ..RuntimeMetadata::default()
+        };
+        let mut state = ProtocolState::default();
+        state.cycle = 3;
+        seed_state_from_config(&mut state, &metadata).expect("seed");
+        assert!(
+            state.coverage_replanning_source.is_none(),
+            "a non-fresh state must not arm the coverage source"
+        );
+    }
+
+    /// Compose the REAL fresh-run dispatch path end to end from an already
+    /// config-seeded state: run the cycle-1 `StartCycle` dispatch, extract the
+    /// dispatched request, and build its prompt contract. Returns the built
+    /// request so each mode's test can assert the carrier rode the request view
+    /// through to the contract and the initial-planner role was selected.
+    ///
+    /// Unlike the engine-module unit tests, the caller hands us a state produced
+    /// by `seed_state_from_config` (not `initial_planning_state_for_test`), so
+    /// this exercises the seeder → StartCycle → contract-build seam whole.
+    ///
+    /// The running supervisor observes paper-faithfulness fingerprints before
+    /// the first cycle; a raw seed leaves them empty, which `validate()` (run
+    /// inside `apply_event`) rejects for any configured paper target. We stamp a
+    /// placeholder observation for each configured target so the composed path
+    /// validates exactly as the live run's does. This does NOT alter the blocker
+    /// set: coverage is still empty, so `current_paper_state` is `Fail` and the
+    /// PaperFaithfulness blocker stays open.
+    fn dispatch_and_build_initial_planner_contract(
+        mut state: ProtocolState,
+    ) -> trellis_kernel::WrapperRequest {
+        // The runtime re-derives structural state after `seed_state_from_config`
+        // (`initialize_with_metadata`), which reconciles the seeded challenge
+        // coverage with the auto-claimed nodes. Mirror it so the composed path
+        // validates as the live init does.
+        state.normalize_all_structural_state();
+        for target in state.configured_targets.clone() {
+            let observed = format!("obs-{}", target.as_str());
+            state
+                .live
+                .paper_current_fingerprints
+                .insert(target.clone(), observed.clone());
+            state
+                .committed
+                .paper_current_fingerprints
+                .insert(target, observed);
+        }
+        let outcome = trellis_kernel::apply_event(state, ProtocolEvent::StartCycle)
+            .expect("fresh-run StartCycle dispatches the initial planner");
+        assert_eq!(
+            outcome.state.stage,
+            Stage::StuckMathAudit,
+            "the cycle-1 initial-planning guard routes to the StuckMathAudit stage"
+        );
+        let mut request = outcome
+            .commands
+            .iter()
+            .find_map(|c| match c {
+                trellis_kernel::ProtocolCommand::IssueRequest { request } => Some(request.clone()),
+                _ => None,
+            })
+            .expect("StartCycle must issue a request");
+        assert_eq!(request.kind, RequestKind::StuckMathAudit);
+        trellis_kernel::populate_request_prompt_contracts(&mut request, None);
+        request
+    }
+
+    /// End-to-end (math / `PaperManuscript`): seed a paper config, dispatch
+    /// cycle 1, build the contract. This is the F1-fragility catcher: before
+    /// dispatch we EMPTY the blocker set (drop the configured paper target and
+    /// its coverage, modeling the future fresh-run seeding path the audit
+    /// flagged), so the carrier's survival to the contract can no longer lean on
+    /// a coincidental live blocker. Pre-F1,
+    /// `audit_plan_view_active(StuckMathAudit)` would zero on the empty blocker
+    /// set and strip the carrier — this test would fail with a plain
+    /// `stuck_math_audit` role. Post-F1 the dispatch pin carries it through on
+    /// `initial_planning.is_some()` alone. The carrier keeps its own captured
+    /// `configured_target_ids`, so the planner contract is unaffected.
+    #[test]
+    fn initial_planner_e2e_math_survives_empty_blocker_set() {
+        let dir = tempdir().expect("tempdir");
+        let (config_path, repo) = write_math_paper_repo(dir.path());
+        let metadata = RuntimeMetadata {
+            repo_path: Some(repo),
+            config_path: Some(config_path),
+            native_history_kinds: Default::default(),
+            initial_planning_seeded: true,
+        coverage_replanning_seeded: true,
+        ..RuntimeMetadata::default()
+        };
+        let mut state = ProtocolState::default();
+        seed_state_from_config(&mut state, &metadata).expect("seed");
+        assert!(
+            state.stuck_math_audit.initial_planning.is_some(),
+            "math fresh seed carries the initial-planning carrier"
+        );
+        // Model a fresh-run seed whose blocker set is empty: drop the configured
+        // paper target and its (empty) coverage. With no configured target there
+        // is no PaperFaithfulness blocker and no fingerprint-coverage invariant.
+        state.configured_targets.clear();
+        state.live.coverage.clear();
+        state.committed.coverage.clear();
+        assert!(
+            state.global_blockers().is_empty(),
+            "the empty-blocker precondition the F1 pin must survive"
+        );
+        let request = dispatch_and_build_initial_planner_contract(state);
+        assert!(
+            request.stuck_math_audit.initial_planning.is_some(),
+            "F1: the carrier must reach the request view with NO live blocker"
+        );
+        assert_eq!(
+            request.stuck_math_audit_contract["burst_role"], "initial_planner",
+            "F1: the empty-blocker dispatch must still build the initial_planner contract"
+        );
+    }
+
+    /// End-to-end (PV mode A / prose goals): same seed → dispatch → contract
+    /// composition against a `PvGoalProse` source, with the seed's natural
+    /// (non-empty) PaperFaithfulness blocker on the configured verification
+    /// target left in place.
+    #[test]
+    fn initial_planner_e2e_pv_mode_a_seed_dispatch_contract() {
+        let dir = tempdir().expect("tempdir");
+        let repo = dir.path().join("repo");
+        let tablet = repo.join("Tablet");
+        fs::create_dir_all(&tablet).expect("tablet dir");
+        fs::write(
+            tablet.join("fModel.lean"),
+            "-- [TABLET NODE: fModel]\n-- BODY\n",
+        )
+        .expect("node file");
+        let config_path = dir.path().join("trellis.config.json");
+        fs::write(
+            &config_path,
+            serde_json::json!({
+                "repo_path": repo,
+                "worker": {"provider": "codex", "model": "w", "label": "w"},
+                "reviewer": {"provider": "codex", "model": "r", "label": "r"},
+                "workflow": {},
+                "pv_tablet": {
+                    "language": "rust",
+                    "verification_backend": "lean",
+                    "goal_mode": "prose",
+                    "verification_targets": ["f"],
+                    "extractor_stack": ["aeneas@v0"],
+                    "extraction_toolchain": {"charon": "v1", "aeneas": "v0", "lean": "4.30"},
+                    "extraction_models": [{
+                        "id": "model:fModel",
+                        "node": "fModel",
+                        "name": "fModel",
+                        "lean": "def fModel : Nat :=\n  0",
+                        "namespace_context": "",
+                        "provenance": {"source_sha256": "deadbeef"}
+                    }]
+                }
+            })
+            .to_string(),
+        )
+        .expect("write config");
+        let metadata = RuntimeMetadata {
+            repo_path: Some(repo),
+            config_path: Some(config_path),
+            native_history_kinds: Default::default(),
+            initial_planning_seeded: true,
+        coverage_replanning_seeded: true,
+        ..RuntimeMetadata::default()
+        };
+        let mut state = ProtocolState::default();
+        seed_state_from_config(&mut state, &metadata).expect("seed");
+        let request = dispatch_and_build_initial_planner_contract(state);
+        assert!(request.stuck_math_audit.initial_planning.is_some());
+        assert_eq!(
+            request.stuck_math_audit_contract["burst_role"],
+            "initial_planner"
+        );
+    }
+
+    /// End-to-end (PV mode B / pinned Lean specs): same seed → dispatch →
+    /// contract composition against a `PvChallengeSpecs` source. Mode B is a
+    /// second F1 guard for free: its seed auto-claims each goal/def node, so the
+    /// re-derived challenge coverage is already non-empty and the fresh seed
+    /// carries NO challenge-coverage blocker — the carrier reaches the contract
+    /// on the dispatch pin alone (this test fails pre-F1).
+    #[test]
+    fn initial_planner_e2e_pv_mode_b_seed_dispatch_contract() {
+        let dir = tempdir().expect("tempdir");
+        let (config_path, repo) = write_mode_b_repo(dir.path());
+        let metadata = RuntimeMetadata {
+            repo_path: Some(repo),
+            config_path: Some(config_path),
+            native_history_kinds: Default::default(),
+            initial_planning_seeded: true,
+        coverage_replanning_seeded: true,
+        ..RuntimeMetadata::default()
+        };
+        let mut state = ProtocolState::default();
+        seed_state_from_config(&mut state, &metadata).expect("seed");
+        assert!(
+            state.stuck_math_audit.initial_planning.is_some(),
+            "mode-B fresh seed carries the initial-planning carrier"
+        );
+        let request = dispatch_and_build_initial_planner_contract(state);
+        assert!(request.stuck_math_audit.initial_planning.is_some());
+        assert_eq!(
+            request.stuck_math_audit_contract["burst_role"],
+            "initial_planner"
+        );
+    }
+
+    /// Build the Phase-8 baseline: a present Correctness-role spec node
+    /// `GcdCorrect` at corr Pass (status Pass + current == approved, both a
+    /// valid non-empty fingerprint) and a bound theorem `GcdBound` that depends
+    /// on it (also corr Pass). The spec node IS the correspondence theorem
+    /// whose statement the monotonicity gate watches; `GcdBound` is the
+    /// downstream theorem the reopen must force-invalidate.
+    fn pv_spec_state() -> ProtocolState {
+        let spec = NodeId::from("GcdCorrect");
+        let bound = NodeId::from("GcdBound");
+        let preamble = NodeId::from("Preamble");
+        let present: BTreeSet<NodeId> =
+            BTreeSet::from([preamble.clone(), spec.clone(), bound.clone()]);
+
+        let mut state = ProtocolState::default();
+        state.live.present_nodes = present.clone();
+        state.committed.present_nodes = present.clone();
+        // The bound theorem depends on the spec node.
+        state
+            .deps
+            .insert(bound.clone(), BTreeSet::from([spec.clone()]));
+        state.deps.insert(spec.clone(), BTreeSet::new());
+        state.deps.insert(preamble.clone(), BTreeSet::new());
+        state.committed_deps = state.deps.clone();
+
+        // The spec node carries the Correctness role (a gated spec role).
+        state.node_role.insert(spec.clone(), PvRole::Correctness);
+
+        // Both nodes at corr Pass: status Pass + current == approved (valid,
+        // non-empty) — exactly what current_corr_state requires for Pass.
+        let spec_fp = corr_fp("theorem GcdCorrect : gcd a b = g := by");
+        state
+            .corr_approved_fingerprints
+            .insert(spec.clone(), spec_fp.clone());
+        state
+            .live
+            .corr_current_fingerprints
+            .insert(spec.clone(), spec_fp);
+        state.corr_status.insert(spec.clone(), CorrStatus::Pass);
+
+        let bound_fp = corr_fp("theorem GcdBound : ...");
+        state
+            .corr_approved_fingerprints
+            .insert(bound.clone(), bound_fp.clone());
+        state
+            .live
+            .corr_current_fingerprints
+            .insert(bound.clone(), bound_fp);
+        state.corr_status.insert(bound.clone(), CorrStatus::Pass);
+
+        state.committed = state.live.clone();
+        state
+    }
+
+    /// (i) The headline: editing a PV spec node's correspondence STATEMENT
+    /// (changed fingerprint) reopens it on the next resume — the node is seeded
+    /// into `pending_protected_reapproval_nodes`, its OWN corr goes Unknown, the
+    /// bound theorem's corr goes Unknown (force-invalidated up the dep graph),
+    /// and the done-check is blocked (so the next cycle routes to a
+    /// ProtectedReapproval HumanGate via `maybe_issue_protected_reapproval`,
+    /// the engine path covered by
+    /// `protected_reapproval_routes_to_human_gate_after_verifier_drain`).
+    #[test]
+    fn reconcile_pv_spec_monotonicity_statement_edit_reopens_and_blocks_done() {
+        let mut state = pv_spec_state();
+        let spec = NodeId::from("GcdCorrect");
+        let bound = NodeId::from("GcdBound");
+        assert_eq!(state.current_corr_state(&spec), CurrentCheckState::Pass);
+        assert_eq!(state.current_corr_state(&bound), CurrentCheckState::Pass);
+        // The done-check's reapproval term is clear before the edit (other
+        // lanes — sound/substantiveness — are Unknown in this minimal fixture,
+        // so the FULL clean_checkpoint_ready is independent of what we test).
+        assert!(state.pending_protected_reapproval_nodes.is_empty());
+
+        // The worker edited the spec node's statement: its CURRENT fingerprint
+        // now differs from the approved baseline (a weakened/strengthened
+        // postcondition — the kernel can't tell which).
+        state.live.corr_current_fingerprints.insert(
+            spec.clone(),
+            corr_fp("theorem GcdCorrect : gcd a b ∣ g := by"),
+        );
+
+        let mutated = reconcile_pv_spec_monotonicity(&mut state).expect("reconcile");
+
+        assert!(mutated, "a spec statement change must mutate state");
+        assert!(
+            state.pending_protected_reapproval_nodes.contains(&spec),
+            "the edited spec node must seed pending_protected_reapproval_nodes"
+        );
+        assert_eq!(
+            state.current_corr_state(&spec),
+            CurrentCheckState::Unknown,
+            "the edited spec node's OWN corr must reopen (Unknown)"
+        );
+        assert_eq!(
+            state.current_corr_state(&bound),
+            CurrentCheckState::Unknown,
+            "the bound theorem (a dependent) must be force-invalidated to Unknown"
+        );
+        assert!(
+            !state.clean_checkpoint_ready(),
+            "a non-empty pending_protected_reapproval_nodes is one of the two terms \
+             clean_checkpoint_ready ANDs, so the done-check is blocked — the same \
+             precondition maybe_issue_protected_reapproval routes the gate on"
+        );
+    }
+
+    /// (ii) UNCHANGED: a spec node whose statement byte-matches the approval
+    /// baseline is NOT spuriously reopened — reconcile is a no-op and the node
+    /// stays corr Pass.
+    #[test]
+    fn reconcile_pv_spec_monotonicity_unchanged_keeps_spec_pass() {
+        let mut state = pv_spec_state();
+        let spec = NodeId::from("GcdCorrect");
+        let bound = NodeId::from("GcdBound");
+        assert_eq!(state.current_corr_state(&spec), CurrentCheckState::Pass);
+
+        let mutated = reconcile_pv_spec_monotonicity(&mut state).expect("reconcile");
+
+        assert!(
+            !mutated,
+            "an unchanged spec statement must not mutate state (no spurious reopen)"
+        );
+        assert_eq!(
+            state.current_corr_state(&spec),
+            CurrentCheckState::Pass,
+            "an unchanged spec node stays corr Pass"
+        );
+        assert_eq!(
+            state.current_corr_state(&bound),
+            CurrentCheckState::Pass,
+            "an unchanged spec node leaves its dependents at Pass"
+        );
+        assert!(state.pending_protected_reapproval_nodes.is_empty());
+    }
+
+    /// PV "prove OR disprove" / mode-B: a spec-role node that CLAIMS a configured
+    /// challenge target (a byte-pinned goal statement) is EXCLUDED from the
+    /// monotonicity reopen seed even when its corr fingerprint drifts — the
+    /// byte-pin already makes the statement unweakenable, and for a mode-B run
+    /// there is no human to satisfy a ProtectedReapproval.
+    #[test]
+    fn reconcile_pv_spec_monotonicity_excludes_byte_pinned_challenge_node() {
+        let mut state = pv_spec_state();
+        let spec = NodeId::from("GcdCorrect");
+        // Make the spec node a byte-pinned challenge claimant.
+        state.configured_challenge_targets.insert(
+            ChallengeTargetId::from("goal:gcd"),
+            ChallengeTargetSpec {
+                kind: ChallengeTargetKind::Theorem,
+                name: "GcdCorrect".to_string(),
+                lean: "theorem GcdCorrect : gcd a b = g := by".to_string(),
+                resolution: ChallengeResolution::Decide,
+                ..ChallengeTargetSpec::default()
+            },
+        );
+        state.challenge_claims.insert(
+            spec.clone(),
+            BTreeSet::from([ChallengeTargetId::from("goal:gcd")]),
+        );
+        // Drift its corr fingerprint (a mere `.tex` re-gloss would do this).
+        state.live.corr_current_fingerprints.insert(
+            spec.clone(),
+            corr_fp("theorem GcdCorrect : gcd a b ∣ g := by"),
+        );
+
+        let mutated = reconcile_pv_spec_monotonicity(&mut state).expect("reconcile");
+        assert!(
+            !mutated,
+            "a byte-pinned challenge spec node must not seed a ProtectedReapproval"
+        );
+        assert!(
+            state.pending_protected_reapproval_nodes.is_empty(),
+            "no ProtectedReapproval seed for a byte-pinned goal statement"
+        );
+    }
+
+    /// (iii) FAIL-CLOSED repro (absent-then-restored): a present spec node whose
+    /// APPROVED corr baseline is absent (e.g. a state migrated forward without
+    /// it, or the approved fp dropped while the node was transiently gone and
+    /// then restored) reopens — never inherit a Pass on uncertainty. This
+    /// mirrors `corr_reopen_triggered`'s unparseable⇒reopen + the revision-mode
+    /// unmatched⇒Changed default.
+    #[test]
+    fn reconcile_pv_spec_monotonicity_absent_approved_baseline_reopens() {
+        let mut state = pv_spec_state();
+        let spec = NodeId::from("GcdCorrect");
+        let bound = NodeId::from("GcdBound");
+        // Drop the approved baseline for the present spec node (a current
+        // fingerprint still exists — the node is back/restored).
+        state.corr_approved_fingerprints.remove(&spec);
+        // With status Pass but no approved fp, current_corr_state is already
+        // Unknown; the point of the test is that reconcile SEEDS the reapproval
+        // gate so completion is blocked rather than the node silently passing
+        // once an approved fp is later re-established without re-approval.
+
+        let mutated = reconcile_pv_spec_monotonicity(&mut state).expect("reconcile");
+
+        assert!(
+            mutated,
+            "an absent approved baseline must be treated as a reopen"
+        );
+        assert!(
+            state.pending_protected_reapproval_nodes.contains(&spec),
+            "a present spec node with a MISSING approved baseline must seed the reapproval gate \
+             (fail-closed: never inherit on uncertainty)"
+        );
+        assert_eq!(
+            state.current_corr_state(&bound),
+            CurrentCheckState::Unknown,
+            "its dependents are force-invalidated to Unknown"
+        );
+        assert!(!state.clean_checkpoint_ready());
+    }
+
+    /// FAIL-CLOSED corner: a present spec node whose CURRENT fingerprint is
+    /// missing/unparseable (the prospective side) also reopens.
+    #[test]
+    fn reconcile_pv_spec_monotonicity_absent_current_fingerprint_reopens() {
+        let mut state = pv_spec_state();
+        let spec = NodeId::from("GcdCorrect");
+        // The current fingerprint is gone (e.g. the node's .lean failed to
+        // produce one) while an approved baseline exists.
+        state.live.corr_current_fingerprints.remove(&spec);
+
+        let mutated = reconcile_pv_spec_monotonicity(&mut state).expect("reconcile");
+
+        assert!(mutated);
+        assert!(
+            state.pending_protected_reapproval_nodes.contains(&spec),
+            "a missing current fingerprint (unparseable prospective) must reopen (fail-closed)"
+        );
+    }
+
+    /// Behavior-preservation: an all-math state (`node_role` empty) reconciles
+    /// to a no-op via the early return — the math run is byte-identical even
+    /// against a spec-shaped tablet. A non-PV node at corr Pass is untouched.
+    #[test]
+    fn reconcile_pv_spec_monotonicity_all_math_is_noop() {
+        let mut state = pv_spec_state();
+        // Strip the roles: now it is an ordinary (non-PV) tablet.
+        state.node_role.clear();
+        let spec = NodeId::from("GcdCorrect");
+        // Even with a "changed" statement, the empty-role early return fires.
+        state.live.corr_current_fingerprints.insert(
+            spec.clone(),
+            corr_fp("theorem GcdCorrect : gcd a b ∣ g := by"),
+        );
+
+        let mutated = reconcile_pv_spec_monotonicity(&mut state).expect("reconcile");
+
+        assert!(
+            !mutated,
+            "empty node_role ⇒ early return ⇒ no-op (byte-identical)"
+        );
+        assert!(state.pending_protected_reapproval_nodes.is_empty());
+    }
+
+    fn write_pending_assumptions_registry(repo: &std::path::Path) {
+        fs::create_dir_all(repo).unwrap();
+        fs::write(
+            repo.join("PROPOSED_ASSUMPTIONS.json"),
+            serde_json::json!({
+                "assumptions": [{
+                    "id": "a1",
+                    "axiom_name": "dec2flt.slice_len_le_isize_max",
+                    "lean_statement": "axiom dec2flt.slice_len_le_isize_max : True",
+                    "nl_statement": "Every Rust slice length is at most isize::MAX.",
+                    "citation_locator": "rust-reference/slice",
+                    "rust_justification": "language guarantee",
+                    "needed_by": ["dec2flt"],
+                    "adversarial_hunt_result": "failed to refute",
+                    "status": "pending"
+                }]
+            })
+            .to_string(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn reconcile_pending_under_model_assumptions_uses_registry_count() {
+        let dir = tempdir().unwrap();
+        let repo = dir.path().join("repo");
+        write_pending_assumptions_registry(&repo);
+
+        let assumptions = NodeId::from(trellis_kernel::assumptions_registry::ASSUMPTIONS_NODE);
+        let mut state = ProtocolState::default();
+        state.pv_tablet_configured = true;
+        state
+            .node_role
+            .insert(assumptions, trellis_kernel::PvRole::UnderModelAssumptions);
+        state.pending_under_model_assumptions = 0;
+
+        let mutated =
+            reconcile_pending_under_model_assumptions(&mut state, &repo).expect("reconcile");
+
+        assert!(mutated);
+        assert_eq!(state.pending_under_model_assumptions, 1);
+        assert!(
+            repo.join("ASSUMPTIONS_REVIEW.md").exists(),
+            "pending durable assumptions should render the human review file"
+        );
+    }
+
+    #[test]
+    fn reconcile_pending_under_model_assumptions_all_math_is_noop() {
+        let dir = tempdir().unwrap();
+        let repo = dir.path().join("repo");
+        write_pending_assumptions_registry(&repo);
+
+        let mut state = ProtocolState::default();
+        state.pending_under_model_assumptions = 0;
+
+        let mutated =
+            reconcile_pending_under_model_assumptions(&mut state, &repo).expect("reconcile");
+
+        assert!(!mutated);
+        assert_eq!(state.pending_under_model_assumptions, 0);
+        assert!(
+            !repo.join("ASSUMPTIONS_REVIEW.md").exists(),
+            "all-math runs must not activate the PV assumptions review gate"
+        );
+    }
+
+    /// Guard: a non-spec role (ExtractionModel) is NOT watched by the
+    /// monotonicity gate — it is byte-pinned and protected by the Phase-2
+    /// provenance reconcile instead. A change to its OWN corr fingerprint does
+    /// not seed the reapproval gate here.
+    #[test]
+    fn reconcile_pv_spec_monotonicity_ignores_non_spec_roles() {
+        let mut state = pv_spec_state();
+        let spec = NodeId::from("GcdCorrect");
+        // Re-role the watched node as ExtractionModel (excluded from the gate).
+        state
+            .node_role
+            .insert(spec.clone(), PvRole::ExtractionModel);
+        state
+            .live
+            .corr_current_fingerprints
+            .insert(spec.clone(), corr_fp("def gcdModel : Nat := 1"));
+
+        let mutated = reconcile_pv_spec_monotonicity(&mut state).expect("reconcile");
+
+        assert!(
+            !mutated,
+            "a non-spec role must not be watched by the monotonicity gate"
+        );
+        assert!(state.pending_protected_reapproval_nodes.is_empty());
+    }
+
+    /// Idempotence + composition with the Phase-2 provenance reopen: a state
+    /// that already has a Phase-2 seed in `pending_protected_reapproval_nodes`
+    /// PLUS a Phase-8 spec edit ends with the UNION (both seeds present) — the
+    /// `.extend()` composes safely. Re-running Phase-8 is a no-op (idempotent).
+    #[test]
+    fn reconcile_pv_spec_monotonicity_composes_with_phase2_seed_and_is_idempotent() {
+        let mut state = pv_spec_state();
+        let spec = NodeId::from("GcdCorrect");
+        let phase2_node = NodeId::from("SomeModelBoundThm");
+        // Simulate a Phase-2 reopen already having seeded a different node.
+        state
+            .pending_protected_reapproval_nodes
+            .insert(phase2_node.clone());
+        // Phase-8 spec edit.
+        state.live.corr_current_fingerprints.insert(
+            spec.clone(),
+            corr_fp("theorem GcdCorrect : gcd a b ∣ g := by"),
+        );
+
+        let mutated = reconcile_pv_spec_monotonicity(&mut state).expect("reconcile");
+        assert!(mutated);
+        // The union: BOTH the Phase-2 and the Phase-8 seed survive.
+        assert!(
+            state
+                .pending_protected_reapproval_nodes
+                .contains(&phase2_node),
+            "the pre-existing Phase-2 seed must survive the Phase-8 extend (union)"
+        );
+        assert!(
+            state.pending_protected_reapproval_nodes.contains(&spec),
+            "the Phase-8 seed is added alongside it"
+        );
+
+        // Idempotent: a second pass mutates nothing (the seeds are already
+        // pending and the dependents already Unknown).
+        let mutated2 = reconcile_pv_spec_monotonicity(&mut state).expect("reconcile (2nd)");
+        assert!(
+            !mutated2,
+            "re-running the monotonicity reconcile over an already-reopened state is a no-op"
+        );
+    }
+
+    // ── PV Phase 8 slice 3: the human-facing monotonicity diff payload ────────
+
+    /// A ProtectedReapproval HumanGate request for a reopened PV spec node
+    /// carries the monotonicity diff: the bridge payload's
+    /// `protected_reapproval_monotonicity` array names the node, frames the
+    /// strengthen-not-weaken question, and lists the changed correspondence
+    /// axes (here the `own_tex` statement axis).
+    #[test]
+    fn protected_reapproval_gate_payload_carries_monotonicity_diff_for_spec_node() {
+        let mut state = pv_spec_state();
+        state.phase = Phase::ProofFormalization;
+        state.stage = Stage::HumanGate;
+        state.gate_kind = trellis_kernel::GateKind::ProtectedReapproval;
+        state.cycle = 7;
+        let spec = NodeId::from("GcdCorrect");
+        // The reopened spec node: a changed statement (current ≠ approved), so
+        // the diff enumerates the own_tex axis.
+        state.live.corr_current_fingerprints.insert(
+            spec.clone(),
+            corr_fp("theorem GcdCorrect : gcd a b ∣ g := by"),
+        );
+        state
+            .pending_protected_reapproval_nodes
+            .insert(spec.clone());
+
+        let request = state.expected_request(7, RequestKind::HumanGate);
+        // The request itself carries the raw fingerprint pair for the spec node.
+        assert!(
+            request
+                .protected_reapproval_corr_fingerprint_pairs
+                .contains_key(&spec),
+            "the ProtectedReapproval request must carry the spec node's corr fp pair"
+        );
+
+        let payload = bridge_request_payload(&request, None, None).expect("bridge payload");
+        let diff = payload
+            .get("protected_reapproval_monotonicity")
+            .and_then(|v| v.as_array())
+            .expect("monotonicity diff array present on the gate payload");
+        assert_eq!(diff.len(), 1, "exactly the one reopened spec node");
+        let entry = &diff[0];
+        assert_eq!(entry["node"], serde_json::json!("GcdCorrect"));
+        let question = entry["monotonicity_question"].as_str().unwrap();
+        assert!(
+            question.contains("STRONG"),
+            "the question must frame the strengthen-not-weaken judgement"
+        );
+        let axes = entry["changed_axes"].as_array().unwrap();
+        assert!(
+            !axes.is_empty(),
+            "a changed statement must produce at least one changed-axis bullet"
+        );
+        assert!(
+            axes.iter().any(|a| a
+                .as_str()
+                .is_some_and(|s| s.contains("own `.tex` statement"))),
+            "the own_tex axis bullet must be present for a statement change: {axes:?}"
+        );
+    }
+
+    /// A non-spec role reopened by the Phase-2 path (an ExtractionModel
+    /// dependent without a spec role) is NOT surfaced in the monotonicity diff
+    /// — the diff is about spec STATEMENTS only.
+    #[test]
+    fn protected_reapproval_gate_payload_omits_non_spec_reopened_nodes() {
+        let mut state = pv_spec_state();
+        state.phase = Phase::ProofFormalization;
+        state.stage = Stage::HumanGate;
+        state.gate_kind = trellis_kernel::GateKind::ProtectedReapproval;
+        state.cycle = 7;
+        // A reopened node with NO spec role (e.g. a Phase-2 model-drift reopen).
+        let other = NodeId::from("GcdBound");
+        state
+            .pending_protected_reapproval_nodes
+            .insert(other.clone());
+
+        let request = state.expected_request(7, RequestKind::HumanGate);
+        assert!(
+            request
+                .protected_reapproval_corr_fingerprint_pairs
+                .is_empty(),
+            "a reopened node without a spec role contributes no monotonicity diff"
+        );
+        let payload = bridge_request_payload(&request, None, None).expect("bridge payload");
+        assert!(
+            payload.get("protected_reapproval_monotonicity").is_none(),
+            "no spec-role reopen ⇒ the monotonicity overlay is absent (byte-identical)"
+        );
+    }
+
+    /// Byte-identity: an all-math ProtectedReapproval gate (no `node_role`)
+    /// carries neither the request field nor the bridge overlay.
+    #[test]
+    fn protected_reapproval_gate_payload_all_math_has_no_monotonicity_overlay() {
+        let mut state = pv_spec_state();
+        state.node_role.clear(); // ordinary (non-PV) tablet
+        state.phase = Phase::ProofFormalization;
+        state.stage = Stage::HumanGate;
+        state.gate_kind = trellis_kernel::GateKind::ProtectedReapproval;
+        state.cycle = 7;
+        state
+            .pending_protected_reapproval_nodes
+            .insert(NodeId::from("GcdCorrect"));
+
+        let request = state.expected_request(7, RequestKind::HumanGate);
+        assert!(request
+            .protected_reapproval_corr_fingerprint_pairs
+            .is_empty());
+        // The field is skipped on the wire (skip_serializing_if).
+        let raw = serde_json::to_value(&request).unwrap();
+        assert!(
+            raw.get("protected_reapproval_corr_fingerprint_pairs")
+                .is_none(),
+            "an empty pairs map must be skipped from the serialized request"
+        );
+        let payload = bridge_request_payload(&request, None, None).expect("bridge payload");
+        assert!(payload.get("protected_reapproval_monotonicity").is_none());
+    }
+
+    /// Sidecar gate-9 corr no-drift recompute (the audit's missing
+    /// counterfactual): the recompute must pass the SAME
+    /// under-model-assumption set the primary observation sites pass.
+    /// Doctored PV shape: with the pre-fix EMPTY set the recompute
+    /// drifts from the primary-site fingerprint (the value
+    /// `live.corr_current_fingerprints` records), so a fully-gated
+    /// body-only apply would have been spuriously rejected as
+    /// `corr_drift`; the fixed state-derived recompute matches. The
+    /// all-math shape stays byte-identical to the plain observation.
+    #[test]
+    fn sidecar_gate9_corr_recompute_matches_primary_under_model_assumption_set() {
+        use super::runtime_cli_observations::observe_correspondence_fingerprints_with_under_model_assumptions as observe_with;
+        let dir = tempdir().unwrap();
+        let repo = dir.path();
+        fs::create_dir_all(repo.join("Tablet")).unwrap();
+        // Lake-less repo => the legacy fingerprint path (no external
+        // payload extractor needed). The staged UNDERMODEL marker makes
+        // the assumptions-shaped fingerprint non-empty.
+        fs::write(
+            repo.join("Tablet").join("Assumptions.lean"),
+            "-- [TABLET NODE: Assumptions]\n\
+             -- BEGIN UNDERMODEL ASSUMPTION model_bound\n\
+             axiom Assumptions.model_bound : True\n\
+             -- END UNDERMODEL ASSUMPTION model_bound\n",
+        )
+        .unwrap();
+        fs::write(
+            repo.join("Tablet").join("Assumptions.tex"),
+            "\\begin{definition}\\label{def:assumptions}\nModel assumptions.\n\\end{definition}\n",
+        )
+        .unwrap();
+        let node = NodeId::from("Assumptions");
+        let nodes: BTreeSet<NodeId> = [node.clone()].into_iter().collect();
+        let uma: BTreeSet<NodeId> = [node.clone()].into_iter().collect();
+
+        // Primary-site fingerprint (what a PV run records as the pre value).
+        let primary = observe_with(repo, &nodes, &uma).unwrap()[&node].clone();
+        assert!(!primary.is_empty(), "assumptions fingerprint must be real");
+
+        // Counterfactual: the pre-fix empty-set recompute WOULD drift.
+        let empty_set_recompute = observe_with(repo, &nodes, &BTreeSet::new()).unwrap()[&node]
+            .clone();
+        assert_ne!(
+            empty_set_recompute, primary,
+            "empty-set recompute must drift on the PV shape (the spurious corr_drift)"
+        );
+
+        // Fixed gate 9: the set is derived from state, matching primary sites.
+        let mut state = ProtocolState::default();
+        state.pv_tablet_configured = true;
+        state
+            .node_role
+            .insert(node.clone(), trellis_kernel::PvRole::UnderModelAssumptions);
+        let recomputed = super::sidecar_gate9_corr_recompute(repo, &node, &state).unwrap();
+        assert_eq!(
+            recomputed.as_deref(),
+            Some(primary.as_str()),
+            "PV-shaped gate-9 recompute must match the primary-site fingerprint"
+        );
+
+        // All-math shape: empty set => identical to the plain observation.
+        let math = super::sidecar_gate9_corr_recompute(repo, &node, &ProtocolState::default())
+            .unwrap();
+        assert_eq!(math.as_deref(), Some(empty_set_recompute.as_str()));
+    }
+}

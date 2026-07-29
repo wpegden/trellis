@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trellis://schemas/campaign-witness-report/v1",
+  "title": "Worker-authored witness data consumed by the trust kernel",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "target_id",
+    "witness_term",
+    "witness_refutation_node_id",
+    "source_encoding_descriptor"
+  ],
+  "properties": {
+    "schema": { "const": "trellis-campaign-witness-report/v1" },
+    "target_id": { "$ref": "#/$defs/id" },
+    "witness_term": {},
+    "witness_refutation_node_id": { "$ref": "#/$defs/id" },
+    "source_encoding_descriptor": {
+      "type": "object",
+      "minProperties": 1
+    }
+  },
+  "$defs": {
+    "id": { "type": "string", "minLength": 1, "maxLength": 256 }
+  }
+}

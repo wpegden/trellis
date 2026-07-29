@@ -1,0 +1,547 @@
+{
+  "schema": "trellis-journal-hash-fixtures/v1",
+  "vectors": [
+    {
+      "name": "journal_genesis",
+      "tag": "journal-genesis",
+      "payload": {
+        "journal_id": "fixture-journal",
+        "journal_schema": "trellis-trust-journal/v1"
+      },
+      "expected_sha256": "484aa4383446f9205666b5cada543b2df8e26786602c9d044f99c39a7454b45c"
+    },
+    {
+      "name": "empty_authored_semantic_root",
+      "tag": "authored-semantic-root",
+      "payload": [],
+      "expected_sha256": "117f9f2b7a23b37b5724b4d53b6657cf7834025a10477a46f0d15347975201da"
+    },
+    {
+      "name": "empty_derived_result_root",
+      "tag": "derived-result-root",
+      "payload": [],
+      "expected_sha256": "84323ef1654b91661448d05f2083c22242fc29ca6a71a53758a7fcba42985f2d"
+    },
+    {
+      "name": "actor_key_manifest_authorization_signing",
+      "tag": "actor-authentication-key-manifest-authorization",
+      "payload": {
+        "schema": "trellis-actor-authentication-key-manifest/v1",
+        "protocol_id": "trellis-trust-v1",
+        "key_history_policy": "seed_pinned_immutable_all_epochs_v1",
+        "manifest_authority_id": "fixture-v1-manifest-root",
+        "keys": [
+          {
+            "key_id": "fixture-reviewer-key",
+            "actor_role": "reviewer",
+            "actor_identity": "fixture-reviewer",
+            "purpose": "gate_review",
+            "algorithm": "Ed25519",
+            "public_key_ed25519_hex": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "valid_from_sequence": 0
+          },
+          {
+            "key_id": "fixture-audit-key",
+            "actor_role": "audit_authority",
+            "actor_identity": "fixture-auditor",
+            "purpose": "audit_authorization",
+            "algorithm": "Ed25519",
+            "public_key_ed25519_hex": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+            "valid_from_sequence": 0
+          },
+          {
+            "key_id": "fixture-journal-key",
+            "actor_role": "journal_authority",
+            "actor_identity": "fixture-journal-authority",
+            "purpose": "journal_commit",
+            "algorithm": "Ed25519",
+            "public_key_ed25519_hex": "ca93ac1705187071d67b83c7ff0efe8108e8ec4530575d7726879333dbdabe7c",
+            "valid_from_sequence": 0
+          }
+        ]
+      },
+      "expected_sha256": "f8b3475747e0081c2d13cde6af30f59eaadd0dcdfb82dc26ee56cfcbfe49dc58"
+    },
+    {
+      "name": "actor_key_manifest_self",
+      "tag": "actor-authentication-key-manifest",
+      "payload": {
+        "schema": "trellis-actor-authentication-key-manifest/v1",
+        "protocol_id": "trellis-trust-v1",
+        "key_history_policy": "seed_pinned_immutable_all_epochs_v1",
+        "manifest_authority_id": "fixture-v1-manifest-root",
+        "keys": [
+          {
+            "key_id": "fixture-reviewer-key",
+            "actor_role": "reviewer",
+            "actor_identity": "fixture-reviewer",
+            "purpose": "gate_review",
+            "algorithm": "Ed25519",
+            "public_key_ed25519_hex": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+            "valid_from_sequence": 0
+          },
+          {
+            "key_id": "fixture-audit-key",
+            "actor_role": "audit_authority",
+            "actor_identity": "fixture-auditor",
+            "purpose": "audit_authorization",
+            "algorithm": "Ed25519",
+            "public_key_ed25519_hex": "8139770ea87d175f56a35466c34c7ecccb8d8a91b4ee37a25df60f5b8fc9b394",
+            "valid_from_sequence": 0
+          },
+          {
+            "key_id": "fixture-journal-key",
+            "actor_role": "journal_authority",
+            "actor_identity": "fixture-journal-authority",
+            "purpose": "journal_commit",
+            "algorithm": "Ed25519",
+            "public_key_ed25519_hex": "ca93ac1705187071d67b83c7ff0efe8108e8ec4530575d7726879333dbdabe7c",
+            "valid_from_sequence": 0
+          }
+        ],
+        "authorization_signing_digest_sha256": "f8b3475747e0081c2d13cde6af30f59eaadd0dcdfb82dc26ee56cfcbfe49dc58",
+        "authorization_signature_ed25519_hex": "16e1310beeab9a76890aa0dab3a5b3e0b6c5b3f76dd8aa50252bc7e352429a7962bcbbf230e2ef3403721a561d2d842a17d2b127158c5c7496b7bd612e7a1e07"
+      },
+      "expected_sha256": "0794a455e2fffab0b34e45aad5f7ec6a558b107bbce575b721aeca8a42df5884"
+    },
+    {
+      "name": "seed_manifest_self",
+      "tag": "seed-authored-definition-manifest",
+      "payload": {
+        "schema": "trellis-seed-authored-definition-manifest/v1",
+        "protocol_id": "trellis-trust-v1",
+        "journal_id": "fixture-journal",
+        "run_id": "fixture-run",
+        "seed_plan_id": "fixture-seed",
+        "canonical_genesis_sha256": "484aa4383446f9205666b5cada543b2df8e26786602c9d044f99c39a7454b45c",
+        "definitions": [
+          {
+            "record_kind": "target_definition",
+            "record_id": "fixture-target",
+            "record_schema_id": "trellis://fixtures/target-definition/v1",
+            "record_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+            "domain_tag": "target-definition"
+          }
+        ],
+        "authored_semantic_root": "b07448101c62821ffe92cecc79b7426ae661189ab7f3119d04cc66a56cb52fad",
+        "approved_evidence_tool_input_root": "303cef25f122e735c7418218ed0378fa0f0070a8397a7184446728ac71624ccc",
+        "journal_event_policy_sha256": "e3c0e814f6b37545b423365b973f873f985da9ca4417b456d55bdfb7bc927825",
+        "actor_key_manifest_sha256": "0794a455e2fffab0b34e45aad5f7ec6a558b107bbce575b721aeca8a42df5884"
+      },
+      "expected_sha256": "d3bb6f2d9aba26bcba5116a898f18c1f39355366779d54efde62f7af93b56996"
+    },
+    {
+      "name": "actor_receipt_signing",
+      "tag": "actor-authentication-signing",
+      "payload": {
+        "schema": "trellis-actor-authentication-receipt/v1",
+        "authentication_method": "authenticated_gate_receipt",
+        "journal_id": "fixture-journal",
+        "run_id": "fixture-run",
+        "transaction_id": "fixture-approval-transaction",
+        "event_kind": "advance_gate_approved",
+        "event_payload_sha256": "9c6c6abbd17141168806707e55cc46647dddddec6a82ee5d60191baf080998c9",
+        "predecessor_head": {
+          "journal_id": "fixture-journal",
+          "sequence_number": 1,
+          "event_hash": "2a38c25e0a3683f8494b1eeef1c42adb7afd24c86b4c8e570bc93956708582b2"
+        },
+        "actor_role": "reviewer",
+        "actor_identity": "fixture-reviewer",
+        "key_id": "fixture-reviewer-key",
+        "gate_or_revision_lane_id": "fixture-human-approval"
+      },
+      "expected_sha256": "2bd9a83eba45a4d63177797cedc757f387b479c24275b55fbbd0144dfc0b4f9a"
+    },
+    {
+      "name": "actor_receipt_self",
+      "tag": "actor-authentication-receipt",
+      "payload": {
+        "schema": "trellis-actor-authentication-receipt/v1",
+        "authentication_method": "authenticated_gate_receipt",
+        "journal_id": "fixture-journal",
+        "run_id": "fixture-run",
+        "transaction_id": "fixture-approval-transaction",
+        "event_kind": "advance_gate_approved",
+        "event_payload_sha256": "9c6c6abbd17141168806707e55cc46647dddddec6a82ee5d60191baf080998c9",
+        "predecessor_head": {
+          "journal_id": "fixture-journal",
+          "sequence_number": 1,
+          "event_hash": "2a38c25e0a3683f8494b1eeef1c42adb7afd24c86b4c8e570bc93956708582b2"
+        },
+        "actor_role": "reviewer",
+        "actor_identity": "fixture-reviewer",
+        "key_id": "fixture-reviewer-key",
+        "gate_or_revision_lane_id": "fixture-human-approval",
+        "signing_digest_sha256": "2bd9a83eba45a4d63177797cedc757f387b479c24275b55fbbd0144dfc0b4f9a",
+        "signature_ed25519_hex": "3538bb6ea1211db32f4ebb439b0052c89cfa72972e7727671c0cbae5563f50316c97a04630614ef3ec6d45799c03093ee736c7e5568231d5176743e786231505"
+      },
+      "expected_sha256": "22b7892649cc2631071b5ff4b6aea4caf264b5f14a4080b47f1d3ff460e32f5b"
+    },
+    {
+      "name": "journal_commit_receipt_signing",
+      "tag": "journal-commit-signing",
+      "payload": {
+        "schema": "trellis-journal-commit-receipt/v1",
+        "authentication_method": "journal_commit_signature_v1",
+        "journal_id": "fixture-journal",
+        "run_id": "fixture-run",
+        "package_transaction_id": "fixture-package-transaction",
+        "package_event_hash": "d84838f2a48cafce28787cd25e7968eb8416b7afc26e6c2a0991a3c0ee16d22b",
+        "package_event_payload_sha256": "d46ac90fd68805009f49e485123e98b940b8b0d1ef8e5acbe13f2b61e1a1d98a",
+        "predecessor_head": {
+          "journal_id": "fixture-journal",
+          "sequence_number": 2,
+          "event_hash": "c471dc3cc5336eea16218735f76eb86400bb2fcc885fbc7e3a4beb9861c0ce4e"
+        },
+        "committed_head": {
+          "journal_id": "fixture-journal",
+          "sequence_number": 3,
+          "event_hash": "d84838f2a48cafce28787cd25e7968eb8416b7afc26e6c2a0991a3c0ee16d22b"
+        },
+        "package_presentation_sha256": "294287d896a56105dd1894dfef3e87c9a932d1fb594eab80a023757cf253ff3d",
+        "journal_authority_identity": "fixture-journal-authority",
+        "key_id": "fixture-journal-key",
+        "commit_stage": "after_durable_head_install_v1"
+      },
+      "expected_sha256": "762d2ab4c3ace5cb32bf66309ccf711f39d85bd6562cbf2148b523882e7436be"
+    },
+    {
+      "name": "journal_commit_receipt_self",
+      "tag": "journal-commit-receipt",
+      "payload": {
+        "schema": "trellis-journal-commit-receipt/v1",
+        "authentication_method": "journal_commit_signature_v1",
+        "journal_id": "fixture-journal",
+        "run_id": "fixture-run",
+        "package_transaction_id": "fixture-package-transaction",
+        "package_event_hash": "d84838f2a48cafce28787cd25e7968eb8416b7afc26e6c2a0991a3c0ee16d22b",
+        "package_event_payload_sha256": "d46ac90fd68805009f49e485123e98b940b8b0d1ef8e5acbe13f2b61e1a1d98a",
+        "predecessor_head": {
+          "journal_id": "fixture-journal",
+          "sequence_number": 2,
+          "event_hash": "c471dc3cc5336eea16218735f76eb86400bb2fcc885fbc7e3a4beb9861c0ce4e"
+        },
+        "committed_head": {
+          "journal_id": "fixture-journal",
+          "sequence_number": 3,
+          "event_hash": "d84838f2a48cafce28787cd25e7968eb8416b7afc26e6c2a0991a3c0ee16d22b"
+        },
+        "package_presentation_sha256": "294287d896a56105dd1894dfef3e87c9a932d1fb594eab80a023757cf253ff3d",
+        "journal_authority_identity": "fixture-journal-authority",
+        "key_id": "fixture-journal-key",
+        "commit_stage": "after_durable_head_install_v1",
+        "signing_digest_sha256": "762d2ab4c3ace5cb32bf66309ccf711f39d85bd6562cbf2148b523882e7436be",
+        "signature_ed25519_hex": "1d9f1db4d3ebd37ac3f0029111bf4c1e2b5a217a9b26c8bb146b160faf306437668231e5c018a07b836650cc1b4b8bf68e18f8aee130dcf8b72e9b2e42104f0a"
+      },
+      "expected_sha256": "22e6da8a6dc62eaf6cf68e9bb474cf7ce4374d0d3b89999d97c6f399399aa3ba"
+    },
+    {
+      "name": "human_approval_full",
+      "tag": "human-approval",
+      "payload": {
+        "schema": "trellis-human-approval/v1",
+        "authored_semantic_root": "b07448101c62821ffe92cecc79b7426ae661189ab7f3119d04cc66a56cb52fad",
+        "approved_evidence_tool_input_root": "303cef25f122e735c7418218ed0378fa0f0070a8397a7184446728ac71624ccc",
+        "gate_presentation_sha256": "4bd94d254a564362816160a12db17b81006164a8d7ddd0a64d3e5bd84bffb6a3",
+        "reviewer_identity": "fixture-reviewer",
+        "approved_journal_head": {
+          "journal_id": "fixture-journal",
+          "sequence_number": 1,
+          "event_hash": "2a38c25e0a3683f8494b1eeef1c42adb7afd24c86b4c8e570bc93956708582b2"
+        }
+      },
+      "expected_sha256": "1f50299d7cb1e73cd890fe45f6fbff310dc631ff1b09fb8f93116d26a0c495de"
+    },
+    {
+      "name": "advance_approval_payload_self",
+      "tag": "journal-event-payload",
+      "payload": {
+        "schema": "trellis-journal-event-payload/v1",
+        "event_kind": "advance_gate_approved",
+        "subject_id": "fixture-human-approval",
+        "subject_kind": "canonical_record",
+        "subject_schema_id": "trellis://schemas/approval-and-package/v1",
+        "subject_schema_sha256": "572bcf5ae7116b712b5fdeab0307e742288fdd26e0ed8d5f007c90cc68d3a118",
+        "subject_hash_tag": "human-approval",
+        "subject_sha256": "1f50299d7cb1e73cd890fe45f6fbff310dc631ff1b09fb8f93116d26a0c495de",
+        "journal_predecessor_sha256": "2a38c25e0a3683f8494b1eeef1c42adb7afd24c86b4c8e570bc93956708582b2",
+        "principal_identity": "fixture-reviewer"
+      },
+      "expected_sha256": "9c6c6abbd17141168806707e55cc46647dddddec6a82ee5d60191baf080998c9"
+    },
+    {
+      "name": "advance_approval_payload_full",
+      "tag": "journal-event-payload",
+      "payload": {
+        "schema": "trellis-journal-event-payload/v1",
+        "event_kind": "advance_gate_approved",
+        "subject_id": "fixture-human-approval",
+        "subject_kind": "canonical_record",
+        "subject_schema_id": "trellis://schemas/approval-and-package/v1",
+        "subject_schema_sha256": "572bcf5ae7116b712b5fdeab0307e742288fdd26e0ed8d5f007c90cc68d3a118",
+        "subject_hash_tag": "human-approval",
+        "subject_sha256": "1f50299d7cb1e73cd890fe45f6fbff310dc631ff1b09fb8f93116d26a0c495de",
+        "journal_predecessor_sha256": "2a38c25e0a3683f8494b1eeef1c42adb7afd24c86b4c8e570bc93956708582b2",
+        "principal_identity": "fixture-reviewer",
+        "payload_sha256": "9c6c6abbd17141168806707e55cc46647dddddec6a82ee5d60191baf080998c9"
+      },
+      "expected_sha256": "90faab8516447a18d3346c71e7e8a97b249bddf9169a342f2aac5bfa8e179e82"
+    },
+    {
+      "name": "advance_approval_event_self",
+      "tag": "journal-event",
+      "payload": {
+        "journal_schema": "trellis-trust-journal/v1",
+        "journal_id": "fixture-journal",
+        "run_id": "fixture-run",
+        "sequence_number": 2,
+        "transaction_id": "fixture-approval-transaction",
+        "previous_event_hash": "2a38c25e0a3683f8494b1eeef1c42adb7afd24c86b4c8e570bc93956708582b2",
+        "event_kind": "advance_gate_approved",
+        "payload_schema_id": "trellis://schemas/journal-event-payload/v1",
+        "payload_schema_sha256": "56d511a8ce722f693c047eb149526b4bc90375a83b59b77add9460a6b2d804eb",
+        "payload_hash": "9c6c6abbd17141168806707e55cc46647dddddec6a82ee5d60191baf080998c9",
+        "semantic_root_before": "b07448101c62821ffe92cecc79b7426ae661189ab7f3119d04cc66a56cb52fad",
+        "semantic_root_after": "b07448101c62821ffe92cecc79b7426ae661189ab7f3119d04cc66a56cb52fad",
+        "derived_result_root_before": "84323ef1654b91661448d05f2083c22242fc29ca6a71a53758a7fcba42985f2d",
+        "derived_result_root_after": "84323ef1654b91661448d05f2083c22242fc29ca6a71a53758a7fcba42985f2d",
+        "actor_role": "reviewer",
+        "actor_identity": "fixture-reviewer",
+        "actor_authentication_method": "authenticated_gate_receipt",
+        "actor_authentication_receipt_sha256": "22b7892649cc2631071b5ff4b6aea4caf264b5f14a4080b47f1d3ff460e32f5b"
+      },
+      "expected_sha256": "c471dc3cc5336eea16218735f76eb86400bb2fcc885fbc7e3a4beb9861c0ce4e"
+    },
+    {
+      "name": "advance_approval_event_full",
+      "tag": "journal-event",
+      "payload": {
+        "journal_schema": "trellis-trust-journal/v1",
+        "journal_id": "fixture-journal",
+        "run_id": "fixture-run",
+        "sequence_number": 2,
+        "transaction_id": "fixture-approval-transaction",
+        "previous_event_hash": "2a38c25e0a3683f8494b1eeef1c42adb7afd24c86b4c8e570bc93956708582b2",
+        "event_kind": "advance_gate_approved",
+        "payload_schema_id": "trellis://schemas/journal-event-payload/v1",
+        "payload_schema_sha256": "56d511a8ce722f693c047eb149526b4bc90375a83b59b77add9460a6b2d804eb",
+        "payload_hash": "9c6c6abbd17141168806707e55cc46647dddddec6a82ee5d60191baf080998c9",
+        "semantic_root_before": "b07448101c62821ffe92cecc79b7426ae661189ab7f3119d04cc66a56cb52fad",
+        "semantic_root_after": "b07448101c62821ffe92cecc79b7426ae661189ab7f3119d04cc66a56cb52fad",
+        "derived_result_root_before": "84323ef1654b91661448d05f2083c22242fc29ca6a71a53758a7fcba42985f2d",
+        "derived_result_root_after": "84323ef1654b91661448d05f2083c22242fc29ca6a71a53758a7fcba42985f2d",
+        "actor_role": "reviewer",
+        "actor_identity": "fixture-reviewer",
+        "actor_authentication_method": "authenticated_gate_receipt",
+        "actor_authentication_receipt_sha256": "22b7892649cc2631071b5ff4b6aea4caf264b5f14a4080b47f1d3ff460e32f5b",
+        "event_hash": "c471dc3cc5336eea16218735f76eb86400bb2fcc885fbc7e3a4beb9861c0ce4e"
+      },
+      "expected_sha256": "53a198594ed9d0b620543b2872931f125c8ee9115088b57563f983c40553aa7b"
+    },
+    {
+      "name": "audit_authorization_self",
+      "tag": "audit-authorization",
+      "payload": {
+        "schema": "trellis-audit-authorization/v1",
+        "authorization_id": "fixture-auth",
+        "audit_identity": "fixture-auditor",
+        "current_human_approval_event_hash": "c471dc3cc5336eea16218735f76eb86400bb2fcc885fbc7e3a4beb9861c0ce4e",
+        "authorized_from_journal_head": {
+          "journal_id": "fixture-journal",
+          "sequence_number": 2,
+          "event_hash": "c471dc3cc5336eea16218735f76eb86400bb2fcc885fbc7e3a4beb9861c0ce4e"
+        },
+        "authorized_revision_lane_id": "fixture-lane",
+        "permitted_changes": [
+          {
+            "item_id": "fixture-target",
+            "change_kind": "target_statement"
+          }
+        ],
+        "maximum_semantic_scope_sha256": "b07448101c62821ffe92cecc79b7426ae661189ab7f3119d04cc66a56cb52fad",
+        "reason_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "one_shot": true
+      },
+      "expected_sha256": "a02e09d25f8627da4a3db577c656e0a44381e5f0eec6e1053a9e94f48adf14b9"
+    },
+    {
+      "name": "audit_authorization_full",
+      "tag": "audit-authorization",
+      "payload": {
+        "schema": "trellis-audit-authorization/v1",
+        "authorization_id": "fixture-auth",
+        "audit_identity": "fixture-auditor",
+        "current_human_approval_event_hash": "c471dc3cc5336eea16218735f76eb86400bb2fcc885fbc7e3a4beb9861c0ce4e",
+        "authorized_from_journal_head": {
+          "journal_id": "fixture-journal",
+          "sequence_number": 2,
+          "event_hash": "c471dc3cc5336eea16218735f76eb86400bb2fcc885fbc7e3a4beb9861c0ce4e"
+        },
+        "authorized_revision_lane_id": "fixture-lane",
+        "permitted_changes": [
+          {
+            "item_id": "fixture-target",
+            "change_kind": "target_statement"
+          }
+        ],
+        "maximum_semantic_scope_sha256": "b07448101c62821ffe92cecc79b7426ae661189ab7f3119d04cc66a56cb52fad",
+        "reason_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+        "one_shot": true,
+        "authorization_artifact_sha256": "a02e09d25f8627da4a3db577c656e0a44381e5f0eec6e1053a9e94f48adf14b9"
+      },
+      "expected_sha256": "83c96b11a50b56152cfd9f3b678904ee6f5a25de801296098f0c990010addfd4"
+    },
+    {
+      "name": "package_authorization_full",
+      "tag": "package-authorization",
+      "payload": {
+        "schema": "trellis-package-authorization/v1",
+        "human_approval_event_hash": "c471dc3cc5336eea16218735f76eb86400bb2fcc885fbc7e3a4beb9861c0ce4e",
+        "derived_result_closure_root": "84323ef1654b91661448d05f2083c22242fc29ca6a71a53758a7fcba42985f2d",
+        "package_presentation_sha256": "294287d896a56105dd1894dfef3e87c9a932d1fb594eab80a023757cf253ff3d",
+        "generator_and_validator_closure_root": "2222222222222222222222222222222222222222222222222222222222222222",
+        "pre_authorization_journal_head": {
+          "journal_id": "fixture-journal",
+          "sequence_number": 2,
+          "event_hash": "c471dc3cc5336eea16218735f76eb86400bb2fcc885fbc7e3a4beb9861c0ce4e"
+        }
+      },
+      "expected_sha256": "64eff4b52b33cca51a6fef3181780cfc42db0583d4f397168c4d7e1362cd9d74"
+    },
+    {
+      "name": "package_authorization_payload_self",
+      "tag": "journal-event-payload",
+      "payload": {
+        "schema": "trellis-journal-event-payload/v1",
+        "event_kind": "package_authorized",
+        "subject_id": "fixture-package",
+        "subject_kind": "canonical_record",
+        "subject_schema_id": "trellis://schemas/approval-and-package/v1",
+        "subject_schema_sha256": "572bcf5ae7116b712b5fdeab0307e742288fdd26e0ed8d5f007c90cc68d3a118",
+        "subject_hash_tag": "package-authorization",
+        "subject_sha256": "64eff4b52b33cca51a6fef3181780cfc42db0583d4f397168c4d7e1362cd9d74",
+        "journal_predecessor_sha256": "c471dc3cc5336eea16218735f76eb86400bb2fcc885fbc7e3a4beb9861c0ce4e"
+      },
+      "expected_sha256": "d46ac90fd68805009f49e485123e98b940b8b0d1ef8e5acbe13f2b61e1a1d98a"
+    },
+    {
+      "name": "package_authorization_event_self",
+      "tag": "journal-event",
+      "payload": {
+        "journal_schema": "trellis-trust-journal/v1",
+        "journal_id": "fixture-journal",
+        "run_id": "fixture-run",
+        "sequence_number": 3,
+        "transaction_id": "fixture-package-transaction",
+        "previous_event_hash": "c471dc3cc5336eea16218735f76eb86400bb2fcc885fbc7e3a4beb9861c0ce4e",
+        "event_kind": "package_authorized",
+        "payload_schema_id": "trellis://schemas/journal-event-payload/v1",
+        "payload_schema_sha256": "56d511a8ce722f693c047eb149526b4bc90375a83b59b77add9460a6b2d804eb",
+        "payload_hash": "d46ac90fd68805009f49e485123e98b940b8b0d1ef8e5acbe13f2b61e1a1d98a",
+        "semantic_root_before": "b07448101c62821ffe92cecc79b7426ae661189ab7f3119d04cc66a56cb52fad",
+        "semantic_root_after": "b07448101c62821ffe92cecc79b7426ae661189ab7f3119d04cc66a56cb52fad",
+        "derived_result_root_before": "84323ef1654b91661448d05f2083c22242fc29ca6a71a53758a7fcba42985f2d",
+        "derived_result_root_after": "84323ef1654b91661448d05f2083c22242fc29ca6a71a53758a7fcba42985f2d",
+        "actor_role": "kernel",
+        "actor_identity": "trellis-kernel",
+        "actor_authentication_method": "kernel_internal"
+      },
+      "expected_sha256": "d84838f2a48cafce28787cd25e7968eb8416b7afc26e6c2a0991a3c0ee16d22b"
+    },
+    {
+      "name": "journal_event_payload_self",
+      "tag": "journal-event-payload",
+      "payload": {
+        "schema": "trellis-journal-event-payload/v1",
+        "event_kind": "seed_committed",
+        "subject_id": "fixture-seed",
+        "subject_kind": "canonical_record",
+        "subject_schema_id": "trellis://schemas/seed-authored-definition-manifest/v1",
+        "subject_schema_sha256": "c15dbd113c7cec75eb0b28fa56d9339f144b2f4bb4d3bcdb7d11868fcf58d389",
+        "subject_hash_tag": "seed-authored-definition-manifest",
+        "subject_sha256": "d3bb6f2d9aba26bcba5116a898f18c1f39355366779d54efde62f7af93b56996",
+        "journal_predecessor_sha256": "484aa4383446f9205666b5cada543b2df8e26786602c9d044f99c39a7454b45c"
+      },
+      "expected_sha256": "2b7f0807909dda6538b4e05d1df957e332c8ca2fdc879d6b9e401f8f2258047f"
+    },
+    {
+      "name": "journal_event_payload_full",
+      "tag": "journal-event-payload",
+      "payload": {
+        "schema": "trellis-journal-event-payload/v1",
+        "event_kind": "seed_committed",
+        "subject_id": "fixture-seed",
+        "subject_kind": "canonical_record",
+        "subject_schema_id": "trellis://schemas/seed-authored-definition-manifest/v1",
+        "subject_schema_sha256": "c15dbd113c7cec75eb0b28fa56d9339f144b2f4bb4d3bcdb7d11868fcf58d389",
+        "subject_hash_tag": "seed-authored-definition-manifest",
+        "subject_sha256": "d3bb6f2d9aba26bcba5116a898f18c1f39355366779d54efde62f7af93b56996",
+        "journal_predecessor_sha256": "484aa4383446f9205666b5cada543b2df8e26786602c9d044f99c39a7454b45c",
+        "payload_sha256": "2b7f0807909dda6538b4e05d1df957e332c8ca2fdc879d6b9e401f8f2258047f"
+      },
+      "expected_sha256": "dc3195c0d445af90732ba6104696a63fca0796fc8fa57e5b44d19dd9bc89676b"
+    },
+    {
+      "name": "journal_event_self",
+      "tag": "journal-event",
+      "payload": {
+        "journal_schema": "trellis-trust-journal/v1",
+        "journal_id": "fixture-journal",
+        "run_id": "fixture-run",
+        "sequence_number": 1,
+        "transaction_id": "fixture-seed-transaction",
+        "previous_event_hash": "484aa4383446f9205666b5cada543b2df8e26786602c9d044f99c39a7454b45c",
+        "event_kind": "seed_committed",
+        "payload_schema_id": "trellis://schemas/journal-event-payload/v1",
+        "payload_schema_sha256": "56d511a8ce722f693c047eb149526b4bc90375a83b59b77add9460a6b2d804eb",
+        "payload_hash": "2b7f0807909dda6538b4e05d1df957e332c8ca2fdc879d6b9e401f8f2258047f",
+        "semantic_root_before": "117f9f2b7a23b37b5724b4d53b6657cf7834025a10477a46f0d15347975201da",
+        "semantic_root_after": "b07448101c62821ffe92cecc79b7426ae661189ab7f3119d04cc66a56cb52fad",
+        "derived_result_root_before": "84323ef1654b91661448d05f2083c22242fc29ca6a71a53758a7fcba42985f2d",
+        "derived_result_root_after": "84323ef1654b91661448d05f2083c22242fc29ca6a71a53758a7fcba42985f2d",
+        "actor_role": "kernel",
+        "actor_identity": "trellis-kernel",
+        "actor_authentication_method": "kernel_internal"
+      },
+      "expected_sha256": "2a38c25e0a3683f8494b1eeef1c42adb7afd24c86b4c8e570bc93956708582b2"
+    },
+    {
+      "name": "journal_event_full",
+      "tag": "journal-event",
+      "payload": {
+        "journal_schema": "trellis-trust-journal/v1",
+        "journal_id": "fixture-journal",
+        "run_id": "fixture-run",
+        "sequence_number": 1,
+        "transaction_id": "fixture-seed-transaction",
+        "previous_event_hash": "484aa4383446f9205666b5cada543b2df8e26786602c9d044f99c39a7454b45c",
+        "event_kind": "seed_committed",
+        "payload_schema_id": "trellis://schemas/journal-event-payload/v1",
+        "payload_schema_sha256": "56d511a8ce722f693c047eb149526b4bc90375a83b59b77add9460a6b2d804eb",
+        "payload_hash": "2b7f0807909dda6538b4e05d1df957e332c8ca2fdc879d6b9e401f8f2258047f",
+        "semantic_root_before": "117f9f2b7a23b37b5724b4d53b6657cf7834025a10477a46f0d15347975201da",
+        "semantic_root_after": "b07448101c62821ffe92cecc79b7426ae661189ab7f3119d04cc66a56cb52fad",
+        "derived_result_root_before": "84323ef1654b91661448d05f2083c22242fc29ca6a71a53758a7fcba42985f2d",
+        "derived_result_root_after": "84323ef1654b91661448d05f2083c22242fc29ca6a71a53758a7fcba42985f2d",
+        "actor_role": "kernel",
+        "actor_identity": "trellis-kernel",
+        "actor_authentication_method": "kernel_internal",
+        "event_hash": "2a38c25e0a3683f8494b1eeef1c42adb7afd24c86b4c8e570bc93956708582b2"
+      },
+      "expected_sha256": "0490fac64617d143645dc9597f75ee4c0970d41255722f4bfa407050f550ce33"
+    },
+    {
+      "name": "gate_presentation_raw",
+      "tag": "gate-presentation",
+      "payload_utf8": "fixture gate presentation\n",
+      "expected_sha256": "4bd94d254a564362816160a12db17b81006164a8d7ddd0a64d3e5bd84bffb6a3"
+    },
+    {
+      "name": "package_presentation_raw",
+      "tag": "package-presentation",
+      "payload_utf8": "fixture package bytes\n",
+      "expected_sha256": "294287d896a56105dd1894dfef3e87c9a932d1fb594eab80a023757cf253ff3d"
+    }
+  ]
+}
