@@ -1,0 +1,40 @@
+{
+  "request": {
+    "action": "validate_paper_faithfulness_result",
+    "raw_payload": {
+      "comments": "Need a better excerpt.",
+      "overall": "REJECT",
+      "paper_faithfulness": {
+        "decision": "FAIL",
+        "issues": [
+          {
+            "description": "Still mismatched.",
+            "node": "main_result"
+          }
+        ]
+      },
+      "summary": "Paper mismatch remains"
+    }
+  },
+  "response": {
+    "output": {
+      "data": {
+        "comments": "Need a better excerpt.",
+        "overall": "REJECT",
+        "paper_faithfulness": {
+          "decision": "FAIL",
+          "issues": [
+            {
+              "description": "Still mismatched.",
+              "node": "main_result"
+            }
+          ]
+        },
+        "summary": "Paper mismatch remains"
+      },
+      "errors": [],
+      "ok": true
+    },
+    "status": "validate_paper_faithfulness_result_ok"
+  }
+}

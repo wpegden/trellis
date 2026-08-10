@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trellis://schemas/journal-event-policy/v1",
+  "title": "Protocol-frozen journal event authority and payload policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "protocol_id",
+    "journal_event_schema_sha256",
+    "journal_payload_schema_sha256",
+    "authentication_key_manifest_schema_sha256",
+    "authentication_receipt_schema_sha256",
+    "entries",
+    "policy_sha256"
+  ],
+  "properties": {
+    "schema": { "const": "trellis-journal-event-policy/v1" },
+    "protocol_id": { "const": "trellis-trust-v1" },
+    "journal_event_schema_sha256": { "$ref": "#/$defs/hash" },
+    "journal_payload_schema_sha256": { "$ref": "#/$defs/hash" },
+    "authentication_key_manifest_schema_sha256": { "$ref": "#/$defs/hash" },
+    "authentication_receipt_schema_sha256": { "$ref": "#/$defs/hash" },
+    "entries": {
+      "type": "array",
+      "minItems": 26,
+      "maxItems": 26,
+      "items": { "$ref": "#/$defs/entry" }
+    },
+    "policy_sha256": { "$ref": "#/$defs/hash" }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event_kind",
+        "envelope_actor_role",
+        "actor_identity_policy",
+        "authentication_method",
+        "payload_schema_id",
+        "payload_schema_sha256",
+        "payload_hash_tag",
+        "payload_reference_mode",
+        "allowed_subject_hash_tags",
+        "subject_reference_mode",
+        "authorization_requirement"
+      ],
+      "properties": {
+        "event_kind": { "$ref": "#/$defs/eventKind" },
+        "envelope_actor_role": { "enum": ["kernel", "reviewer", "audit_authority"] },
+        "actor_identity_policy": {
+          "enum": ["trellis-kernel", "payload-reviewer-identity", "payload-audit-identity"]
+        },
+        "authentication_method": {
+          "enum": ["kernel_internal", "authenticated_gate_receipt", "audit_signature_v1"]
+        },
+        "payload_schema_id": { "const": "trellis://schemas/journal-event-payload/v1" },
+        "payload_schema_sha256": { "$ref": "#/$defs/hash" },
+        "payload_hash_tag": { "const": "journal-event-payload" },
+        "payload_reference_mode": { "const": "embedded_self_digest" },
+        "allowed_subject_hash_tags": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/id" }
+        },
+        "subject_reference_mode": {
+          "enum": ["embedded_self_digest", "full_record_hash", "raw_bytes_hash"]
+        },
+        "authorization_requirement": { "enum": ["none", "revision_lane"] }
+      }
+    },
+    "eventKind": {
+      "enum": [
+        "seed_committed",
+        "source_claim_lineage_registered",
+        "source_claim_lineage_resolution_recorded",
+        "source_model_mismatch_resolved",
+        "advance_gate_approved",
+        "advance_gate_feedback",
+        "proof_checked",
+        "witness_refutation_checked",
+        "unrestricted_verdict_recorded",
+        "source_validation_classified",
+        "source_validation_attempt_recorded",
+        "source_validation_outcome_recorded",
+        "reflection_validation_result_recorded",
+        "source_validation_history_summarized",
+        "approved_profile_selected",
+        "conditional_statement_generated",
+        "qualification_obligations_checked",
+        "no_qualified_result_established",
+        "applicability_classified",
+        "external_claim_rows_generated",
+        "package_authorized",
+        "audit_authorization",
+        "revision_opened",
+        "protected_reapproval_approved",
+        "protected_reapproval_feedback",
+        "revoked"
+      ]
+    }
+  }
+}

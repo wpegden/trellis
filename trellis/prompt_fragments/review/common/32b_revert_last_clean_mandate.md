@@ -1,0 +1,3 @@
+**Required threshold (ProofFormalization only)**: when `cycles_since_clean >= csc_last_clean_threshold` (both fields are in the request summary; the threshold is what the kernel actually enforces this run), you must choose `reset = last_clean`. The watch policy escalates here because hitting the threshold means the local-repair narrative has failed for a significant stretch. The kernel makes this threshold mandatory in ProofFormalization alone. Read both fields verbatim from the request.
+
+**Exception**: this mandate is waived once `last_clean_rewind_count >= csc_rewind_waiver_count` (both fields are in the request summary; the waiver count is what the kernel actually enforces this run).

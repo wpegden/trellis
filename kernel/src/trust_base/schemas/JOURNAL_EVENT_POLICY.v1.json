@@ -1,0 +1,401 @@
+{
+  "schema": "trellis-journal-event-policy/v1",
+  "protocol_id": "trellis-trust-v1",
+  "journal_event_schema_sha256": "d38838158eb657c5d3a584a5c82735cc0e319655bb025465523f953e4965068c",
+  "journal_payload_schema_sha256": "56d511a8ce722f693c047eb149526b4bc90375a83b59b77add9460a6b2d804eb",
+  "authentication_key_manifest_schema_sha256": "0ae4209780e4a0cf779a7a3fcf6ee57bdb7c7d187b020ce903fd031dc9a2ae14",
+  "authentication_receipt_schema_sha256": "9a1fbd78afef02c66b78f07228d1764ad51088a102e120169b021feb6e8f67d3",
+  "entries": [
+    {
+      "event_kind": "seed_committed",
+      "envelope_actor_role": "kernel",
+      "actor_identity_policy": "trellis-kernel",
+      "authentication_method": "kernel_internal",
+      "payload_schema_id": "trellis://schemas/journal-event-payload/v1",
+      "payload_schema_sha256": "56d511a8ce722f693c047eb149526b4bc90375a83b59b77add9460a6b2d804eb",
+      "payload_hash_tag": "journal-event-payload",
+      "payload_reference_mode": "embedded_self_digest",
+      "allowed_subject_hash_tags": [
+        "seed-authored-definition-manifest"
+      ],
+      "subject_reference_mode": "embedded_self_digest",
+      "authorization_requirement": "none"
+    },
+    {
+      "event_kind": "source_claim_lineage_registered",
+      "envelope_actor_role": "kernel",
+      "actor_identity_policy": "trellis-kernel",
+      "authentication_method": "kernel_internal",
+      "payload_schema_id": "trellis://schemas/journal-event-payload/v1",
+      "payload_schema_sha256": "56d511a8ce722f693c047eb149526b4bc90375a83b59b77add9460a6b2d804eb",
+      "payload_hash_tag": "journal-event-payload",
+      "payload_reference_mode": "embedded_self_digest",
+      "allowed_subject_hash_tags": [
+        "source-claim-lineage"
+      ],
+      "subject_reference_mode": "embedded_self_digest",
+      "authorization_requirement": "none"
+    },
+    {
+      "event_kind": "source_claim_lineage_resolution_recorded",
+      "envelope_actor_role": "kernel",
+      "actor_identity_policy": "trellis-kernel",
+      "authentication_method": "kernel_internal",
+      "payload_schema_id": "trellis://schemas/journal-event-payload/v1",
+      "payload_schema_sha256": "56d511a8ce722f693c047eb149526b4bc90375a83b59b77add9460a6b2d804eb",
+      "payload_hash_tag": "journal-event-payload",
+      "payload_reference_mode": "embedded_self_digest",
+      "allowed_subject_hash_tags": [
+        "source-claim-lineage"
+      ],
+      "subject_reference_mode": "embedded_self_digest",
+      "authorization_requirement": "revision_lane"
+    },
+    {
+      "event_kind": "source_model_mismatch_resolved",
+      "envelope_actor_role": "kernel",
+      "actor_identity_policy": "trellis-kernel",
+      "authentication_method": "kernel_internal",
+      "payload_schema_id": "trellis://schemas/journal-event-payload/v1",
+      "payload_schema_sha256": "56d511a8ce722f693c047eb149526b4bc90375a83b59b77add9460a6b2d804eb",
+      "payload_hash_tag": "journal-event-payload",
+      "payload_reference_mode": "embedded_self_digest",
+      "allowed_subject_hash_tags": [
+        "source-claim-lineage"
+      ],
+      "subject_reference_mode": "embedded_self_digest",
+      "authorization_requirement": "revision_lane"
+    },
+    {
+      "event_kind": "advance_gate_approved",
+      "envelope_actor_role": "reviewer",
+      "actor_identity_policy": "payload-reviewer-identity",
+      "authentication_method": "authenticated_gate_receipt",
+      "payload_schema_id": "trellis://schemas/journal-event-payload/v1",
+      "payload_schema_sha256": "56d511a8ce722f693c047eb149526b4bc90375a83b59b77add9460a6b2d804eb",
+      "payload_hash_tag": "journal-event-payload",
+      "payload_reference_mode": "embedded_self_digest",
+      "allowed_subject_hash_tags": [
+        "human-approval"
+      ],
+      "subject_reference_mode": "full_record_hash",
+      "authorization_requirement": "none"
+    },
+    {
+      "event_kind": "advance_gate_feedback",
+      "envelope_actor_role": "reviewer",
+      "actor_identity_policy": "payload-reviewer-identity",
+      "authentication_method": "authenticated_gate_receipt",
+      "payload_schema_id": "trellis://schemas/journal-event-payload/v1",
+      "payload_schema_sha256": "56d511a8ce722f693c047eb149526b4bc90375a83b59b77add9460a6b2d804eb",
+      "payload_hash_tag": "journal-event-payload",
+      "payload_reference_mode": "embedded_self_digest",
+      "allowed_subject_hash_tags": [
+        "raw-artifact"
+      ],
+      "subject_reference_mode": "raw_bytes_hash",
+      "authorization_requirement": "none"
+    },
+    {
+      "event_kind": "proof_checked",
+      "envelope_actor_role": "kernel",
+      "actor_identity_policy": "trellis-kernel",
+      "authentication_method": "kernel_internal",
+      "payload_schema_id": "trellis://schemas/journal-event-payload/v1",
+      "payload_schema_sha256": "56d511a8ce722f693c047eb149526b4bc90375a83b59b77add9460a6b2d804eb",
+      "payload_hash_tag": "journal-event-payload",
+      "payload_reference_mode": "embedded_self_digest",
+      "allowed_subject_hash_tags": [
+        "raw-artifact"
+      ],
+      "subject_reference_mode": "raw_bytes_hash",
+      "authorization_requirement": "none"
+    },
+    {
+      "event_kind": "witness_refutation_checked",
+      "envelope_actor_role": "kernel",
+      "actor_identity_policy": "trellis-kernel",
+      "authentication_method": "kernel_internal",
+      "payload_schema_id": "trellis://schemas/journal-event-payload/v1",
+      "payload_schema_sha256": "56d511a8ce722f693c047eb149526b4bc90375a83b59b77add9460a6b2d804eb",
+      "payload_hash_tag": "journal-event-payload",
+      "payload_reference_mode": "embedded_self_digest",
+      "allowed_subject_hash_tags": [
+        "formal-refutation"
+      ],
+      "subject_reference_mode": "embedded_self_digest",
+      "authorization_requirement": "none"
+    },
+    {
+      "event_kind": "unrestricted_verdict_recorded",
+      "envelope_actor_role": "kernel",
+      "actor_identity_policy": "trellis-kernel",
+      "authentication_method": "kernel_internal",
+      "payload_schema_id": "trellis://schemas/journal-event-payload/v1",
+      "payload_schema_sha256": "56d511a8ce722f693c047eb149526b4bc90375a83b59b77add9460a6b2d804eb",
+      "payload_hash_tag": "journal-event-payload",
+      "payload_reference_mode": "embedded_self_digest",
+      "allowed_subject_hash_tags": [
+        "raw-artifact"
+      ],
+      "subject_reference_mode": "raw_bytes_hash",
+      "authorization_requirement": "none"
+    },
+    {
+      "event_kind": "source_validation_classified",
+      "envelope_actor_role": "kernel",
+      "actor_identity_policy": "trellis-kernel",
+      "authentication_method": "kernel_internal",
+      "payload_schema_id": "trellis://schemas/journal-event-payload/v1",
+      "payload_schema_sha256": "56d511a8ce722f693c047eb149526b4bc90375a83b59b77add9460a6b2d804eb",
+      "payload_hash_tag": "journal-event-payload",
+      "payload_reference_mode": "embedded_self_digest",
+      "allowed_subject_hash_tags": [
+        "source-validation-contract"
+      ],
+      "subject_reference_mode": "embedded_self_digest",
+      "authorization_requirement": "none"
+    },
+    {
+      "event_kind": "source_validation_attempt_recorded",
+      "envelope_actor_role": "kernel",
+      "actor_identity_policy": "trellis-kernel",
+      "authentication_method": "kernel_internal",
+      "payload_schema_id": "trellis://schemas/journal-event-payload/v1",
+      "payload_schema_sha256": "56d511a8ce722f693c047eb149526b4bc90375a83b59b77add9460a6b2d804eb",
+      "payload_hash_tag": "journal-event-payload",
+      "payload_reference_mode": "embedded_self_digest",
+      "allowed_subject_hash_tags": [
+        "source-validation-attempt"
+      ],
+      "subject_reference_mode": "embedded_self_digest",
+      "authorization_requirement": "none"
+    },
+    {
+      "event_kind": "source_validation_outcome_recorded",
+      "envelope_actor_role": "kernel",
+      "actor_identity_policy": "trellis-kernel",
+      "authentication_method": "kernel_internal",
+      "payload_schema_id": "trellis://schemas/journal-event-payload/v1",
+      "payload_schema_sha256": "56d511a8ce722f693c047eb149526b4bc90375a83b59b77add9460a6b2d804eb",
+      "payload_hash_tag": "journal-event-payload",
+      "payload_reference_mode": "embedded_self_digest",
+      "allowed_subject_hash_tags": [
+        "source-validation-outcome"
+      ],
+      "subject_reference_mode": "embedded_self_digest",
+      "authorization_requirement": "none"
+    },
+    {
+      "event_kind": "reflection_validation_result_recorded",
+      "envelope_actor_role": "kernel",
+      "actor_identity_policy": "trellis-kernel",
+      "authentication_method": "kernel_internal",
+      "payload_schema_id": "trellis://schemas/journal-event-payload/v1",
+      "payload_schema_sha256": "56d511a8ce722f693c047eb149526b4bc90375a83b59b77add9460a6b2d804eb",
+      "payload_hash_tag": "journal-event-payload",
+      "payload_reference_mode": "embedded_self_digest",
+      "allowed_subject_hash_tags": [
+        "reflection-validation-result"
+      ],
+      "subject_reference_mode": "embedded_self_digest",
+      "authorization_requirement": "none"
+    },
+    {
+      "event_kind": "source_validation_history_summarized",
+      "envelope_actor_role": "kernel",
+      "actor_identity_policy": "trellis-kernel",
+      "authentication_method": "kernel_internal",
+      "payload_schema_id": "trellis://schemas/journal-event-payload/v1",
+      "payload_schema_sha256": "56d511a8ce722f693c047eb149526b4bc90375a83b59b77add9460a6b2d804eb",
+      "payload_hash_tag": "journal-event-payload",
+      "payload_reference_mode": "embedded_self_digest",
+      "allowed_subject_hash_tags": [
+        "source-validation-history-summary"
+      ],
+      "subject_reference_mode": "embedded_self_digest",
+      "authorization_requirement": "none"
+    },
+    {
+      "event_kind": "approved_profile_selected",
+      "envelope_actor_role": "kernel",
+      "actor_identity_policy": "trellis-kernel",
+      "authentication_method": "kernel_internal",
+      "payload_schema_id": "trellis://schemas/journal-event-payload/v1",
+      "payload_schema_sha256": "56d511a8ce722f693c047eb149526b4bc90375a83b59b77add9460a6b2d804eb",
+      "payload_hash_tag": "journal-event-payload",
+      "payload_reference_mode": "embedded_self_digest",
+      "allowed_subject_hash_tags": [
+        "qualification-profile"
+      ],
+      "subject_reference_mode": "embedded_self_digest",
+      "authorization_requirement": "none"
+    },
+    {
+      "event_kind": "conditional_statement_generated",
+      "envelope_actor_role": "kernel",
+      "actor_identity_policy": "trellis-kernel",
+      "authentication_method": "kernel_internal",
+      "payload_schema_id": "trellis://schemas/journal-event-payload/v1",
+      "payload_schema_sha256": "56d511a8ce722f693c047eb149526b4bc90375a83b59b77add9460a6b2d804eb",
+      "payload_hash_tag": "journal-event-payload",
+      "payload_reference_mode": "embedded_self_digest",
+      "allowed_subject_hash_tags": [
+        "raw-artifact"
+      ],
+      "subject_reference_mode": "raw_bytes_hash",
+      "authorization_requirement": "none"
+    },
+    {
+      "event_kind": "qualification_obligations_checked",
+      "envelope_actor_role": "kernel",
+      "actor_identity_policy": "trellis-kernel",
+      "authentication_method": "kernel_internal",
+      "payload_schema_id": "trellis://schemas/journal-event-payload/v1",
+      "payload_schema_sha256": "56d511a8ce722f693c047eb149526b4bc90375a83b59b77add9460a6b2d804eb",
+      "payload_hash_tag": "journal-event-payload",
+      "payload_reference_mode": "embedded_self_digest",
+      "allowed_subject_hash_tags": [
+        "qualification-bundle"
+      ],
+      "subject_reference_mode": "embedded_self_digest",
+      "authorization_requirement": "none"
+    },
+    {
+      "event_kind": "no_qualified_result_established",
+      "envelope_actor_role": "kernel",
+      "actor_identity_policy": "trellis-kernel",
+      "authentication_method": "kernel_internal",
+      "payload_schema_id": "trellis://schemas/journal-event-payload/v1",
+      "payload_schema_sha256": "56d511a8ce722f693c047eb149526b4bc90375a83b59b77add9460a6b2d804eb",
+      "payload_hash_tag": "journal-event-payload",
+      "payload_reference_mode": "embedded_self_digest",
+      "allowed_subject_hash_tags": [
+        "raw-artifact"
+      ],
+      "subject_reference_mode": "raw_bytes_hash",
+      "authorization_requirement": "none"
+    },
+    {
+      "event_kind": "applicability_classified",
+      "envelope_actor_role": "kernel",
+      "actor_identity_policy": "trellis-kernel",
+      "authentication_method": "kernel_internal",
+      "payload_schema_id": "trellis://schemas/journal-event-payload/v1",
+      "payload_schema_sha256": "56d511a8ce722f693c047eb149526b4bc90375a83b59b77add9460a6b2d804eb",
+      "payload_hash_tag": "journal-event-payload",
+      "payload_reference_mode": "embedded_self_digest",
+      "allowed_subject_hash_tags": [
+        "applicability-result"
+      ],
+      "subject_reference_mode": "embedded_self_digest",
+      "authorization_requirement": "none"
+    },
+    {
+      "event_kind": "external_claim_rows_generated",
+      "envelope_actor_role": "kernel",
+      "actor_identity_policy": "trellis-kernel",
+      "authentication_method": "kernel_internal",
+      "payload_schema_id": "trellis://schemas/journal-event-payload/v1",
+      "payload_schema_sha256": "56d511a8ce722f693c047eb149526b4bc90375a83b59b77add9460a6b2d804eb",
+      "payload_hash_tag": "journal-event-payload",
+      "payload_reference_mode": "embedded_self_digest",
+      "allowed_subject_hash_tags": [
+        "raw-artifact"
+      ],
+      "subject_reference_mode": "raw_bytes_hash",
+      "authorization_requirement": "none"
+    },
+    {
+      "event_kind": "package_authorized",
+      "envelope_actor_role": "kernel",
+      "actor_identity_policy": "trellis-kernel",
+      "authentication_method": "kernel_internal",
+      "payload_schema_id": "trellis://schemas/journal-event-payload/v1",
+      "payload_schema_sha256": "56d511a8ce722f693c047eb149526b4bc90375a83b59b77add9460a6b2d804eb",
+      "payload_hash_tag": "journal-event-payload",
+      "payload_reference_mode": "embedded_self_digest",
+      "allowed_subject_hash_tags": [
+        "package-authorization"
+      ],
+      "subject_reference_mode": "full_record_hash",
+      "authorization_requirement": "none"
+    },
+    {
+      "event_kind": "audit_authorization",
+      "envelope_actor_role": "audit_authority",
+      "actor_identity_policy": "payload-audit-identity",
+      "authentication_method": "audit_signature_v1",
+      "payload_schema_id": "trellis://schemas/journal-event-payload/v1",
+      "payload_schema_sha256": "56d511a8ce722f693c047eb149526b4bc90375a83b59b77add9460a6b2d804eb",
+      "payload_hash_tag": "journal-event-payload",
+      "payload_reference_mode": "embedded_self_digest",
+      "allowed_subject_hash_tags": [
+        "audit-authorization"
+      ],
+      "subject_reference_mode": "embedded_self_digest",
+      "authorization_requirement": "none"
+    },
+    {
+      "event_kind": "revision_opened",
+      "envelope_actor_role": "kernel",
+      "actor_identity_policy": "trellis-kernel",
+      "authentication_method": "kernel_internal",
+      "payload_schema_id": "trellis://schemas/journal-event-payload/v1",
+      "payload_schema_sha256": "56d511a8ce722f693c047eb149526b4bc90375a83b59b77add9460a6b2d804eb",
+      "payload_hash_tag": "journal-event-payload",
+      "payload_reference_mode": "embedded_self_digest",
+      "allowed_subject_hash_tags": [
+        "raw-artifact"
+      ],
+      "subject_reference_mode": "raw_bytes_hash",
+      "authorization_requirement": "revision_lane"
+    },
+    {
+      "event_kind": "protected_reapproval_approved",
+      "envelope_actor_role": "reviewer",
+      "actor_identity_policy": "payload-reviewer-identity",
+      "authentication_method": "authenticated_gate_receipt",
+      "payload_schema_id": "trellis://schemas/journal-event-payload/v1",
+      "payload_schema_sha256": "56d511a8ce722f693c047eb149526b4bc90375a83b59b77add9460a6b2d804eb",
+      "payload_hash_tag": "journal-event-payload",
+      "payload_reference_mode": "embedded_self_digest",
+      "allowed_subject_hash_tags": [
+        "human-approval"
+      ],
+      "subject_reference_mode": "full_record_hash",
+      "authorization_requirement": "revision_lane"
+    },
+    {
+      "event_kind": "protected_reapproval_feedback",
+      "envelope_actor_role": "reviewer",
+      "actor_identity_policy": "payload-reviewer-identity",
+      "authentication_method": "authenticated_gate_receipt",
+      "payload_schema_id": "trellis://schemas/journal-event-payload/v1",
+      "payload_schema_sha256": "56d511a8ce722f693c047eb149526b4bc90375a83b59b77add9460a6b2d804eb",
+      "payload_hash_tag": "journal-event-payload",
+      "payload_reference_mode": "embedded_self_digest",
+      "allowed_subject_hash_tags": [
+        "raw-artifact"
+      ],
+      "subject_reference_mode": "raw_bytes_hash",
+      "authorization_requirement": "revision_lane"
+    },
+    {
+      "event_kind": "revoked",
+      "envelope_actor_role": "kernel",
+      "actor_identity_policy": "trellis-kernel",
+      "authentication_method": "kernel_internal",
+      "payload_schema_id": "trellis://schemas/journal-event-payload/v1",
+      "payload_schema_sha256": "56d511a8ce722f693c047eb149526b4bc90375a83b59b77add9460a6b2d804eb",
+      "payload_hash_tag": "journal-event-payload",
+      "payload_reference_mode": "embedded_self_digest",
+      "allowed_subject_hash_tags": [
+        "raw-artifact"
+      ],
+      "subject_reference_mode": "raw_bytes_hash",
+      "authorization_requirement": "none"
+    }
+  ],
+  "policy_sha256": "e3c0e814f6b37545b423365b973f873f985da9ca4417b456d55bdfb7bc927825"
+}

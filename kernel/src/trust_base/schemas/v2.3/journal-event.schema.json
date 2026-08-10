@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trellis://schemas/journal-event/v1",
+  "title": "Trellis authoritative trust journal event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "journal_schema",
+    "journal_id",
+    "run_id",
+    "sequence_number",
+    "transaction_id",
+    "previous_event_hash",
+    "event_kind",
+    "payload_schema_id",
+    "payload_schema_sha256",
+    "payload_hash",
+    "semantic_root_before",
+    "semantic_root_after",
+    "derived_result_root_before",
+    "derived_result_root_after",
+    "actor_role",
+    "actor_identity",
+    "actor_authentication_method",
+    "event_hash"
+  ],
+  "properties": {
+    "journal_schema": { "const": "trellis-trust-journal/v1" },
+    "journal_id": { "$ref": "#/$defs/id" },
+    "run_id": { "$ref": "#/$defs/id" },
+    "sequence_number": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "transaction_id": { "$ref": "#/$defs/id" },
+    "previous_event_hash": { "$ref": "#/$defs/hash" },
+    "event_kind": {
+      "enum": [
+        "seed_committed",
+        "source_claim_lineage_registered",
+        "source_claim_lineage_resolution_recorded",
+        "source_model_mismatch_resolved",
+        "advance_gate_approved",
+        "advance_gate_feedback",
+        "proof_checked",
+        "witness_refutation_checked",
+        "unrestricted_verdict_recorded",
+        "source_validation_classified",
+        "source_validation_attempt_recorded",
+        "source_validation_outcome_recorded",
+        "reflection_validation_result_recorded",
+        "source_validation_history_summarized",
+        "approved_profile_selected",
+        "conditional_statement_generated",
+        "qualification_obligations_checked",
+        "no_qualified_result_established",
+        "applicability_classified",
+        "external_claim_rows_generated",
+        "package_authorized",
+        "audit_authorization",
+        "revision_opened",
+        "protected_reapproval_approved",
+        "protected_reapproval_feedback",
+        "revoked"
+      ]
+    },
+    "payload_schema_id": {
+      "const": "trellis://schemas/journal-event-payload/v1"
+    },
+    "payload_schema_sha256": { "$ref": "#/$defs/hash" },
+    "payload_hash": { "$ref": "#/$defs/hash" },
+    "semantic_root_before": { "$ref": "#/$defs/hash" },
+    "semantic_root_after": { "$ref": "#/$defs/hash" },
+    "derived_result_root_before": { "$ref": "#/$defs/hash" },
+    "derived_result_root_after": { "$ref": "#/$defs/hash" },
+    "actor_role": {
+      "enum": ["kernel", "reviewer", "audit_authority"]
+    },
+    "actor_identity": { "$ref": "#/$defs/id" },
+    "actor_authentication_method": {
+      "enum": ["kernel_internal", "authenticated_gate_receipt", "audit_signature_v1"]
+    },
+    "actor_authentication_receipt_sha256": { "$ref": "#/$defs/hash" },
+    "authorization_id": { "$ref": "#/$defs/id" },
+    "authorization_event_hash": { "$ref": "#/$defs/hash" },
+    "revision_lane_id": { "$ref": "#/$defs/id" },
+    "event_hash": { "$ref": "#/$defs/hash" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "event_kind": {
+            "enum": [
+              "revision_opened",
+              "protected_reapproval_approved",
+              "protected_reapproval_feedback",
+              "source_claim_lineage_resolution_recorded",
+              "source_model_mismatch_resolved"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": ["authorization_id", "authorization_event_hash", "revision_lane_id"]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_kind": {
+            "enum": [
+              "seed_committed",
+              "source_claim_lineage_registered",
+              "source_claim_lineage_resolution_recorded",
+              "source_model_mismatch_resolved",
+              "proof_checked",
+              "witness_refutation_checked",
+              "unrestricted_verdict_recorded",
+              "source_validation_classified",
+              "source_validation_attempt_recorded",
+              "source_validation_outcome_recorded",
+              "reflection_validation_result_recorded",
+              "source_validation_history_summarized",
+              "approved_profile_selected",
+              "conditional_statement_generated",
+              "qualification_obligations_checked",
+              "no_qualified_result_established",
+              "applicability_classified",
+              "external_claim_rows_generated",
+              "package_authorized",
+              "revision_opened",
+              "revoked"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "actor_role": { "const": "kernel" },
+          "actor_identity": { "const": "trellis-kernel" },
+          "actor_authentication_method": { "const": "kernel_internal" }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "event_kind": {
+            "enum": [
+              "advance_gate_approved",
+              "advance_gate_feedback",
+              "protected_reapproval_approved",
+              "protected_reapproval_feedback"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": ["actor_authentication_receipt_sha256"],
+        "properties": {
+          "actor_role": { "const": "reviewer" },
+          "actor_authentication_method": { "const": "authenticated_gate_receipt" }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "event_kind": { "const": "audit_authorization" } } },
+      "then": {
+        "required": ["actor_authentication_receipt_sha256"],
+        "properties": {
+          "actor_role": { "const": "audit_authority" },
+          "actor_authentication_method": { "const": "audit_signature_v1" }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 256 }
+  }
+}

@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trellis://schemas/source-precondition-closure/v1",
+  "title": "Exact witness-specific closure over every validation-contract precondition",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "closure_id",
+    "validation_contract_sha256",
+    "witness_term_sha256",
+    "entries",
+    "generated_conjunction_statement_sha256",
+    "checked_conjunction_proof_sha256",
+    "checker_and_axiom_closure_sha256",
+    "closure_sha256"
+  ],
+  "properties": {
+    "schema": { "const": "trellis-source-precondition-closure/v1" },
+    "closure_id": { "$ref": "#/$defs/id" },
+    "validation_contract_sha256": { "$ref": "#/$defs/hash" },
+    "witness_term_sha256": { "$ref": "#/$defs/hash" },
+    "entries": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/entry" }
+    },
+    "generated_conjunction_statement_sha256": { "$ref": "#/$defs/hash" },
+    "checked_conjunction_proof_sha256": { "$ref": "#/$defs/hash" },
+    "checker_and_axiom_closure_sha256": { "$ref": "#/$defs/hash" },
+    "closure_sha256": { "$ref": "#/$defs/hash" }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "precondition_id",
+        "normalized_statement_sha256",
+        "checker_sha256",
+        "result",
+        "checker_receipt_sha256"
+      ],
+      "properties": {
+        "precondition_id": { "$ref": "#/$defs/id" },
+        "normalized_statement_sha256": { "$ref": "#/$defs/hash" },
+        "checker_sha256": { "$ref": "#/$defs/hash" },
+        "result": { "const": true },
+        "checker_receipt_sha256": { "$ref": "#/$defs/hash" }
+      }
+    }
+  }
+}

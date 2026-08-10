@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trellis://schemas/actor-authentication-receipt/v1",
+  "title": "Authenticated reviewer gate or audit authorization receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "authentication_method",
+    "journal_id",
+    "run_id",
+    "transaction_id",
+    "event_kind",
+    "event_payload_sha256",
+    "predecessor_head",
+    "actor_role",
+    "actor_identity",
+    "key_id",
+    "gate_or_revision_lane_id",
+    "signing_digest_sha256",
+    "signature_ed25519_hex",
+    "receipt_sha256"
+  ],
+  "properties": {
+    "schema": { "const": "trellis-actor-authentication-receipt/v1" },
+    "authentication_method": {
+      "enum": ["authenticated_gate_receipt", "audit_signature_v1"]
+    },
+    "journal_id": { "$ref": "#/$defs/id" },
+    "run_id": { "$ref": "#/$defs/id" },
+    "transaction_id": { "$ref": "#/$defs/id" },
+    "event_kind": {
+      "enum": [
+        "advance_gate_approved",
+        "advance_gate_feedback",
+        "protected_reapproval_approved",
+        "protected_reapproval_feedback",
+        "audit_authorization"
+      ]
+    },
+    "event_payload_sha256": { "$ref": "#/$defs/hash" },
+    "predecessor_head": { "$ref": "#/$defs/head" },
+    "actor_role": { "enum": ["reviewer", "audit_authority"] },
+    "actor_identity": { "$ref": "#/$defs/id" },
+    "key_id": { "$ref": "#/$defs/id" },
+    "gate_or_revision_lane_id": { "$ref": "#/$defs/id" },
+    "signing_digest_sha256": { "$ref": "#/$defs/hash" },
+    "signature_ed25519_hex": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{128}$"
+    },
+    "receipt_sha256": { "$ref": "#/$defs/hash" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "authentication_method": { "const": "authenticated_gate_receipt" }
+        }
+      },
+      "then": { "properties": { "actor_role": { "const": "reviewer" } } },
+      "else": {
+        "properties": { "actor_role": { "const": "audit_authority" } }
+      }
+    }
+  ],
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "head": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["journal_id", "sequence_number", "event_hash"],
+      "properties": {
+        "journal_id": { "$ref": "#/$defs/id" },
+        "sequence_number": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "event_hash": { "$ref": "#/$defs/hash" }
+      }
+    }
+  }
+}

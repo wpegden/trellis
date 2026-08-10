@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trellis://schemas/package-authorization-sidecar/v1",
+  "title": "Detached authorization sidecar for one exact package archive",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "package_presentation_sha256",
+    "package_authorization_bundle",
+    "authentication_key_manifest",
+    "journal_commit_receipt",
+    "canonical_genesis_head",
+    "journal_chain_bundles",
+    "pre_authorization_journal_head",
+    "committed_authorization_journal_head",
+    "sidecar_sha256"
+  ],
+  "properties": {
+    "schema": { "const": "trellis-package-authorization-sidecar/v1" },
+    "package_presentation_sha256": { "$ref": "#/$defs/hash" },
+    "package_authorization_bundle": { "$ref": "trellis://schemas/journal-event-bundle/v1" },
+    "authentication_key_manifest": {
+      "$ref": "trellis://schemas/actor-authentication-key-manifest/v1"
+    },
+    "journal_commit_receipt": {
+      "$ref": "trellis://schemas/journal-commit-receipt/v1"
+    },
+    "canonical_genesis_head": { "$ref": "#/$defs/genesisHead" },
+    "journal_chain_bundles": {
+      "type": "array",
+      "minItems": 2,
+      "items": { "$ref": "trellis://schemas/journal-event-bundle/v1" },
+      "contains": {
+        "allOf": [
+          { "$ref": "trellis://schemas/journal-event-bundle/v1" },
+          {
+            "properties": {
+              "event": {
+                "properties": {
+                  "event_kind": {
+                    "enum": ["advance_gate_approved", "protected_reapproval_approved"]
+                  }
+                },
+                "required": ["event_kind"]
+              }
+            },
+            "required": ["event"]
+          }
+        ]
+      },
+      "minContains": 1
+    },
+    "pre_authorization_journal_head": { "$ref": "#/$defs/head" },
+    "committed_authorization_journal_head": { "$ref": "#/$defs/head" },
+    "sidecar_sha256": { "$ref": "#/$defs/hash" }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "head": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["journal_id", "sequence_number", "event_hash"],
+      "properties": {
+        "journal_id": { "$ref": "#/$defs/id" },
+        "sequence_number": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "event_hash": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "genesisHead": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["journal_id", "sequence_number", "event_hash"],
+      "properties": {
+        "journal_id": { "$ref": "#/$defs/id" },
+        "sequence_number": { "const": 0 },
+        "event_hash": { "$ref": "#/$defs/hash" }
+      }
+    }
+  }
+}

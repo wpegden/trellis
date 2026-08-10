@@ -1,0 +1,953 @@
+{
+  "canonical_genesis_sha256": "35f71b755a1d98f32f4b735600240b1933c1980c40fc9760337d201dee502418",
+  "dependency_order": [
+    {
+      "dependency_ids": [],
+      "order_index": 0,
+      "record_id": "dag-target-definition",
+      "record_kind": "target_definition"
+    },
+    {
+      "dependency_ids": [],
+      "order_index": 1,
+      "record_id": "dag-conditionalization",
+      "record_kind": "conditionalization_schema"
+    },
+    {
+      "dependency_ids": [],
+      "order_index": 2,
+      "record_id": "dag-source-interpretation",
+      "record_kind": "source_interpretation_definition"
+    },
+    {
+      "dependency_ids": [],
+      "order_index": 3,
+      "record_id": "dag-precondition-definition",
+      "record_kind": "precondition_definition"
+    },
+    {
+      "dependency_ids": [],
+      "order_index": 4,
+      "record_id": "dag-refinement-definition",
+      "record_kind": "carrier_refinement_definition"
+    },
+    {
+      "dependency_ids": [],
+      "order_index": 5,
+      "record_id": "dag-build-definition",
+      "record_kind": "build_definition"
+    },
+    {
+      "dependency_ids": [],
+      "order_index": 6,
+      "record_id": "dag-semantic-validator",
+      "record_kind": "semantic_validator"
+    },
+    {
+      "dependency_ids": [],
+      "order_index": 7,
+      "record_id": "dag-evidence-tool-input",
+      "record_kind": "evidence_tool_input"
+    },
+    {
+      "dependency_ids": [],
+      "order_index": 8,
+      "record_id": "dag-measure-grammar",
+      "record_kind": "semantic_validator"
+    },
+    {
+      "dependency_ids": [
+        "dag-evidence-tool-input",
+        "dag-semantic-validator"
+      ],
+      "order_index": 9,
+      "record_id": "dag-fact-class-registry",
+      "record_kind": "basis_fact_class_registry"
+    },
+    {
+      "dependency_ids": [
+        "dag-build-definition",
+        "dag-precondition-definition",
+        "dag-refinement-definition",
+        "dag-source-interpretation",
+        "dag-target-definition"
+      ],
+      "order_index": 10,
+      "record_id": "dag-lineage",
+      "record_kind": "source_claim_lineage"
+    },
+    {
+      "dependency_ids": [
+        "dag-evidence-tool-input",
+        "dag-lineage",
+        "dag-semantic-validator"
+      ],
+      "order_index": 11,
+      "record_id": "dag-contract",
+      "record_kind": "source_validation_contract"
+    },
+    {
+      "dependency_ids": [
+        "dag-measure-grammar"
+      ],
+      "order_index": 12,
+      "record_id": "dag-measure-catalog",
+      "record_kind": "measure_catalog"
+    },
+    {
+      "dependency_ids": [
+        "dag-fact-class-registry",
+        "dag-measure-catalog"
+      ],
+      "order_index": 13,
+      "record_id": "dag-basis-derivation",
+      "record_kind": "independent_basis_derivation"
+    },
+    {
+      "dependency_ids": [
+        "dag-basis-derivation",
+        "dag-contract",
+        "dag-lineage"
+      ],
+      "order_index": 14,
+      "record_id": "dag-basis",
+      "record_kind": "independent_basis"
+    },
+    {
+      "dependency_ids": [
+        "dag-basis",
+        "dag-conditionalization",
+        "dag-contract"
+      ],
+      "order_index": 15,
+      "record_id": "dag-profile",
+      "record_kind": "qualification_profile"
+    },
+    {
+      "dependency_ids": [
+        "dag-profile"
+      ],
+      "order_index": 16,
+      "record_id": "dag-conditional-candidate",
+      "record_kind": "conditional_theorem_candidate"
+    },
+    {
+      "dependency_ids": [
+        "dag-profile"
+      ],
+      "order_index": 17,
+      "record_id": "dag-catalog",
+      "record_kind": "qualification_profile_catalog"
+    },
+    {
+      "dependency_ids": [
+        "dag-basis",
+        "dag-basis-derivation",
+        "dag-build-definition",
+        "dag-catalog",
+        "dag-conditional-candidate",
+        "dag-conditionalization",
+        "dag-contract",
+        "dag-evidence-tool-input",
+        "dag-fact-class-registry",
+        "dag-lineage",
+        "dag-measure-catalog",
+        "dag-measure-grammar",
+        "dag-precondition-definition",
+        "dag-profile",
+        "dag-refinement-definition",
+        "dag-semantic-validator",
+        "dag-source-interpretation",
+        "dag-target-definition"
+      ],
+      "order_index": 18,
+      "record_id": "dag-roots",
+      "record_kind": "authored_and_evidence_roots"
+    },
+    {
+      "dependency_ids": [
+        "dag-roots"
+      ],
+      "order_index": 19,
+      "record_id": "dag-seed-plan",
+      "record_kind": "seed_manifest"
+    },
+    {
+      "dependency_ids": [
+        "dag-seed-plan"
+      ],
+      "order_index": 20,
+      "record_id": "dag-seed-transaction",
+      "record_kind": "seed_event"
+    },
+    {
+      "dependency_ids": [
+        "dag-seed-transaction"
+      ],
+      "order_index": 21,
+      "record_id": "dag-lineage-index-transaction",
+      "record_kind": "lineage_index_event"
+    },
+    {
+      "dependency_ids": [
+        "dag-lineage-index-transaction"
+      ],
+      "order_index": 22,
+      "record_id": "dag-advance-transaction",
+      "record_kind": "advance_approval_event"
+    }
+  ],
+  "events": [
+    {
+      "event": {
+        "actor_authentication_method": "kernel_internal",
+        "actor_identity": "trellis-kernel",
+        "actor_role": "kernel",
+        "derived_result_root_after": "84323ef1654b91661448d05f2083c22242fc29ca6a71a53758a7fcba42985f2d",
+        "derived_result_root_before": "84323ef1654b91661448d05f2083c22242fc29ca6a71a53758a7fcba42985f2d",
+        "event_hash": "5ec8027aad82bdb8f7fb5e442cb90e9f4e9d4401fb5df5a6533eefd4d2a54fc6",
+        "event_kind": "seed_committed",
+        "journal_id": "dag-fixture-journal",
+        "journal_schema": "trellis-trust-journal/v1",
+        "payload_hash": "3070ff32f3d40d28a56d454b1c2dae34e6593f9d3f91fccfad2130ace5105246",
+        "payload_schema_id": "trellis://schemas/journal-event-payload/v1",
+        "payload_schema_sha256": "56d511a8ce722f693c047eb149526b4bc90375a83b59b77add9460a6b2d804eb",
+        "previous_event_hash": "35f71b755a1d98f32f4b735600240b1933c1980c40fc9760337d201dee502418",
+        "run_id": "dag-fixture-run",
+        "semantic_root_after": "5680a8aa4d2723ec3e4d13ef8dfe227534c08b9c1f1435c120372f9d7e2562be",
+        "semantic_root_before": "117f9f2b7a23b37b5724b4d53b6657cf7834025a10477a46f0d15347975201da",
+        "sequence_number": 1,
+        "transaction_id": "dag-seed-transaction"
+      },
+      "payload": {
+        "event_kind": "seed_committed",
+        "journal_predecessor_sha256": "35f71b755a1d98f32f4b735600240b1933c1980c40fc9760337d201dee502418",
+        "payload_sha256": "3070ff32f3d40d28a56d454b1c2dae34e6593f9d3f91fccfad2130ace5105246",
+        "schema": "trellis-journal-event-payload/v1",
+        "subject_hash_tag": "seed-authored-definition-manifest",
+        "subject_id": "dag-seed-plan",
+        "subject_kind": "canonical_record",
+        "subject_schema_id": "trellis://schemas/seed-authored-definition-manifest/v1",
+        "subject_schema_sha256": "c15dbd113c7cec75eb0b28fa56d9339f144b2f4bb4d3bcdb7d11868fcf58d389",
+        "subject_sha256": "e3e12b8cffda4f9da1c98a09d81051c77be14057cec56b0bbfe44c73167997f2"
+      }
+    },
+    {
+      "event": {
+        "actor_authentication_method": "kernel_internal",
+        "actor_identity": "trellis-kernel",
+        "actor_role": "kernel",
+        "derived_result_root_after": "84323ef1654b91661448d05f2083c22242fc29ca6a71a53758a7fcba42985f2d",
+        "derived_result_root_before": "84323ef1654b91661448d05f2083c22242fc29ca6a71a53758a7fcba42985f2d",
+        "event_hash": "145ffe518a40da25a058843fd9a2d1b50c814e50e659fc837d4107d35360b76e",
+        "event_kind": "source_claim_lineage_registered",
+        "journal_id": "dag-fixture-journal",
+        "journal_schema": "trellis-trust-journal/v1",
+        "payload_hash": "72ae1bb981c5530f15f1b3006f28da6aaa397f8e7711748bf543e9b173d3c09f",
+        "payload_schema_id": "trellis://schemas/journal-event-payload/v1",
+        "payload_schema_sha256": "56d511a8ce722f693c047eb149526b4bc90375a83b59b77add9460a6b2d804eb",
+        "previous_event_hash": "5ec8027aad82bdb8f7fb5e442cb90e9f4e9d4401fb5df5a6533eefd4d2a54fc6",
+        "run_id": "dag-fixture-run",
+        "semantic_root_after": "5680a8aa4d2723ec3e4d13ef8dfe227534c08b9c1f1435c120372f9d7e2562be",
+        "semantic_root_before": "5680a8aa4d2723ec3e4d13ef8dfe227534c08b9c1f1435c120372f9d7e2562be",
+        "sequence_number": 2,
+        "transaction_id": "dag-lineage-index-transaction"
+      },
+      "payload": {
+        "event_kind": "source_claim_lineage_registered",
+        "journal_predecessor_sha256": "5ec8027aad82bdb8f7fb5e442cb90e9f4e9d4401fb5df5a6533eefd4d2a54fc6",
+        "payload_sha256": "72ae1bb981c5530f15f1b3006f28da6aaa397f8e7711748bf543e9b173d3c09f",
+        "schema": "trellis-journal-event-payload/v1",
+        "subject_hash_tag": "source-claim-lineage",
+        "subject_id": "dag-lineage",
+        "subject_kind": "canonical_record",
+        "subject_schema_id": "trellis://schemas/source-claim-lineage/v1",
+        "subject_schema_sha256": "d3b16453505162277dd8e8931775138f4d6a8e909a414bd05c32adc65776b6d8",
+        "subject_sha256": "254a99a96f9d96c22b03ed4d783c8d420bed13d25444acd62a7c012260ae625b"
+      }
+    },
+    {
+      "event": {
+        "actor_authentication_method": "authenticated_gate_receipt",
+        "actor_authentication_receipt_sha256": "885f1d2ca2d5f682bc9931b3634d8bbfd4e37bb6a89c143427ea4af89c678392",
+        "actor_identity": "fixture-reviewer",
+        "actor_role": "reviewer",
+        "derived_result_root_after": "84323ef1654b91661448d05f2083c22242fc29ca6a71a53758a7fcba42985f2d",
+        "derived_result_root_before": "84323ef1654b91661448d05f2083c22242fc29ca6a71a53758a7fcba42985f2d",
+        "event_hash": "b33d91be84c6f2995f29cdbd8be995041240ffa5cb95f957f51c673fd0487284",
+        "event_kind": "advance_gate_approved",
+        "journal_id": "dag-fixture-journal",
+        "journal_schema": "trellis-trust-journal/v1",
+        "payload_hash": "d2befc539d99bc0a974f0b4d3727d38c9b02e3e38b03487bb3cae05ea500663c",
+        "payload_schema_id": "trellis://schemas/journal-event-payload/v1",
+        "payload_schema_sha256": "56d511a8ce722f693c047eb149526b4bc90375a83b59b77add9460a6b2d804eb",
+        "previous_event_hash": "145ffe518a40da25a058843fd9a2d1b50c814e50e659fc837d4107d35360b76e",
+        "run_id": "dag-fixture-run",
+        "semantic_root_after": "5680a8aa4d2723ec3e4d13ef8dfe227534c08b9c1f1435c120372f9d7e2562be",
+        "semantic_root_before": "5680a8aa4d2723ec3e4d13ef8dfe227534c08b9c1f1435c120372f9d7e2562be",
+        "sequence_number": 3,
+        "transaction_id": "dag-advance-transaction"
+      },
+      "payload": {
+        "event_kind": "advance_gate_approved",
+        "journal_predecessor_sha256": "145ffe518a40da25a058843fd9a2d1b50c814e50e659fc837d4107d35360b76e",
+        "payload_sha256": "d2befc539d99bc0a974f0b4d3727d38c9b02e3e38b03487bb3cae05ea500663c",
+        "principal_identity": "fixture-reviewer",
+        "schema": "trellis-journal-event-payload/v1",
+        "subject_hash_tag": "human-approval",
+        "subject_id": "dag-gate-episode",
+        "subject_kind": "canonical_record",
+        "subject_schema_id": "trellis://schemas/approval-and-package/v1",
+        "subject_schema_sha256": "572bcf5ae7116b712b5fdeab0307e742288fdd26e0ed8d5f007c90cc68d3a118",
+        "subject_sha256": "2fdfb94841c29218b1d11f162f2b53b4b33f5520599ae775284fc49506f00c61"
+      }
+    }
+  ],
+  "gate_presentation_utf8": "dag fixture gate presentation\n",
+  "hash_recipe": "trellis-trust-v1/domain-separated-sha256+jcs-v1",
+  "negative_cases": [
+    {
+      "case_id": "child_to_manifest_backedge",
+      "mutation": "add seed manifest digest to a child",
+      "required_result": "reject"
+    },
+    {
+      "case_id": "measure_basis_backedge",
+      "mutation": "add basis digest to measure catalog",
+      "required_result": "reject"
+    },
+    {
+      "case_id": "non_genesis_seed_predecessor",
+      "mutation": "change an initial registration predecessor",
+      "required_result": "reject"
+    },
+    {
+      "case_id": "wrong_or_missing_definition_order",
+      "mutation": "reorder, omit, or add a manifest definition",
+      "required_result": "reject"
+    },
+    {
+      "case_id": "index_widens_root",
+      "mutation": "change a root at lineage index",
+      "required_result": "reject"
+    },
+    {
+      "case_id": "domain_tag_substitution",
+      "mutation": "reuse a digest under a different domain tag",
+      "required_result": "reject"
+    }
+  ],
+  "objects": {
+    "actor_authentication_receipt": {
+      "actor_identity": "fixture-reviewer",
+      "actor_role": "reviewer",
+      "authentication_method": "authenticated_gate_receipt",
+      "event_kind": "advance_gate_approved",
+      "event_payload_sha256": "d2befc539d99bc0a974f0b4d3727d38c9b02e3e38b03487bb3cae05ea500663c",
+      "gate_or_revision_lane_id": "dag-gate-episode",
+      "journal_id": "dag-fixture-journal",
+      "key_id": "fixture-reviewer-key",
+      "predecessor_head": {
+        "event_hash": "145ffe518a40da25a058843fd9a2d1b50c814e50e659fc837d4107d35360b76e",
+        "journal_id": "dag-fixture-journal",
+        "sequence_number": 2
+      },
+      "receipt_sha256": "885f1d2ca2d5f682bc9931b3634d8bbfd4e37bb6a89c143427ea4af89c678392",
+      "run_id": "dag-fixture-run",
+      "schema": "trellis-actor-authentication-receipt/v1",
+      "signature_ed25519_hex": "76aa98b862c369497114f2ce92de73218f283c027a7e3f41737996e8d6af9cd09c36e761e25fef5b247b9a5adb6b9aa086d4b69e59c747abbe48ac0d3131a20c",
+      "signing_digest_sha256": "cdff6ee5a1eb3ed3ec14cf9f4d4a982d32d3dad28daa696ce9765fb95119e012",
+      "transaction_id": "dag-advance-transaction"
+    },
+    "basis_fact_class_registry": {
+      "entries": [
+        {
+          "allowed_enforcements": [
+            "configuration_enforced"
+          ],
+          "allowed_scopes": [
+            "configuration"
+          ],
+          "entry_sha256": "433648729ad0beed73c3b4cd1e1d4abce667635e3d06f65f6ea03f6df211f2dc",
+          "fact_class": "configuration_limit",
+          "fact_schema_id": "trellis://facts/configuration_limit/v1",
+          "fact_schema_sha256": "a67e693e17648e43d47ac7003cbb0ea5ec4a7fc19f40d9883ef0fb28f0b012f8",
+          "validator_id": "dag-semantic-validator",
+          "validator_sha256": "a67e693e17648e43d47ac7003cbb0ea5ec4a7fc19f40d9883ef0fb28f0b012f8"
+        },
+        {
+          "allowed_enforcements": [
+            "deployment_enforced"
+          ],
+          "allowed_scopes": [
+            "deployment"
+          ],
+          "entry_sha256": "e48799191cfffd716f74d4c3327271bc19c51f7b4669e4e7bfd40dbe0fc784e4",
+          "fact_class": "deployment_limit",
+          "fact_schema_id": "trellis://facts/deployment_limit/v1",
+          "fact_schema_sha256": "a67e693e17648e43d47ac7003cbb0ea5ec4a7fc19f40d9883ef0fb28f0b012f8",
+          "validator_id": "dag-semantic-validator",
+          "validator_sha256": "a67e693e17648e43d47ac7003cbb0ea5ec4a7fc19f40d9883ef0fb28f0b012f8"
+        },
+        {
+          "allowed_enforcements": [
+            "deployment_enforced",
+            "observed"
+          ],
+          "allowed_scopes": [
+            "deployment",
+            "host"
+          ],
+          "attestation_authority_manifest_sha256": "aecf539673a56075681083222d1d031a8f0bd278e0a58628bb835c0daa6ada34",
+          "attestation_authorization_policy_sha256": "a67e693e17648e43d47ac7003cbb0ea5ec4a7fc19f40d9883ef0fb28f0b012f8",
+          "entry_sha256": "20454dda7e1454bdcaa06eab78fa215a80e5fc614611a7cee63368c44a7602ed",
+          "fact_class": "external_attestation_limit",
+          "fact_schema_id": "trellis://facts/external_attestation_limit/v1",
+          "fact_schema_sha256": "a67e693e17648e43d47ac7003cbb0ea5ec4a7fc19f40d9883ef0fb28f0b012f8",
+          "validator_id": "dag-semantic-validator",
+          "validator_sha256": "a67e693e17648e43d47ac7003cbb0ea5ec4a7fc19f40d9883ef0fb28f0b012f8"
+        },
+        {
+          "allowed_enforcements": [
+            "observed"
+          ],
+          "allowed_scopes": [
+            "host"
+          ],
+          "entry_sha256": "58f35937a3db2f58a026583055b5d919436b62488782678383e9df97a4b6b8d6",
+          "fact_class": "host_capability_limit",
+          "fact_schema_id": "trellis://facts/host_capability_limit/v1",
+          "fact_schema_sha256": "a67e693e17648e43d47ac7003cbb0ea5ec4a7fc19f40d9883ef0fb28f0b012f8",
+          "validator_id": "dag-semantic-validator",
+          "validator_sha256": "a67e693e17648e43d47ac7003cbb0ea5ec4a7fc19f40d9883ef0fb28f0b012f8"
+        },
+        {
+          "allowed_enforcements": [
+            "source_enforced"
+          ],
+          "allowed_scopes": [
+            "source"
+          ],
+          "entry_sha256": "14d7292851041018470317aac46708541dc62f25bf2e73abf6d4b59073f2ebd1",
+          "fact_class": "source_limit",
+          "fact_schema_id": "trellis://facts/source_limit/v1",
+          "fact_schema_sha256": "a67e693e17648e43d47ac7003cbb0ea5ec4a7fc19f40d9883ef0fb28f0b012f8",
+          "validator_id": "dag-semantic-validator",
+          "validator_sha256": "a67e693e17648e43d47ac7003cbb0ea5ec4a7fc19f40d9883ef0fb28f0b012f8"
+        }
+      ],
+      "registration_epoch": "seed",
+      "registration_predecessor_head_sha256": "35f71b755a1d98f32f4b735600240b1933c1980c40fc9760337d201dee502418",
+      "registry_id": "dag-fact-class-registry",
+      "registry_sha256": "0c1d92cf8625c644729bb6088c055298a51ae71a81aeaf79cacad3dca37bc449",
+      "schema": "trellis-basis-fact-class-registry/v1"
+    },
+    "conditional_theorem_candidate": {
+      "active_statement_sha256": "8b95de44e53e020ee50f9e127596273f00d5ae4e1cfd3f86396e91f052e9a253",
+      "candidate_definition_sha256": "626f8a1dd59ef84fb5b65fde154aa9d50f3ef28b566e0e6da81201ea4737d726",
+      "candidate_id": "dag-conditional-candidate",
+      "condition_sha256": "f9424b5b933f3ddafa2168d4a75e2f0aea8b47f87cafb940cad97abbcd13ba22",
+      "conditional_statement_sha256": "5f87a18a54cb283e3e654aaf4482b4b90f2926a0866a2307cb7f1d5758083ce1",
+      "conditionalization_schema_id": "forall-precondition/v1",
+      "node_id": "dag_conditional_candidate",
+      "profile_definition_sha256": "dd4b652b6104d365e68552bd5abadb252123fb8618c280aeeec34bf989cf1438",
+      "profile_id": "dag-profile",
+      "registration_epoch": "seed",
+      "schema": "trellis-conditional-theorem-candidate/v1",
+      "statement_normalization": "trellis-find-declaration-v1",
+      "statement_utf8": "theorem dag_conditional_candidate (input : SliceU8) : input.size < 1048576 \u2192 DagTarget input := by",
+      "target_id": "dag-target",
+      "target_statement_sha256": "4a0219d5c0e346626b8d222a63cc5dda8aa72f18b44d2401c9d598d5df4ad11b"
+    },
+    "foundation_leaves": [
+      {
+        "dependency_ids": [],
+        "domain_tag": "target-definition",
+        "meaning": "model and Rust target statements",
+        "order_index": 0,
+        "record_id": "dag-target-definition",
+        "record_sha256": "4a0219d5c0e346626b8d222a63cc5dda8aa72f18b44d2401c9d598d5df4ad11b",
+        "schema": "trellis-foundation-definition-fixture/v1"
+      },
+      {
+        "dependency_ids": [],
+        "domain_tag": "conditionalization-schema",
+        "meaning": "conditional theorem generator schema",
+        "order_index": 1,
+        "record_id": "dag-conditionalization",
+        "record_sha256": "cc33d01f9cd439696fdc77b5fbcd7d2a829a74b0b3cbc2f39a181dd86d60be0d",
+        "schema": "trellis-foundation-definition-fixture/v1"
+      },
+      {
+        "dependency_ids": [],
+        "domain_tag": "source-interpretation",
+        "meaning": "source tree and observation interpretation",
+        "order_index": 2,
+        "record_id": "dag-source-interpretation",
+        "record_sha256": "9e3181f6edcab4260b44180a54bd595f4e5cf28ff2402e9ff18651d3c704bf96",
+        "schema": "trellis-foundation-definition-fixture/v1"
+      },
+      {
+        "dependency_ids": [],
+        "domain_tag": "precondition-definition",
+        "meaning": "binder domain and complete precondition manifest",
+        "order_index": 3,
+        "record_id": "dag-precondition-definition",
+        "record_sha256": "3a2ffcde716fe263cadef6f0da3c8369e73a9e29d7cd7cc505dbe5014497e8ca",
+        "schema": "trellis-foundation-definition-fixture/v1"
+      },
+      {
+        "dependency_ids": [],
+        "domain_tag": "carrier-refinement-definition",
+        "meaning": "carrier, concretization, and erasure semantics",
+        "order_index": 4,
+        "record_id": "dag-refinement-definition",
+        "record_sha256": "a0be9f0525b2e690d464dc88ecc8ed8817d137f8e3c09a0febd82443106bb23b",
+        "schema": "trellis-foundation-definition-fixture/v1"
+      },
+      {
+        "dependency_ids": [],
+        "domain_tag": "build-definition",
+        "meaning": "toolchain, target, and build semantics",
+        "order_index": 5,
+        "record_id": "dag-build-definition",
+        "record_sha256": "bc68982f1a2b561a4d346d2387d67832725a7d2a470e5c28617deafe42adce92",
+        "schema": "trellis-foundation-definition-fixture/v1"
+      },
+      {
+        "dependency_ids": [],
+        "domain_tag": "semantic-validator",
+        "meaning": "all semantic generators and validators",
+        "order_index": 6,
+        "record_id": "dag-semantic-validator",
+        "record_sha256": "a67e693e17648e43d47ac7003cbb0ea5ec4a7fc19f40d9883ef0fb28f0b012f8",
+        "schema": "trellis-foundation-definition-fixture/v1"
+      },
+      {
+        "dependency_ids": [],
+        "domain_tag": "evidence-tool-input",
+        "meaning": "runner, oracle, and checker tool inputs",
+        "order_index": 7,
+        "record_id": "dag-evidence-tool-input",
+        "record_sha256": "aecf539673a56075681083222d1d031a8f0bd278e0a58628bb835c0daa6ada34",
+        "schema": "trellis-foundation-definition-fixture/v1"
+      },
+      {
+        "dependency_ids": [],
+        "domain_tag": "measure-grammar",
+        "meaning": "restricted structural measure grammar",
+        "order_index": 8,
+        "record_id": "dag-measure-grammar",
+        "record_sha256": "25edefad8d5e374e0ff9b69dbcc5438069cc9c13c0f90fe768b82cd6a18e25f7",
+        "schema": "trellis-foundation-definition-fixture/v1"
+      }
+    ],
+    "human_approval": {
+      "approved_evidence_tool_input_root": "303cef25f122e735c7418218ed0378fa0f0070a8397a7184446728ac71624ccc",
+      "approved_journal_head": {
+        "event_hash": "145ffe518a40da25a058843fd9a2d1b50c814e50e659fc837d4107d35360b76e",
+        "journal_id": "dag-fixture-journal",
+        "sequence_number": 2
+      },
+      "authored_semantic_root": "5680a8aa4d2723ec3e4d13ef8dfe227534c08b9c1f1435c120372f9d7e2562be",
+      "gate_presentation_sha256": "d14eef40865eb15426ba3c2247428c326838d7e49bfabbe8d0a2e5b59c21690e",
+      "reviewer_identity": "fixture-reviewer",
+      "schema": "trellis-human-approval/v1"
+    },
+    "independent_basis": {
+      "basis_definition_sha256": "b0a3ce1d1b9520bfee22c745ef648e0940b56953a861330a7f42217fde6b7f7a",
+      "basis_derivation_id": "dag-basis-derivation",
+      "basis_derivation_sha256": "5aabe5dbc729d291d852347f7e98d5fae282b7ec87ed2f7849ba1cdd8be7fc30",
+      "basis_id": "dag-basis",
+      "binder": "input",
+      "binder_type": "SliceU8",
+      "comparison": "strictly_less_than",
+      "enforcement": "deployment_enforced",
+      "limit": "1048576",
+      "measure_definition_sha256": "a40b32002e560f8b492616747293e10ec685796f3228a0f9703595e7df7552c6",
+      "measure_id": "input-byte-length",
+      "registration_epoch": "seed",
+      "registration_predecessor_head_sha256": "35f71b755a1d98f32f4b735600240b1933c1980c40fc9760337d201dee502418",
+      "schema": "trellis-independent-basis/v1",
+      "scope": "deployment",
+      "source_claim_lineage_id": "dag-lineage",
+      "source_claim_lineage_sha256": "254a99a96f9d96c22b03ed4d783c8d420bed13d25444acd62a7c012260ae625b",
+      "target_id": "dag-target",
+      "target_statement_sha256": "4a0219d5c0e346626b8d222a63cc5dda8aa72f18b44d2401c9d598d5df4ad11b",
+      "units": "bytes",
+      "validation_contract_id": "dag-contract",
+      "validation_contract_sha256": "4cc3971e210588342aff506a88b0de414794b050777e8535cef0c71f5171ec3a",
+      "validity_interval_sha256": "3a2ffcde716fe263cadef6f0da3c8369e73a9e29d7cd7cc505dbe5014497e8ca"
+    },
+    "independent_basis_derivation": {
+      "binder": "input",
+      "binder_type": "SliceU8",
+      "comparison": "strictly_less_than",
+      "derivation_id": "dag-basis-derivation",
+      "derivation_sha256": "5aabe5dbc729d291d852347f7e98d5fae282b7ec87ed2f7849ba1cdd8be7fc30",
+      "derived_limit": "1048576",
+      "enforcement": "deployment_enforced",
+      "fact_class_registry_id": "dag-fact-class-registry",
+      "fact_class_registry_sha256": "0c1d92cf8625c644729bb6088c055298a51ae71a81aeaf79cacad3dca37bc449",
+      "measure_definition_sha256": "a40b32002e560f8b492616747293e10ec685796f3228a0f9703595e7df7552c6",
+      "measure_id": "input-byte-length",
+      "nodes": [
+        {
+          "comparison": "strictly_less_than",
+          "dependency_node_ids": [],
+          "enforcement": "deployment_enforced",
+          "evidence_artifact_sha256": "cc33d01f9cd439696fdc77b5fbcd7d2a829a74b0b3cbc2f39a181dd86d60be0d",
+          "fact_class": "deployment_limit",
+          "fact_class_registry_entry_sha256": "e48799191cfffd716f74d4c3327271bc19c51f7b4669e4e7bfd40dbe0fc784e4",
+          "fact_content_sha256": "4a0219d5c0e346626b8d222a63cc5dda8aa72f18b44d2401c9d598d5df4ad11b",
+          "fact_schema_id": "trellis://facts/deployment_limit/v1",
+          "fact_schema_sha256": "a67e693e17648e43d47ac7003cbb0ea5ec4a7fc19f40d9883ef0fb28f0b012f8",
+          "fact_validator_sha256": "9e3181f6edcab4260b44180a54bd595f4e5cf28ff2402e9ff18651d3c704bf96",
+          "fact_value": "1048576",
+          "node_id": "dag-host-fact",
+          "node_kind": "registered_fact",
+          "node_sha256": "e21ecfbf98ea86533165bfdb280f94e2e0b5fbd6f781fbde74984a4c60529b7f",
+          "producer_identity": "dag-deployment-policy",
+          "registration_epoch": "seed",
+          "scope": "deployment",
+          "units": "bytes",
+          "validity_interval_sha256": "3a2ffcde716fe263cadef6f0da3c8369e73a9e29d7cd7cc505dbe5014497e8ca"
+        }
+      ],
+      "registration_epoch": "seed",
+      "registration_predecessor_head_sha256": "35f71b755a1d98f32f4b735600240b1933c1980c40fc9760337d201dee502418",
+      "root_node_id": "dag-host-fact",
+      "schema": "trellis-independent-basis-derivation/v1",
+      "scope": "deployment",
+      "units": "bytes"
+    },
+    "measure_catalog": {
+      "catalog_id": "dag-measure-catalog",
+      "catalog_sha256": "28966c08ea8204e0b4168e43b9da673d70a9fe87ec2e8c25c1123d0f54262b0d",
+      "measures": [
+        {
+          "binder": "input",
+          "binder_type": "SliceU8",
+          "expression_ast": {
+            "binder": "input",
+            "kind": "structural_input_byte_length_v1"
+          },
+          "measure_definition_sha256": "a40b32002e560f8b492616747293e10ec685796f3228a0f9703595e7df7552c6",
+          "measure_id": "input-byte-length",
+          "units": "bytes"
+        }
+      ],
+      "registration_epoch": "seed",
+      "registration_predecessor_head_sha256": "35f71b755a1d98f32f4b735600240b1933c1980c40fc9760337d201dee502418",
+      "schema": "trellis-measure-catalog/v1"
+    },
+    "qualification_profile": {
+      "applicability_validator_sha256": "cc33d01f9cd439696fdc77b5fbcd7d2a829a74b0b3cbc2f39a181dd86d60be0d",
+      "attempt_budget": 1,
+      "attempt_order": 0,
+      "condition": {
+        "binder": "input",
+        "binder_type": "SliceU8",
+        "bound": "1048576",
+        "comparison": "strictly_less_than",
+        "enforcement": "deployment_enforced",
+        "independent_basis_id": "dag-basis",
+        "independent_basis_sha256": "b0a3ce1d1b9520bfee22c745ef648e0940b56953a861330a7f42217fde6b7f7a",
+        "kind": "atom",
+        "measure_id": "input-byte-length",
+        "scope": "deployment",
+        "units": "bytes"
+      },
+      "conditional_proof_checker_sha256": "cc33d01f9cd439696fdc77b5fbcd7d2a829a74b0b3cbc2f39a181dd86d60be0d",
+      "conditional_statement_generator_sha256": "cc33d01f9cd439696fdc77b5fbcd7d2a829a74b0b3cbc2f39a181dd86d60be0d",
+      "conditionalization_schema_id": "forall-precondition/v1",
+      "independent_basis_id": "dag-basis",
+      "independent_basis_sha256": "b0a3ce1d1b9520bfee22c745ef648e0940b56953a861330a7f42217fde6b7f7a",
+      "measure_closure_sha256": "a40b32002e560f8b492616747293e10ec685796f3228a0f9703595e7df7552c6",
+      "permitted_applicability": [
+        "mechanically_enforced",
+        "unestablished"
+      ],
+      "profile_definition_sha256": "dd4b652b6104d365e68552bd5abadb252123fb8618c280aeeec34bf989cf1438",
+      "profile_id": "dag-profile",
+      "registration_epoch": "seed",
+      "source_admissibility_checker_sha256": "cc33d01f9cd439696fdc77b5fbcd7d2a829a74b0b3cbc2f39a181dd86d60be0d",
+      "source_claim_lineage_id": "dag-lineage",
+      "source_claim_lineage_sha256": "254a99a96f9d96c22b03ed4d783c8d420bed13d25444acd62a7c012260ae625b",
+      "target_id": "dag-target",
+      "target_statement_sha256": "4a0219d5c0e346626b8d222a63cc5dda8aa72f18b44d2401c9d598d5df4ad11b",
+      "validation_contract_id": "dag-contract",
+      "validation_contract_sha256": "4cc3971e210588342aff506a88b0de414794b050777e8535cef0c71f5171ec3a",
+      "witness_demand_checker_sha256": "cc33d01f9cd439696fdc77b5fbcd7d2a829a74b0b3cbc2f39a181dd86d60be0d"
+    },
+    "qualification_profile_catalog": {
+      "catalog_definition_sha256": "1f0cf61829f8e802a7679d53d75d258ec6df1a824adbbc4c9c99aaca7b4f4bb4",
+      "profiles": [
+        {
+          "applicability_validator_sha256": "cc33d01f9cd439696fdc77b5fbcd7d2a829a74b0b3cbc2f39a181dd86d60be0d",
+          "attempt_budget": 1,
+          "attempt_order": 0,
+          "condition": {
+            "binder": "input",
+            "binder_type": "SliceU8",
+            "bound": "1048576",
+            "comparison": "strictly_less_than",
+            "enforcement": "deployment_enforced",
+            "independent_basis_id": "dag-basis",
+            "independent_basis_sha256": "b0a3ce1d1b9520bfee22c745ef648e0940b56953a861330a7f42217fde6b7f7a",
+            "kind": "atom",
+            "measure_id": "input-byte-length",
+            "scope": "deployment",
+            "units": "bytes"
+          },
+          "conditional_proof_checker_sha256": "cc33d01f9cd439696fdc77b5fbcd7d2a829a74b0b3cbc2f39a181dd86d60be0d",
+          "conditional_statement_generator_sha256": "cc33d01f9cd439696fdc77b5fbcd7d2a829a74b0b3cbc2f39a181dd86d60be0d",
+          "conditionalization_schema_id": "forall-precondition/v1",
+          "independent_basis_id": "dag-basis",
+          "independent_basis_sha256": "b0a3ce1d1b9520bfee22c745ef648e0940b56953a861330a7f42217fde6b7f7a",
+          "measure_closure_sha256": "a40b32002e560f8b492616747293e10ec685796f3228a0f9703595e7df7552c6",
+          "permitted_applicability": [
+            "mechanically_enforced",
+            "unestablished"
+          ],
+          "profile_definition_sha256": "dd4b652b6104d365e68552bd5abadb252123fb8618c280aeeec34bf989cf1438",
+          "profile_id": "dag-profile",
+          "registration_epoch": "seed",
+          "source_admissibility_checker_sha256": "cc33d01f9cd439696fdc77b5fbcd7d2a829a74b0b3cbc2f39a181dd86d60be0d",
+          "source_claim_lineage_id": "dag-lineage",
+          "source_claim_lineage_sha256": "254a99a96f9d96c22b03ed4d783c8d420bed13d25444acd62a7c012260ae625b",
+          "target_id": "dag-target",
+          "target_statement_sha256": "4a0219d5c0e346626b8d222a63cc5dda8aa72f18b44d2401c9d598d5df4ad11b",
+          "validation_contract_id": "dag-contract",
+          "validation_contract_sha256": "4cc3971e210588342aff506a88b0de414794b050777e8535cef0c71f5171ec3a",
+          "witness_demand_checker_sha256": "cc33d01f9cd439696fdc77b5fbcd7d2a829a74b0b3cbc2f39a181dd86d60be0d"
+        }
+      ],
+      "schema": "trellis-qualification-profile-catalog/v1"
+    },
+    "seed_manifest": {
+      "actor_key_manifest_sha256": "0794a455e2fffab0b34e45aad5f7ec6a558b107bbce575b721aeca8a42df5884",
+      "approved_evidence_tool_input_root": "303cef25f122e735c7418218ed0378fa0f0070a8397a7184446728ac71624ccc",
+      "authored_semantic_root": "5680a8aa4d2723ec3e4d13ef8dfe227534c08b9c1f1435c120372f9d7e2562be",
+      "canonical_genesis_sha256": "35f71b755a1d98f32f4b735600240b1933c1980c40fc9760337d201dee502418",
+      "definitions": [
+        {
+          "domain_tag": "target-definition",
+          "record_id": "dag-target-definition",
+          "record_kind": "target_definition",
+          "record_schema_id": "trellis://schemas/foundation-definition-fixture/v1",
+          "record_sha256": "4a0219d5c0e346626b8d222a63cc5dda8aa72f18b44d2401c9d598d5df4ad11b"
+        },
+        {
+          "domain_tag": "conditionalization-schema",
+          "record_id": "dag-conditionalization",
+          "record_kind": "conditionalization_schema",
+          "record_schema_id": "trellis://schemas/foundation-definition-fixture/v1",
+          "record_sha256": "cc33d01f9cd439696fdc77b5fbcd7d2a829a74b0b3cbc2f39a181dd86d60be0d"
+        },
+        {
+          "domain_tag": "source-interpretation",
+          "record_id": "dag-source-interpretation",
+          "record_kind": "source_interpretation_definition",
+          "record_schema_id": "trellis://schemas/foundation-definition-fixture/v1",
+          "record_sha256": "9e3181f6edcab4260b44180a54bd595f4e5cf28ff2402e9ff18651d3c704bf96"
+        },
+        {
+          "domain_tag": "precondition-definition",
+          "record_id": "dag-precondition-definition",
+          "record_kind": "precondition_definition",
+          "record_schema_id": "trellis://schemas/foundation-definition-fixture/v1",
+          "record_sha256": "3a2ffcde716fe263cadef6f0da3c8369e73a9e29d7cd7cc505dbe5014497e8ca"
+        },
+        {
+          "domain_tag": "carrier-refinement-definition",
+          "record_id": "dag-refinement-definition",
+          "record_kind": "carrier_refinement_definition",
+          "record_schema_id": "trellis://schemas/foundation-definition-fixture/v1",
+          "record_sha256": "a0be9f0525b2e690d464dc88ecc8ed8817d137f8e3c09a0febd82443106bb23b"
+        },
+        {
+          "domain_tag": "build-definition",
+          "record_id": "dag-build-definition",
+          "record_kind": "build_definition",
+          "record_schema_id": "trellis://schemas/foundation-definition-fixture/v1",
+          "record_sha256": "bc68982f1a2b561a4d346d2387d67832725a7d2a470e5c28617deafe42adce92"
+        },
+        {
+          "domain_tag": "semantic-validator",
+          "record_id": "dag-semantic-validator",
+          "record_kind": "semantic_validator",
+          "record_schema_id": "trellis://schemas/foundation-definition-fixture/v1",
+          "record_sha256": "a67e693e17648e43d47ac7003cbb0ea5ec4a7fc19f40d9883ef0fb28f0b012f8"
+        },
+        {
+          "domain_tag": "evidence-tool-input",
+          "record_id": "dag-evidence-tool-input",
+          "record_kind": "evidence_tool_input",
+          "record_schema_id": "trellis://schemas/foundation-definition-fixture/v1",
+          "record_sha256": "aecf539673a56075681083222d1d031a8f0bd278e0a58628bb835c0daa6ada34"
+        },
+        {
+          "domain_tag": "measure-grammar",
+          "record_id": "dag-measure-grammar",
+          "record_kind": "semantic_validator",
+          "record_schema_id": "trellis://schemas/foundation-definition-fixture/v1",
+          "record_sha256": "25edefad8d5e374e0ff9b69dbcc5438069cc9c13c0f90fe768b82cd6a18e25f7"
+        },
+        {
+          "domain_tag": "basis-fact-class-registry",
+          "record_id": "dag-fact-class-registry",
+          "record_kind": "basis_fact_class_registry",
+          "record_schema_id": "trellis://schemas/basis-fact-class-registry/v1",
+          "record_sha256": "0c1d92cf8625c644729bb6088c055298a51ae71a81aeaf79cacad3dca37bc449"
+        },
+        {
+          "domain_tag": "source-claim-lineage",
+          "record_id": "dag-lineage",
+          "record_kind": "source_claim_lineage",
+          "record_schema_id": "trellis://schemas/source-claim-lineage/v1",
+          "record_sha256": "254a99a96f9d96c22b03ed4d783c8d420bed13d25444acd62a7c012260ae625b"
+        },
+        {
+          "domain_tag": "source-validation-contract",
+          "record_id": "dag-contract",
+          "record_kind": "source_validation_contract",
+          "record_schema_id": "trellis://schemas/source-validation-contract/v1",
+          "record_sha256": "4cc3971e210588342aff506a88b0de414794b050777e8535cef0c71f5171ec3a"
+        },
+        {
+          "domain_tag": "measure-catalog",
+          "record_id": "dag-measure-catalog",
+          "record_kind": "measure_catalog",
+          "record_schema_id": "trellis://schemas/measure-catalog/v1",
+          "record_sha256": "28966c08ea8204e0b4168e43b9da673d70a9fe87ec2e8c25c1123d0f54262b0d"
+        },
+        {
+          "domain_tag": "independent-basis-derivation",
+          "record_id": "dag-basis-derivation",
+          "record_kind": "independent_basis_derivation",
+          "record_schema_id": "trellis://schemas/independent-basis-derivation/v1",
+          "record_sha256": "5aabe5dbc729d291d852347f7e98d5fae282b7ec87ed2f7849ba1cdd8be7fc30"
+        },
+        {
+          "domain_tag": "independent-basis",
+          "record_id": "dag-basis",
+          "record_kind": "independent_basis",
+          "record_schema_id": "trellis://schemas/independent-basis/v1",
+          "record_sha256": "b0a3ce1d1b9520bfee22c745ef648e0940b56953a861330a7f42217fde6b7f7a"
+        },
+        {
+          "domain_tag": "qualification-profile",
+          "record_id": "dag-profile",
+          "record_kind": "qualification_profile",
+          "record_schema_id": "trellis://schemas/qualification-profile/v1",
+          "record_sha256": "dd4b652b6104d365e68552bd5abadb252123fb8618c280aeeec34bf989cf1438"
+        },
+        {
+          "domain_tag": "conditional-theorem-candidate",
+          "record_id": "dag-conditional-candidate",
+          "record_kind": "conditional_theorem_candidate",
+          "record_schema_id": "trellis://schemas/conditional-theorem-candidate/v1",
+          "record_sha256": "626f8a1dd59ef84fb5b65fde154aa9d50f3ef28b566e0e6da81201ea4737d726"
+        },
+        {
+          "domain_tag": "qualification-profile-catalog",
+          "record_id": "dag-catalog",
+          "record_kind": "qualification_profile_catalog",
+          "record_schema_id": "trellis://schemas/qualification-profile-catalog/v1",
+          "record_sha256": "1f0cf61829f8e802a7679d53d75d258ec6df1a824adbbc4c9c99aaca7b4f4bb4"
+        }
+      ],
+      "journal_event_policy_sha256": "e3c0e814f6b37545b423365b973f873f985da9ca4417b456d55bdfb7bc927825",
+      "journal_id": "dag-fixture-journal",
+      "manifest_sha256": "e3e12b8cffda4f9da1c98a09d81051c77be14057cec56b0bbfe44c73167997f2",
+      "protocol_id": "trellis-trust-v1",
+      "run_id": "dag-fixture-run",
+      "schema": "trellis-seed-authored-definition-manifest/v1",
+      "seed_plan_id": "dag-seed-plan"
+    },
+    "source_claim_lineage": {
+      "build_semantics_sha256": "25edefad8d5e374e0ff9b69dbcc5438069cc9c13c0f90fe768b82cd6a18e25f7",
+      "concretization_erasure_semantics_sha256": "4a0219d5c0e346626b8d222a63cc5dda8aa72f18b44d2401c9d598d5df4ad11b",
+      "entry_point_semantics_sha256": "bc68982f1a2b561a4d346d2387d67832725a7d2a470e5c28617deafe42adce92",
+      "lineage_change_kind": "initial_seed",
+      "lineage_definition_sha256": "254a99a96f9d96c22b03ed4d783c8d420bed13d25444acd62a7c012260ae625b",
+      "lineage_generator_id": "dag-lineage-generator",
+      "lineage_generator_sha256": "9e3181f6edcab4260b44180a54bd595f4e5cf28ff2402e9ff18651d3c704bf96",
+      "lineage_id": "dag-lineage",
+      "model_target_statement_sha256": "4a0219d5c0e346626b8d222a63cc5dda8aa72f18b44d2401c9d598d5df4ad11b",
+      "normalized_claim_sha256": "3a2ffcde716fe263cadef6f0da3c8369e73a9e29d7cd7cc505dbe5014497e8ca",
+      "precondition_manifest_sha256": "a67e693e17648e43d47ac7003cbb0ea5ec4a7fc19f40d9883ef0fb28f0b012f8",
+      "refinement_semantics_sha256": "aecf539673a56075681083222d1d031a8f0bd278e0a58628bb835c0daa6ada34",
+      "registration_authority": "seed_contract_v1",
+      "registration_epoch": "seed",
+      "registration_predecessor_head_sha256": "35f71b755a1d98f32f4b735600240b1933c1980c40fc9760337d201dee502418",
+      "rust_target_statement_sha256": "cc33d01f9cd439696fdc77b5fbcd7d2a829a74b0b3cbc2f39a181dd86d60be0d",
+      "schema": "trellis-source-claim-lineage/v1",
+      "source_claim_interpretation_sha256": "9e3181f6edcab4260b44180a54bd595f4e5cf28ff2402e9ff18651d3c704bf96",
+      "source_observation_semantics_sha256": "cc33d01f9cd439696fdc77b5fbcd7d2a829a74b0b3cbc2f39a181dd86d60be0d",
+      "source_scope": "adapted_source",
+      "source_tree_sha256": "a0be9f0525b2e690d464dc88ecc8ed8817d137f8e3c09a0febd82443106bb23b",
+      "target_id": "dag-target"
+    },
+    "source_validation_contract": {
+      "adequacy": "decisive",
+      "binder_domain_schema_sha256": "a67e693e17648e43d47ac7003cbb0ea5ec4a7fc19f40d9883ef0fb28f0b012f8",
+      "build_tool_closure_sha256": "aecf539673a56075681083222d1d031a8f0bd278e0a58628bb835c0daa6ada34",
+      "claim_shape": "universal",
+      "classification_proof_artifact_sha256": "bc68982f1a2b561a4d346d2387d67832725a7d2a470e5c28617deafe42adce92",
+      "concretization_schema_sha256": "bc68982f1a2b561a4d346d2387d67832725a7d2a470e5c28617deafe42adce92",
+      "concretization_validator_sha256": "aecf539673a56075681083222d1d031a8f0bd278e0a58628bb835c0daa6ada34",
+      "contract_definition_sha256": "4cc3971e210588342aff506a88b0de414794b050777e8535cef0c71f5171ec3a",
+      "contract_generator_id": "dag-contract-generator",
+      "contract_generator_sha256": "a0be9f0525b2e690d464dc88ecc8ed8817d137f8e3c09a0febd82443106bb23b",
+      "contract_id": "dag-contract",
+      "determinism_audit_sha256": "a0be9f0525b2e690d464dc88ecc8ed8817d137f8e3c09a0febd82443106bb23b",
+      "entry_point_type_sha256": "4a0219d5c0e346626b8d222a63cc5dda8aa72f18b44d2401c9d598d5df4ad11b",
+      "environment_contract_sha256": "3a2ffcde716fe263cadef6f0da3c8369e73a9e29d7cd7cc505dbe5014497e8ca",
+      "erasure_relation_sha256": "a67e693e17648e43d47ac7003cbb0ea5ec4a7fc19f40d9883ef0fb28f0b012f8",
+      "formal_predicate_generator_sha256": "3a2ffcde716fe263cadef6f0da3c8369e73a9e29d7cd7cc505dbe5014497e8ca",
+      "formal_refutation_certificate_schema_id": "finite-input-counterexample/v1",
+      "negative_certificate_class": "forall_executable_input_postcondition_v1",
+      "negative_evidence_soundness_proof_sha256": "bc68982f1a2b561a4d346d2387d67832725a7d2a470e5c28617deafe42adce92",
+      "negative_evidence_soundness_statement_sha256": "a0be9f0525b2e690d464dc88ecc8ed8817d137f8e3c09a0febd82443106bb23b",
+      "nondeterminism_environment_policy": "closed_deterministic_v1",
+      "normalized_claim_schema_id": "forall-executable-input-postcondition/v1",
+      "normalized_claim_sha256": "3a2ffcde716fe263cadef6f0da3c8369e73a9e29d7cd7cc505dbe5014497e8ca",
+      "observation_oracle_generator_sha256": "4a0219d5c0e346626b8d222a63cc5dda8aa72f18b44d2401c9d598d5df4ad11b",
+      "observation_oracle_sha256": "cc33d01f9cd439696fdc77b5fbcd7d2a829a74b0b3cbc2f39a181dd86d60be0d",
+      "preconditions": [
+        {
+          "checker_sha256": "25edefad8d5e374e0ff9b69dbcc5438069cc9c13c0f90fe768b82cd6a18e25f7",
+          "normalized_statement_sha256": "aecf539673a56075681083222d1d031a8f0bd278e0a58628bb835c0daa6ada34",
+          "precondition_id": "dag-pre"
+        }
+      ],
+      "public_entry_point": "dag_entry",
+      "qualification_permission": "resource_profiles_if_independent_scope_limit",
+      "raw_observation_schema_sha256": "25edefad8d5e374e0ff9b69dbcc5438069cc9c13c0f90fe768b82cd6a18e25f7",
+      "refinement_closure_sha256": "a67e693e17648e43d47ac7003cbb0ea5ec4a7fc19f40d9883ef0fb28f0b012f8",
+      "registration_epoch": "seed",
+      "registration_predecessor_head_sha256": "35f71b755a1d98f32f4b735600240b1933c1980c40fc9760337d201dee502418",
+      "runner_sha256": "9e3181f6edcab4260b44180a54bd595f4e5cf28ff2402e9ff18651d3c704bf96",
+      "rust_target_statement_sha256": "cc33d01f9cd439696fdc77b5fbcd7d2a829a74b0b3cbc2f39a181dd86d60be0d",
+      "schema": "trellis-source-validation-contract/v1",
+      "source_claim_interpretation_sha256": "9e3181f6edcab4260b44180a54bd595f4e5cf28ff2402e9ff18651d3c704bf96",
+      "source_claim_lineage_id": "dag-lineage",
+      "source_claim_lineage_sha256": "254a99a96f9d96c22b03ed4d783c8d420bed13d25444acd62a7c012260ae625b",
+      "source_counterevidence_class": "finite_executable_counterexample",
+      "source_scope": "adapted_source",
+      "source_tree_sha256": "a0be9f0525b2e690d464dc88ecc8ed8817d137f8e3c09a0febd82443106bb23b",
+      "source_validator_sha256": "9e3181f6edcab4260b44180a54bd595f4e5cf28ff2402e9ff18651d3c704bf96",
+      "target_id": "dag-target",
+      "target_statement_sha256": "4a0219d5c0e346626b8d222a63cc5dda8aa72f18b44d2401c9d598d5df4ad11b",
+      "toolchain_build_basis_sha256": "cc33d01f9cd439696fdc77b5fbcd7d2a829a74b0b3cbc2f39a181dd86d60be0d",
+      "validation_method": "exact_rust_execution_v1"
+    }
+  },
+  "roots": {
+    "approved_evidence_tool_input_root": "303cef25f122e735c7418218ed0378fa0f0070a8397a7184446728ac71624ccc",
+    "authored_semantic_root": "5680a8aa4d2723ec3e4d13ef8dfe227534c08b9c1f1435c120372f9d7e2562be"
+  },
+  "schema": "trellis-registration-hash-dag-fixtures/v1"
+}

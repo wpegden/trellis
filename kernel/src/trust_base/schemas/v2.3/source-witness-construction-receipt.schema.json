@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trellis://schemas/source-witness-construction-receipt/v1",
+  "title": "Checked safe construction of the exact source witness state",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "receipt_id",
+    "formal_witness_certificate_sha256",
+    "witness_term_sha256",
+    "validation_contract_sha256",
+    "source_tree_sha256",
+    "encoded_input_sha256",
+    "precondition_closure_sha256",
+    "concretization_receipt_sha256",
+    "erasure_receipt_sha256",
+    "generated_safe_construction_statement_sha256",
+    "checked_safe_construction_proof_sha256",
+    "checker_and_axiom_closure_sha256",
+    "receipt_sha256"
+  ],
+  "properties": {
+    "schema": { "const": "trellis-source-witness-construction-receipt/v1" },
+    "receipt_id": { "$ref": "#/$defs/id" },
+    "formal_witness_certificate_sha256": { "$ref": "#/$defs/hash" },
+    "witness_term_sha256": { "$ref": "#/$defs/hash" },
+    "validation_contract_sha256": { "$ref": "#/$defs/hash" },
+    "source_tree_sha256": { "$ref": "#/$defs/hash" },
+    "encoded_input_sha256": { "$ref": "#/$defs/hash" },
+    "precondition_closure_sha256": { "$ref": "#/$defs/hash" },
+    "concretization_receipt_sha256": { "$ref": "#/$defs/hash" },
+    "erasure_receipt_sha256": { "$ref": "#/$defs/hash" },
+    "generated_safe_construction_statement_sha256": { "$ref": "#/$defs/hash" },
+    "checked_safe_construction_proof_sha256": { "$ref": "#/$defs/hash" },
+    "checker_and_axiom_closure_sha256": { "$ref": "#/$defs/hash" },
+    "receipt_sha256": { "$ref": "#/$defs/hash" }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 256 }
+  }
+}
