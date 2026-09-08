@@ -1,0 +1,139 @@
+{
+  "name": "90_merkle_digests",
+  "kind": "digests",
+  "description": "H(v) for a spread of JSON values, as 64-character lowercase hex. An implementation that reproduces every entry has the Merkle hash right, which is what makes its table keys agree with Python's. Note `int_large` (9007199254740993) and the int/float pair 0 vs 1.0: a language that parses all JSON numbers as doubles cannot reproduce these and therefore cannot host a conforming *encoder*, only a decoder.",
+  "digests": [
+    {
+      "label": "null",
+      "value": null,
+      "digest": "1b16b1df538ba12dc3f97edbb85caa7050d46c148134290feba80f8236c83db9"
+    },
+    {
+      "label": "true",
+      "value": true,
+      "digest": "e3b98a4da31a127d4bde6e43033f66ba274cab0eb7eb1c70ec41402bf6273dd8"
+    },
+    {
+      "label": "false",
+      "value": false,
+      "digest": "252f10c83610ebca1a059c0bae8255eba2f95be4d1d7bcfa89d7248a82d9f111"
+    },
+    {
+      "label": "int_zero",
+      "value": 0,
+      "digest": "a4e167a76a05add8a8654c169b07b0447a916035aef602df103e8ae0fe2ff390"
+    },
+    {
+      "label": "int_negative",
+      "value": -42,
+      "digest": "1f0370ed2a176aa73868570d90204370687d041619bf57e57f8abfc70bd4156c"
+    },
+    {
+      "label": "int_large",
+      "value": 9007199254740993,
+      "digest": "fbd1af4ef0c37db0fc157c5f89d5691229b901992c4a5b9a0d85dd9f2dd3e7f5"
+    },
+    {
+      "label": "float_one_point_zero",
+      "value": 1.0,
+      "digest": "bb98b4eef01c85365c11a181854fdeeb7b5a90004bc459bea951e8f858a2ac9c"
+    },
+    {
+      "label": "float_fraction",
+      "value": 1.5,
+      "digest": "efa46fe968d1fa0ef2c17e01dd2cea7d564dc19d16572d96f6cb2ff38089ce5b"
+    },
+    {
+      "label": "float_negative_zero",
+      "value": -0.0,
+      "digest": "189871d8cc6e7f67aee5b7ed487c69f634c0c6256031a7af9d867a22ec0d15c0"
+    },
+    {
+      "label": "float_exponent",
+      "value": 1e-09,
+      "digest": "76993121e7c7433c05d358f1b1d3a2ac28f2479369a7c2a4eadbb4f52f679796"
+    },
+    {
+      "label": "string_empty",
+      "value": "",
+      "digest": "043a718774c572bd8a25adbeb1bfcd5c0256ae11cecf9f9c3f925d0e52beaf89"
+    },
+    {
+      "label": "string_ascii",
+      "value": "Alpha",
+      "digest": "36afef6d02ec071eedb703621b6f9f69e4f65baaab04c4f7f08eb18f060f25ad"
+    },
+    {
+      "label": "string_unicode",
+      "value": "é中😀",
+      "digest": "e4757b95f3ee0d50e0055cac158c1816e6392c4264eb8c01c6ab041fd8751565"
+    },
+    {
+      "label": "string_hex64",
+      "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "digest": "5a48ddc10faa588c3bf9e9f0ffa8db874ed60242d979f2c1ca3aefa32d9a471b"
+    },
+    {
+      "label": "array_empty",
+      "value": [],
+      "digest": "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb"
+    },
+    {
+      "label": "array_mixed",
+      "value": [
+        1,
+        "two",
+        null,
+        true
+      ],
+      "digest": "6ba699b5ae56a88490bac09f2648b617ed900aced525d05e91c9b6ab29109804"
+    },
+    {
+      "label": "array_nested",
+      "value": [
+        [
+          1
+        ],
+        [
+          1
+        ]
+      ],
+      "digest": "079c32aa5eac9b750800f751bf38ffb0e796cf5447d667a1c57412d4d175c248"
+    },
+    {
+      "label": "object_empty",
+      "value": {},
+      "digest": "65c74c15a686187bb6bbf9958f494fc6b80068034a659a9ad44991b08c58f2d2"
+    },
+    {
+      "label": "object_sorted",
+      "value": {
+        "b": 1,
+        "a": 2
+      },
+      "digest": "4648bff405d0cebfba427d6aa173d86d6713c022c0406a479d35780115505896"
+    },
+    {
+      "label": "object_key_unicode",
+      "value": {
+        "é": 1,
+        "e": 2
+      },
+      "digest": "4b2683b09289948dc43ce3125022c85b17d71c104daa378d56394e154ef3df7d"
+    },
+    {
+      "label": "object_deep",
+      "value": {
+        "x": {
+          "y": [
+            1,
+            {
+              "z": "Alpha"
+            }
+          ]
+        }
+      },
+      "digest": "24a3ab9da46b12ce598d3736ec899e33e41d8d124fd5e0a8afb46323613b9e39"
+    }
+  ]
+}

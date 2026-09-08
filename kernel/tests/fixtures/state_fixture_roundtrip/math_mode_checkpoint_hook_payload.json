@@ -1,0 +1,550 @@
+{
+  "root": "/tmp/.tmpudF02R/runtime",
+  "state_path": "/tmp/.tmpudF02R/runtime/protocol_state.json",
+  "event_log_dir": "/tmp/.tmpudF02R/repo/.trellis-history/event-log",
+  "checkpoint_path": "/tmp/.tmpudF02R/runtime/checkpoint.json",
+  "metadata_path": "/tmp/.tmpudF02R/runtime/runtime_metadata.json",
+  "metadata": {
+    "repo_path": "/tmp/.tmpudF02R/repo",
+    "config_path": "/tmp/.tmpudF02R/repo/trellis.config.json",
+    "native_history_kinds": [],
+    "initial_planning_seeded": false,
+    "trust_journal_path": null,
+    "trust_actor_key_manifest_path": null,
+    "trust_gate_presentation_path": null,
+    "trust_seed_manifest_path": null,
+    "trust_seed_definition_bundle_path": null,
+    "trust_evidence_tool_manifest_path": null,
+    "trust_evidence_tool_root_path": null,
+    "trust_seed_transaction_id": null,
+    "trust_advance_gate_episode_id": null,
+    "trust_manifest_authority_roots": {},
+    "coverage_replanning_seeded": false
+  },
+  "state": {
+    "phase": "ProofFormalization",
+    "stage": "Start",
+    "cycle": 4,
+    "attempt": 0,
+    "max_theorem_invalid_attempt": 2,
+    "proof_invalid_review_threshold": 2,
+    "transport_attempt": 0,
+    "transport_invalid_review_threshold": 5,
+    "consecutive_transport_failure_node": null,
+    "consecutive_transport_failure_count": 0,
+    "consecutive_transport_failure_halt_threshold": 5,
+    "easy_max_retries": 2,
+    "verifier_lanes": [
+      "v1",
+      "v2"
+    ],
+    "request_seq": 4,
+    "cycles_since_clean": 1,
+    "progress_history": {
+      "snapshots": [
+        {
+          "snapshot_index": 0,
+          "present": [
+            "A",
+            "B",
+            "Helper"
+          ],
+          "progressed": [
+            "B",
+            "Helper"
+          ]
+        }
+      ],
+      "last_dispatched_index": null,
+      "next_index": 1
+    },
+    "shallow_coarse_closed_count": 0,
+    "cycles_since_shallow_coarse_closed_count_increase": 1,
+    "has_ever_been_clean": false,
+    "invalid_attempt": false,
+    "gate_kind": "None",
+    "trust_base": {
+      "format_version": 0,
+      "mode": "disabled",
+      "seed_manifest_sha256": null,
+      "seed_definition_bundle_sha256": null,
+      "evidence_tool_manifest_sha256": null,
+      "authored_semantic_root": null,
+      "approved_evidence_tool_input_root": null,
+      "advance_gate_episode_id": null,
+      "current_human_approval_event_hash": null,
+      "active_revision_lane_id": null,
+      "routine_gate_state": "not_presented",
+      "gate_commit_pending": false,
+      "last_fail_closed_reason": null
+    },
+    "gate_from_invalid_attempt": false,
+    "active_node": "A",
+    "held_target": null,
+    "target_edit_mode": "Global",
+    "proof_edit_mode": "Local",
+    "configured_targets": [
+      "t"
+    ],
+    "approved_targets": {
+      "configured_targets": [],
+      "coverage": {},
+      "protected_closure_nodes": []
+    },
+    "coarse_dag_nodes": [
+      "A"
+    ],
+    "active_coarse_node": "A",
+    "cycles_in_coarse_repair_mode": 1,
+    "corr_fingerprint_schema_version": 0,
+    "sound_assessment_schema_version": 1,
+    "node_kinds": {
+      "A": "Proof",
+      "B": "Proof",
+      "Helper": "Definition"
+    },
+    "committed_node_kinds": {
+      "A": "Proof",
+      "B": "Proof",
+      "Helper": "Definition"
+    },
+    "proof_nodes": [
+      "A",
+      "B"
+    ],
+    "committed_proof_nodes": [
+      "A",
+      "B"
+    ],
+    "deps": {
+      "A": [],
+      "B": [
+        "Helper"
+      ]
+    },
+    "committed_deps": {
+      "A": [],
+      "B": [
+        "Helper"
+      ]
+    },
+    "target_claims": {
+      "A": [
+        "t"
+      ]
+    },
+    "committed_target_claims": {
+      "A": [
+        "t"
+      ]
+    },
+    "deviation_files": {},
+    "committed_deviation_files": {},
+    "node_deviation_claims": {},
+    "committed_node_deviation_claims": {},
+    "last_clean_live": {
+      "present_nodes": [],
+      "open_nodes": [],
+      "coverage": {},
+      "target_fingerprints": {},
+      "corr_current_fingerprints": {},
+      "paper_current_fingerprints": {},
+      "sound_current_fingerprints": {},
+      "deviation_current_fingerprints": {},
+      "sound_current_fingerprint_parts": {},
+      "sketch_proof_nodes": [],
+      "placeholder_definition_nodes": [],
+      "substantiveness_current_fingerprints": {},
+      "protected_closure_nodes_per_target": {}
+    },
+    "last_clean_node_kinds": {},
+    "last_clean_proof_nodes": [],
+    "last_clean_deps": {},
+    "last_clean_target_claims": {},
+    "last_clean_deviation_files": {},
+    "last_clean_node_deviation_claims": {},
+    "last_clean_corr_status": {},
+    "last_clean_paper_status": {},
+    "last_clean_deviation_status": {},
+    "last_clean_substantiveness_status": {},
+    "last_clean_sound_status": {},
+    "last_clean_corr_approved_fingerprints": {},
+    "last_clean_paper_approved_fingerprints": {},
+    "last_clean_substantiveness_approved_fingerprints": {},
+    "last_clean_deviation_approved_fingerprints": {},
+    "last_clean_sound_approved_fingerprints": {},
+    "last_clean_verifier_mirror_ready": false,
+    "last_clean_commit": null,
+    "local_closure_records": {
+      "B": {
+        "node": "B",
+        "closure_version": "v1",
+        "toolchain_hash": "tc-fixture",
+        "lean_executable_hash": "",
+        "lake_executable_hash": "",
+        "checker_script_hash": "",
+        "lake_manifest_hash": "lk-fixture",
+        "preamble_hash": "pre-fixture",
+        "approved_axioms_hash": "ax-fixture",
+        "active_decl_hash": "decl-b",
+        "active_statement_hash": "stmt-b",
+        "kernel_axioms": [
+          "propext"
+        ],
+        "boundary_theorems": {
+          "Helper": "stmt-helper"
+        },
+        "strict_theorem_deps": {},
+        "strict_definition_deps": {},
+        "seed_support_definition_deps": {},
+        "seed_support_evidence_root": null,
+        "seed_support_file_hashes": {},
+        "kernel_semantic_hashes": {
+          "Helper": "corr-helper"
+        },
+        "accepted_at_snapshot_id": "snap-fixture-1",
+        "axcheck_status": "Skipped"
+      }
+    },
+    "local_closure_unverified_nodes": [],
+    "local_closure_failures": {},
+    "committed_local_closure_records": {
+      "B": {
+        "node": "B",
+        "closure_version": "v1",
+        "toolchain_hash": "tc-fixture",
+        "lean_executable_hash": "",
+        "lake_executable_hash": "",
+        "checker_script_hash": "",
+        "lake_manifest_hash": "lk-fixture",
+        "preamble_hash": "pre-fixture",
+        "approved_axioms_hash": "ax-fixture",
+        "active_decl_hash": "decl-b",
+        "active_statement_hash": "stmt-b",
+        "kernel_axioms": [
+          "propext"
+        ],
+        "boundary_theorems": {
+          "Helper": "stmt-helper"
+        },
+        "strict_theorem_deps": {},
+        "strict_definition_deps": {},
+        "seed_support_definition_deps": {},
+        "seed_support_evidence_root": null,
+        "seed_support_file_hashes": {},
+        "kernel_semantic_hashes": {
+          "Helper": "corr-helper"
+        },
+        "accepted_at_snapshot_id": "snap-fixture-1",
+        "axcheck_status": "Skipped"
+      }
+    },
+    "committed_local_closure_unverified_nodes": [],
+    "committed_local_closure_failures": {},
+    "last_clean_local_closure_records": {},
+    "last_clean_local_closure_unverified_nodes": [],
+    "last_clean_local_closure_failures": {},
+    "last_clean_local_closure_mirror_ready": false,
+    "last_clean_rewind_count": 0,
+    "force_stuck_math_audit_after_rewind": false,
+    "force_review_after_cone_clean": false,
+    "post_advance_routing_pending": false,
+    "node_rank": {},
+    "live": {
+      "present_nodes": [
+        "A",
+        "B",
+        "Helper"
+      ],
+      "open_nodes": [
+        "A"
+      ],
+      "coverage": {
+        "t": [
+          "A"
+        ]
+      },
+      "target_fingerprints": {},
+      "corr_current_fingerprints": {
+        "A": "corr-a",
+        "B": "corr-b",
+        "Helper": "corr-helper"
+      },
+      "paper_current_fingerprints": {
+        "t": ""
+      },
+      "sound_current_fingerprints": {},
+      "deviation_current_fingerprints": {},
+      "sound_current_fingerprint_parts": {},
+      "sketch_proof_nodes": [],
+      "placeholder_definition_nodes": [],
+      "substantiveness_current_fingerprints": {
+        "A": "",
+        "B": "",
+        "Helper": ""
+      },
+      "protected_closure_nodes_per_target": {}
+    },
+    "committed": {
+      "present_nodes": [
+        "A",
+        "B",
+        "Helper"
+      ],
+      "open_nodes": [
+        "A"
+      ],
+      "coverage": {
+        "t": [
+          "A"
+        ]
+      },
+      "target_fingerprints": {},
+      "corr_current_fingerprints": {
+        "A": "corr-a",
+        "B": "corr-b",
+        "Helper": "corr-helper"
+      },
+      "paper_current_fingerprints": {
+        "t": ""
+      },
+      "sound_current_fingerprints": {},
+      "deviation_current_fingerprints": {},
+      "sound_current_fingerprint_parts": {},
+      "sketch_proof_nodes": [],
+      "placeholder_definition_nodes": [],
+      "substantiveness_current_fingerprints": {
+        "A": "",
+        "B": "",
+        "Helper": ""
+      },
+      "protected_closure_nodes_per_target": {}
+    },
+    "corr_status": {
+      "A": "Unknown",
+      "B": "Unknown",
+      "Helper": "Unknown"
+    },
+    "corr_approved_fingerprints": {},
+    "paper_status": {},
+    "paper_approved_fingerprints": {},
+    "deviation_status": {},
+    "deviation_approved_fingerprints": {},
+    "substantiveness_status": {
+      "A": "Unknown",
+      "B": "Unknown",
+      "Helper": "Unknown"
+    },
+    "substantiveness_approved_fingerprints": {},
+    "sound_assessments": {},
+    "reviewer_requested_sound_verifier_nodes": [],
+    "sound_status": {},
+    "sound_approved_fingerprints": {},
+    "node_difficulty": {
+      "A": "Hard",
+      "B": "Hard",
+      "Helper": "Hard"
+    },
+    "easy_attempts": {
+      "A": 0,
+      "B": 0,
+      "Helper": 0
+    },
+    "human_input_outstanding": true,
+    "pending_task": {
+      "task_blockers": [],
+      "node": "A",
+      "mode": "Local",
+      "orphan_cleanup_nodes": [],
+      "protected_semantic_change_nodes": [],
+      "authorized_nodes": [],
+      "allow_new_obligations": true,
+      "must_close_active": false,
+      "next_worker_context_mode": "resume",
+      "paper_focus_ranges": [
+        {
+          "start_line": 1,
+          "end_line": 5,
+          "reason": "fixture generation: statement of A"
+        }
+      ],
+      "work_style_hint": "none",
+      "consumed_global_repair_grant": false
+    },
+    "pending_protected_semantic_scope_confirmation": null,
+    "pending_protected_reapproval_nodes": [],
+    "retry_outcome_kind": "None",
+    "reviewer_comments": "",
+    "latest_worker_summary": "",
+    "latest_worker_comments": "",
+    "latest_worker_needs_restructure_suggested_nodes": [],
+    "latest_worker_under_model_disproof": "",
+    "latest_worker_under_model_route_opinion": "",
+    "latest_worker_under_model_reasoning": "",
+    "assumption_authoring": null,
+    "pending_assumption_draft": null,
+    "pending_authoring_candidate": "",
+    "deterministic_worker_rejection_reasons": [],
+    "latest_review_rejection_reasons": [],
+    "latest_paper_reviewer_evidence": {},
+    "latest_deviation_reviewer_evidence": {},
+    "latest_deviation_review_ids": [],
+    "latest_substantiveness_reviewer_evidence": {},
+    "latest_corr_reviewer_evidence": {},
+    "latest_sound_reviewer_evidence": {},
+    "latest_assumptions_lane_evidence": [],
+    "latest_paper_review_targets": [],
+    "latest_substantiveness_review_nodes": [],
+    "latest_corr_review_nodes": [],
+    "latest_sound_review_nodes": [],
+    "previous_paper_lane_findings": {},
+    "previous_substantiveness_lane_findings": {},
+    "substantiveness_consecutive_no_progress_requests": 0,
+    "previous_corr_lane_findings": {},
+    "previous_sound_lane_findings": {},
+    "cleanup_audit_tasks": [],
+    "cleanup_audit_scratchpad": "",
+    "cleanup_audit_burst_count": 0,
+    "cleanup_audit_round": 1,
+    "cleanup_consecutive_invalid_workers": 0,
+    "cleanup_active_task": null,
+    "cleanup_force_done": false,
+    "latest_audit_rejection_reason": "",
+    "audit_burst_retry_count": 0,
+    "stuck_math_audit": {
+      "active": true,
+      "trigger": "reviewer requested audit (approach): fixture generation: exercise the stuck-math-audit surface",
+      "active_since_cycle": 4,
+      "trigger_blockers": [
+        {
+          "kind": "Soundness",
+          "object": {
+            "otype": "node",
+            "node": "A"
+          },
+          "fingerprint": "",
+          "deferred": false
+        },
+        {
+          "kind": "Substantiveness",
+          "object": {
+            "otype": "node",
+            "node": "A"
+          },
+          "fingerprint": "",
+          "deferred": false
+        },
+        {
+          "kind": "Substantiveness",
+          "object": {
+            "otype": "node",
+            "node": "B"
+          },
+          "fingerprint": "",
+          "deferred": false
+        },
+        {
+          "kind": "Substantiveness",
+          "object": {
+            "otype": "node",
+            "node": "Helper"
+          },
+          "fingerprint": "",
+          "deferred": false
+        }
+      ],
+      "last_reviewer_lean_product": null,
+      "need_input_audit": null,
+      "gap_research": null,
+      "gap_plan_critique": null,
+      "revision_planning": null,
+      "initial_planning": null,
+      "assumptions_lane": null
+    },
+    "audit_plan": {
+      "report": "Fixture stuck-math-audit report. fixture audit narrative; fixture audit narrative; fixture audit narrative; fixture audit narrative; fixture audit narrative; fixture audit narrative; fixture audit narrative;",
+      "tasks": [],
+      "probe_paths": [
+        "Tablet/Probe.lean"
+      ],
+      "need_input_audit": false,
+      "revision_audit": false,
+      "initial_plan": false,
+      "cone_clean_node": null,
+      "written_at_cycle": 4,
+      "written_by_request": 3,
+      "trigger_at_write": "reviewer requested audit (approach): fixture generation: exercise the stuck-math-audit surface",
+      "route_tex": ""
+    },
+    "superseded_audit_plan": null,
+    "last_stuck_math_audit_dispatched_cycle": 4,
+    "stuck_math_audit_burst_retry_count": 0,
+    "latest_stuck_math_audit_rejection_reason": "",
+    "pending_global_repair_request": null,
+    "pending_global_repair_grant": null,
+    "latest_global_repair_audit_decline_reason": "",
+    "latest_global_repair_audit_decline_cycle": null,
+    "last_reviewer_global_repair_request_cycle": null,
+    "pending_audit_request": null,
+    "pending_worker_audit_request": null,
+    "last_audit_request_cycle": 4,
+    "process_memory_seq": 0,
+    "gap_plan_reject_count": 0,
+    "undermodel_deferral_count": 0,
+    "gap_plan_budget_gap_key": null,
+    "gap_human_escalation": null,
+    "ever_shallow_coarse_closed": [],
+    "global_repair_mode_enabled": true,
+    "revision_context": null,
+    "tablet_target": "lean",
+    "in_flight_request": null
+  },
+  "checkpoint": {
+    "cycle": 4,
+    "phase": "ProofFormalization",
+    "gate_kind": "None",
+    "active_node": "A",
+    "committed": {
+      "present_nodes": [
+        "A",
+        "B",
+        "Helper"
+      ],
+      "open_nodes": [
+        "A"
+      ],
+      "coverage": {
+        "t": [
+          "A"
+        ]
+      },
+      "target_fingerprints": {},
+      "corr_current_fingerprints": {
+        "A": "corr-a",
+        "B": "corr-b",
+        "Helper": "corr-helper"
+      },
+      "paper_current_fingerprints": {
+        "t": ""
+      },
+      "sound_current_fingerprints": {},
+      "deviation_current_fingerprints": {},
+      "sound_current_fingerprint_parts": {},
+      "sketch_proof_nodes": [],
+      "placeholder_definition_nodes": [],
+      "substantiveness_current_fingerprints": {
+        "A": "",
+        "B": "",
+        "Helper": ""
+      },
+      "protected_closure_nodes_per_target": {}
+    }
+  },
+  "commands": [
+    {
+      "command": "commit_checkpoint"
+    }
+  ],
+  "event_count": 3,
+  "is_clean": false
+}

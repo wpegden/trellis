@@ -1,0 +1,5 @@
+# Challenge targets
+
+This run also carries **challenge targets**: prescribed Isabelle declarations listed in `scope_contract.configured_challenge_targets` (id, kind, name, the exact Isabelle text, and an informal statement when one exists). Every configured challenge target must eventually be covered by a node that claims it.
+
+To cover a challenge target, create the node named exactly the target's `name`, place the prescribed Isabelle text verbatim as the principal declaration (theorem targets: the statement through the proposition, with the proof part yours to author; definition targets: the entire declaration), and claim the target in `challenge_claim_updates` (`{"NodeName": ["challenge_target_id"]}`). The kernel byte-compares the FILESPEC slice against the prescription at acceptance, so copy the text exactly as given — the theory header and imports remain yours to choose. Each node claims at most one challenge target. Designating one node as covering both a challenge target and a paper target is legal.

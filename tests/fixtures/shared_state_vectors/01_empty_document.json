@@ -1,0 +1,12 @@
+{
+  "name": "01_empty_document",
+  "kind": "roundtrip",
+  "description": "An object with no members. The envelope is still emitted, with both tables present and empty, and no `checkpoint`/`state` members because the input had none.",
+  "plain": {},
+  "encoded": {
+    "$format": "trellis-shared-state/1",
+    "$strings": {},
+    "$pool": {}
+  },
+  "decoded": {}
+}
