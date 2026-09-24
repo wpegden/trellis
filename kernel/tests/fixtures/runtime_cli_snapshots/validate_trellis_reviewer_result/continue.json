@@ -1,0 +1,21 @@
+{
+  "action": "validate_trellis_reviewer_result",
+  "raw_payload": {
+    "allow_new_obligations": true,
+    "clear_human_input": true,
+    "decision": "CONTINUE",
+    "difficulty_updates": {
+      "main_node": "hard"
+    },
+    "must_close_active": false,
+    "next_active": "main_node",
+    "next_mode": "TARGETED",
+    "reason": "Need to keep working.",
+    "reset": "NONE",
+    "reset_blocker_ids": [],
+    "task_blocker_ids": [
+      "b1",
+      "b1"
+    ]
+  }
+}

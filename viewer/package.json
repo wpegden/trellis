@@ -1,0 +1,17 @@
+{
+  "name": "viewer",
+  "version": "0.3.1",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test_grunts.js && node test_halt_state.js && node test_attention_state.js && node test_update_check.js && node test_usage_rollup.js && node test_tablet_blob.js && node test_shared_state.js && node test_control_auth.js && node test_host_guard.js && node test_landing_index.js && node test_chat_calls.js && node test_create_job.js && node test_wizard_not_found.js"
+  },
+  "keywords": [],
+  "author": "Wesley Pegden",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "private": true,
+  "dependencies": {
+    "compression": "^1.8.1",
+    "express": "^5.2.1"
+  }
+}

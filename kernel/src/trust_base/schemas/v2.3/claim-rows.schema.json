@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trellis://schemas/claim-rows/v3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "header", "rows"],
+  "properties": {
+    "schema": { "const": "trellis-claim-rows/v3" },
+    "header": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["edition", "seed_roots", "launch_acknowledgment_sha256", "adaptation_ledger_sha256", "approved_axiom_floor", "authored_definitions", "cycle"],
+      "properties": {
+        "edition": { "enum": ["pre_gate", "finalization"] },
+        "gate_episode_id": { "type": "string" },
+        "seed_roots": { "$ref": "#/$defs/seed_roots" },
+        "launch_acknowledgment_sha256": { "$ref": "#/$defs/hash" },
+        "approval_record_sha256": { "$ref": "#/$defs/hash" },
+        "gate_presentation_sha256": { "$ref": "#/$defs/hash" },
+        "adaptation_ledger_sha256": { "$ref": "#/$defs/hash" },
+        "phase0": { "$ref": "#/$defs/phase0_roots" },
+        "approved_axiom_floor": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "authored_definitions": { "type": "array", "items": { "$ref": "#/$defs/authored_definition" } },
+        "cycle": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "rows": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/row" } }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "seed_roots": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seed_manifest_sha256", "seed_definition_bundle_sha256", "evidence_tool_manifest_sha256", "authored_semantic_root", "approved_evidence_tool_input_root"],
+      "properties": {
+        "seed_manifest_sha256": { "$ref": "#/$defs/hash" },
+        "seed_definition_bundle_sha256": { "$ref": "#/$defs/hash" },
+        "evidence_tool_manifest_sha256": { "$ref": "#/$defs/hash" },
+        "authored_semantic_root": { "$ref": "#/$defs/hash" },
+        "approved_evidence_tool_input_root": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "phase0_roots": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allow_same_model_lanes", "sealed_generation_sha256", "phase0_bundle_sha256", "target_upload_sha256", "supporting_upload_sha256", "source_partition_manifest_sha256", "target_source_tree_sha256", "supporting_source_tree_sha256", "unadapted_source_tree_sha256", "adapted_source_tree_sha256", "goal_sha256", "goal_binding_report_sha256", "adaptation_ledger_sha256", "final_checker_receipt_sha256", "seam_repair_verdict_sha256", "correspondence_verdict_sha256", "production_result_sha256"],
+      "properties": {
+        "allow_same_model_lanes": { "type": "boolean" },
+        "sealed_generation_sha256": { "$ref": "#/$defs/hash" },
+        "phase0_bundle_sha256": { "$ref": "#/$defs/hash" },
+        "target_upload_sha256": { "$ref": "#/$defs/hash" },
+        "supporting_upload_sha256": { "anyOf": [{ "$ref": "#/$defs/hash" }, { "type": "null" }] },
+        "source_partition_manifest_sha256": { "$ref": "#/$defs/hash" },
+        "target_source_tree_sha256": { "$ref": "#/$defs/hash" },
+        "supporting_source_tree_sha256": { "$ref": "#/$defs/hash" },
+        "unadapted_source_tree_sha256": { "$ref": "#/$defs/hash" },
+        "adapted_source_tree_sha256": { "$ref": "#/$defs/hash" },
+        "goal_sha256": { "$ref": "#/$defs/hash" },
+        "goal_binding_report_sha256": { "$ref": "#/$defs/hash" },
+        "adaptation_ledger_sha256": { "$ref": "#/$defs/hash" },
+        "final_checker_receipt_sha256": { "$ref": "#/$defs/hash" },
+        "seam_repair_verdict_sha256": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/hash" } },
+        "correspondence_verdict_sha256": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/hash" } },
+        "production_result_sha256": { "$ref": "#/$defs/hash" }
+      }
+    },
+    "authored_definition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["node", "logical_id", "evidence_relative_path", "raw_sha256", "definition_utf8"],
+      "properties": {
+        "node": { "type": "string", "minLength": 1 },
+        "logical_id": { "type": "string", "minLength": 1 },
+        "evidence_relative_path": { "type": "string", "minLength": 1 },
+        "raw_sha256": { "$ref": "#/$defs/hash" },
+        "definition_utf8": { "type": ["string", "null"] }
+      }
+    },
+    "outcome": {
+      "oneOf": [
+        { "type": "object", "additionalProperties": false, "required": ["kind", "proof_subject_sha256"], "properties": { "kind": { "const": "proved" }, "proof_subject_sha256": { "$ref": "#/$defs/hash" } } },
+        { "type": "object", "additionalProperties": false, "required": ["kind", "proof_subject_sha256", "artifact"], "properties": { "kind": { "const": "disproved" }, "proof_subject_sha256": { "$ref": "#/$defs/hash" }, "artifact": { "oneOf": [ { "type": "object", "additionalProperties": false, "required": ["kind"], "properties": { "kind": { "const": "absent" } } }, { "type": "object", "additionalProperties": false, "required": ["kind", "record"], "properties": { "kind": { "const": "present" }, "record": { "$ref": "trellis://schemas/rust-witness-artifact/v1" } } } ] } } },
+        { "type": "object", "additionalProperties": false, "required": ["kind", "conditional_target_id", "condition_lean", "sealed_statement_lean", "sealed_statement_sha256", "approval_record_sha256", "proof_subject_sha256"], "properties": { "kind": { "const": "conditional_theorem" }, "conditional_target_id": { "type": "string", "minLength": 1 }, "condition_lean": { "type": "string", "minLength": 1 }, "sealed_statement_lean": { "type": "string", "minLength": 1 }, "sealed_statement_sha256": { "$ref": "#/$defs/hash" }, "approval_record_sha256": { "$ref": "#/$defs/hash" }, "proof_subject_sha256": { "$ref": "#/$defs/hash" } } }
+      ]
+    },
+    "closure": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["selected_target_id", "selected_node", "fresh", "kernel_axioms", "unapproved_axioms"],
+      "properties": {
+        "selected_target_id": { "type": "string", "minLength": 1 },
+        "selected_node": { "type": "string", "minLength": 1 },
+        "fresh": { "const": true },
+        "kernel_axioms": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "unapproved_axioms": { "type": "array", "maxItems": 0 }
+      }
+    },
+    "row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target_id", "informal", "statement_name", "statement_lean", "statement_authority_sha256", "statement_sha256", "seeded_resolution", "selected_polarity", "terminal_outcome", "closure"],
+      "properties": {
+        "target_id": { "type": "string", "minLength": 1 },
+        "informal": { "type": "string" },
+        "statement_name": { "type": "string", "minLength": 1 },
+        "statement_lean": { "type": "string", "minLength": 1 },
+        "statement_authority_sha256": { "$ref": "#/$defs/hash" },
+        "statement_sha256": { "$ref": "#/$defs/hash" },
+        "seeded_resolution": { "enum": ["prove", "decide"] },
+        "selected_polarity": { "enum": ["prove", "disprove"] },
+        "terminal_outcome": { "$ref": "#/$defs/outcome" },
+        "closure": { "$ref": "#/$defs/closure" }
+      }
+    }
+  }
+}

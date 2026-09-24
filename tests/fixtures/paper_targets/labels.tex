@@ -1,0 +1,17 @@
+\documentclass{article}
+\begin{document}
+
+\begin{theorem}\label{thm:first}\label{thm:second}
+Two labels; only the first binds.
+\end{theorem}
+
+\begin{corollary}\label{thm:first}
+Reuses a label that already bound an earlier block.
+\end{corollary}
+
+\begin{theorem}
+No label inside.
+\end{theorem}
+\label{thm:outside}
+
+\end{document}

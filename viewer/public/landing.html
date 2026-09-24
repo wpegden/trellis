@@ -1,0 +1,1533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trellis — Runs</title>
+<!-- Control-plane bootstrap. The viewer process rewrites the line below when
+     it serves this file to a direct loopback peer. See index.html and
+     `controlBootstrapScript` in server.js. Do not reformat it: the server
+     matches it verbatim. -->
+<script>window.__TRELLIS_CONTROL__ = null; /*TRELLIS_CONTROL_TOKEN*/</script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Menlo', 'Monaco', 'Courier New', monospace; font-size: 13px;
+       background: #1a1a2e; color: #e0e0e0; min-height: 100vh; }
+a { color: inherit; text-decoration: none; }
+
+header { background: #16213e; padding: 10px 18px; display: flex; align-items: baseline;
+         gap: 16px; border-bottom: 1px solid #333; flex-wrap: wrap; }
+header h1 { font-size: 14px; color: #8be9fd; }
+header .sub { color: #6272a4; font-size: 12px; }
+header .spacer { margin-left: auto; }
+header .ctl { font-size: 11px; color: #6272a4; }
+header .ctl.off { color: #ffb86c; }
+
+main { padding: 16px 18px 48px; max-width: 1500px; margin: 0 auto; }
+h2 { font-size: 12px; color: #6272a4; text-transform: uppercase; letter-spacing: .08em;
+     margin: 22px 0 10px; font-weight: normal; }
+h2:first-child { margin-top: 0; }
+
+/* ---- host strip ---- */
+.host { display: grid; grid-template-columns: repeat(auto-fit, minmax(215px, 1fr));
+        gap: 10px; }
+.tile { background: #16213e; border: 1px solid #2b3a5b; border-radius: 5px; padding: 10px 12px; }
+.tile .k { font-size: 11px; color: #6272a4; text-transform: uppercase; letter-spacing: .06em; }
+.tile .v { font-size: 17px; color: #f8f8f2; margin: 3px 0 2px; }
+.tile .n { font-size: 11px; color: #8892b0; line-height: 1.45; }
+.bar { height: 4px; background: #0f172a; border-radius: 2px; overflow: hidden; margin: 6px 0 5px; }
+.bar > span { display: block; height: 100%; background: #50fa7b; }
+.bar.warn > span { background: #ffb86c; }
+.bar.bad > span { background: #ff5555; }
+.verdict { font-size: 11px; }
+.verdict.ok { color: #50fa7b; }
+.verdict.warn { color: #ffb86c; }
+.verdict.bad { color: #ff5555; }
+
+/* ---- run cards ---- */
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 10px; }
+.card { display: block; background: #16213e; border: 1px solid #2b3a5b; border-left-width: 3px;
+        border-radius: 5px; padding: 11px 13px; transition: border-color .12s, background .12s; }
+.card:hover { background: #1b2749; border-color: #4a5f8f; }
+.card .top { display: flex; align-items: baseline; gap: 8px; }
+.card .slug { font-size: 14px; color: #f8f8f2; overflow: hidden; text-overflow: ellipsis;
+              white-space: nowrap; }
+.card .badge { margin-left: auto; font-size: 10px; text-transform: uppercase;
+               letter-spacing: .07em; padding: 2px 7px; border-radius: 9px;
+               border: 1px solid currentColor; white-space: nowrap; }
+.card .meta { color: #8892b0; font-size: 11px; margin-top: 6px; line-height: 1.5; }
+.card .why { color: #6272a4; font-size: 11px; margin-top: 5px; font-style: italic; }
+.card .chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.chip { font-size: 10px; padding: 2px 6px; border-radius: 3px; background: #0f172a;
+        border: 1px solid #2b3a5b; color: #8892b0; }
+.chip.up { color: #50fa7b; border-color: #2c5a3a; }
+.chip.down { color: #6272a4; }
+.chip.warn { color: #ffb86c; border-color: #6b4a1f; }
+
+/* lifecycle colours, used for both the badge and the card's left edge */
+.lc-live { color: #50fa7b; }        .card.lc-live { border-left-color: #50fa7b; }
+.lc-paused { color: #8be9fd; }      .card.lc-paused { border-left-color: #8be9fd; }
+.lc-halted { color: #ff5555; }      .card.lc-halted { border-left-color: #ff5555; }
+.lc-finished { color: #bd93f9; }    .card.lc-finished { border-left-color: #bd93f9; }
+.lc-abandoned { color: #ffb86c; }   .card.lc-abandoned { border-left-color: #ffb86c; }
+.lc-initialized { color: #6272a4; } .card.lc-initialized { border-left-color: #44507a; }
+.lc-never_started { color: #6272a4; } .card.lc-never_started { border-left-color: #44507a; }
+.lc-unknown { color: #ff5555; }     .card.lc-unknown { border-left-color: #ff5555; }
+
+.empty { background: #16213e; border: 1px dashed #2b3a5b; border-radius: 5px;
+         padding: 26px 18px; color: #8892b0; line-height: 1.7; }
+.empty code { color: #8be9fd; background: #0f172a; padding: 1px 5px; border-radius: 3px; }
+footer { color: #44507a; font-size: 11px; padding: 0 18px 26px; max-width: 1500px; margin: 0 auto; }
+
+/* ---- run creation: cards + wizard ---- */
+.lc-creating { color: #f1fa8c; }      .card.lc-creating { border-left-color: #f1fa8c; }
+.lc-create_failed { color: #ff5555; } .card.lc-create_failed { border-left-color: #ff5555; }
+button { font: inherit; background: #0f172a; color: #e0e0e0; border: 1px solid #2b3a5b;
+         border-radius: 4px; padding: 5px 12px; cursor: pointer; }
+button:hover { border-color: #4a5f8f; }
+button.primary { color: #50fa7b; border-color: #2c5a3a; }
+button.danger { color: #ff5555; border-color: #6b1f1f; }
+button:disabled { color: #44507a; border-color: #22304f; cursor: not-allowed; }
+input[type=text], select { font: inherit; background: #0f172a; color: #e0e0e0;
+  border: 1px solid #2b3a5b; border-radius: 4px; padding: 5px 8px; }
+input[type=file] { font: inherit; color: #8892b0; }
+#wizard { display: none; background: #16213e; border: 1px solid #2b3a5b; border-radius: 6px;
+          padding: 16px 18px; margin-bottom: 20px; }
+#wizard.open { display: block; }
+#wizard h3 { font-size: 13px; color: #8be9fd; margin-bottom: 10px; font-weight: normal; }
+#wizard .row { display: flex; align-items: center; gap: 10px; margin: 8px 0; flex-wrap: wrap; }
+#wizard label { color: #8892b0; font-size: 12px; min-width: 90px; }
+#wizard .hint { color: #6272a4; font-size: 11px; }
+#wizard .err { color: #ff5555; font-size: 12px; margin-top: 8px; white-space: pre-wrap; }
+#wizard .warn { color: #ffb86c; font-size: 12px; margin-top: 6px; }
+.role-head, .role-choice { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(220px, 2fr) minmax(150px, 1fr);
+  gap: 10px; align-items: start; margin: 7px 0; }
+.role-head { color: #6272a4; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+.role-name { color: #f8f8f2; font-size: 12px; padding-top: 6px; }
+.role-name .path { display: block; color: #6272a4; font-size: 10px; margin-top: 2px; }
+.choice-other { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.choice-other select, .choice-other input { width: 100%; box-sizing: border-box; }
+@media (max-width: 760px) {
+  .role-head { display: none; }
+  .role-choice { grid-template-columns: 1fr; border-top: 1px solid #22304f; padding-top: 8px; }
+}
+.wstage { color: #f1fa8c; font-size: 12px; margin: 6px 0; }
+.wlog { background: #0f172a; border: 1px solid #22304f; border-radius: 4px; color: #8892b0;
+        font-size: 11px; padding: 8px 10px; margin-top: 8px; max-height: 240px;
+        overflow: auto; white-space: pre-wrap; word-break: break-all; }
+.cand { border: 1px solid #2b3a5b; border-radius: 5px; padding: 9px 11px; margin: 7px 0;
+        background: #101a33; }
+.cand .head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.cand .keyname { color: #f8f8f2; }
+.cand .tag { font-size: 10px; padding: 1px 6px; border-radius: 8px; border: 1px solid currentColor; }
+.cand .tag.rank { color: #8be9fd; }
+.cand .tag.second { color: #ffb86c; }
+.cand .reasons { color: #6272a4; font-size: 11px; margin-top: 3px; }
+.cand pre { color: #8892b0; font-size: 11px; margin-top: 6px; white-space: pre-wrap;
+            max-height: 130px; overflow: auto; }
+.rejected { border-left: 3px solid #6b4a1f; padding: 6px 10px; margin: 6px 0;
+            background: #101a33; font-size: 12px; color: #8892b0; }
+.rejected .code { color: #ffb86c; }
+.envrow { display: flex; align-items: center; gap: 10px; padding: 4px 0; font-size: 12px;
+          color: #8892b0; flex-wrap: wrap; }
+.envrow .name { color: #f8f8f2; min-width: 110px; }
+.wsection { margin-top: 14px; }
+.wsection > .t { color: #6272a4; font-size: 11px; text-transform: uppercase;
+                 letter-spacing: .07em; margin-bottom: 6px; }
+.card .actions { display: flex; gap: 6px; margin-top: 8px; }
+.card .actions button { font-size: 11px; padding: 3px 9px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Trellis</h1>
+  <span class="sub" id="host-line">loading…</span>
+  <span class="spacer"></span>
+  <button id="new-run-btn" style="display:none">+ new run</button>
+  <span class="ctl" id="control-line"></span>
+  <span class="sub" id="refreshed"></span>
+</header>
+
+<main>
+  <!-- Run-creation wizard. Dumb by design (VIEWER_RUN_CREATION_DESIGN.md §9):
+       every decision it renders — which candidates arrive checked, whether
+       confirm is allowed, retry/delete eligibility, the interrupted state —
+       is computed server-side (create-status payload) or by
+       scripts/trellis_create_run.sh. This panel uploads, posts actions, and
+       polls. -->
+  <div id="wizard"></div>
+
+  <h2>Host</h2>
+  <div class="host" id="host"></div>
+
+  <div id="runs"></div>
+</main>
+
+<footer id="footer"></footer>
+
+<script>
+'use strict';
+
+// The landing page is served at `${BASE}/`, so the API sits directly beneath
+// it. Everything this page shows is computed server-side (server.js
+// `projectsIndex` / `hostSnapshot`); this file is rendering and polling only.
+function basePath() {
+  const p = (window.location.pathname || '/').replace(/\/landing\.html$/, '');
+  if (!p || p === '/') return '';
+  return p.endsWith('/') ? p.slice(0, -1) : p;
+}
+function apiPath(rel) { return `${basePath()}/api/${rel}`.replace(/^\/\//, '/'); }
+
+// Run-viewer links are built from THIS page's base path, so when the landing
+// page is served under `${BASE}/<token>/` every card links to
+// `${BASE}/<token>/<slug>/` and the run viewer opens with controls still on.
+// Served plainly, they link plainly. The server's `href` field is the
+// canonical tokenless path and is deliberately not used here — it is cached
+// across requests and must never carry the token.
+function projectHref(slug) {
+  return `${basePath()}/${slug}/`.replace(/^\/\//, '/');
+}
+
+const GB = 1024 ** 3;
+function fmtBytes(n) {
+  if (n === null || n === undefined || !isFinite(n)) return '—';
+  if (n >= GB) return `${(n / GB).toFixed(n >= 10 * GB ? 0 : 1)} GB`;
+  if (n >= 1024 * 1024) return `${Math.round(n / 1024 / 1024)} MB`;
+  return `${n} B`;
+}
+function fmtAge(ms) {
+  if (!ms || !isFinite(ms)) return '—';
+  const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+  if (s < 90) return `${s}s ago`;
+  if (s < 5400) return `${Math.round(s / 60)}m ago`;
+  if (s < 172800) return `${Math.round(s / 3600)}h ago`;
+  return `${Math.round(s / 86400)}d ago`;
+}
+function fmtDur(secs) {
+  if (!secs || !isFinite(secs)) return '—';
+  if (secs < 90) return `${Math.round(secs)}s`;
+  if (secs < 5400) return `${Math.round(secs / 60)}m`;
+  if (secs < 172800) return `${Math.round(secs / 3600)}h`;
+  return `${Math.round(secs / 86400)}d`;
+}
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined && text !== null) n.textContent = String(text);
+  return n;
+}
+function barClass(pct) { return pct >= 90 ? 'bar bad' : pct >= 75 ? 'bar warn' : 'bar'; }
+
+function tile(key, value, note, pct) {
+  const t = el('div', 'tile');
+  t.appendChild(el('div', 'k', key));
+  t.appendChild(el('div', 'v', value));
+  if (pct !== undefined && pct !== null && isFinite(pct)) {
+    const bar = el('div', barClass(pct));
+    const fill = el('span');
+    fill.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+    bar.appendChild(fill);
+    t.appendChild(bar);
+  }
+  if (note) {
+    const n = el('div', 'n');
+    n.innerHTML = note;
+    t.appendChild(n);
+  }
+  return t;
+}
+
+function renderHost(h) {
+  document.getElementById('host-line').textContent =
+    `${h.hostname} · ${h.cpus} cpu · load ${h.load ? h.load['1m'].toFixed(2) : '—'} · ${h.projects_root || ''}`;
+
+  const ctl = document.getElementById('control-line');
+  if (h.control.enabled && window.__TRELLIS_CONTROL__) {
+    ctl.className = 'ctl';
+    ctl.textContent = `control on · bound ${h.control.bind_host}`;
+  } else if (h.control.enabled) {
+    ctl.className = 'ctl off';
+    // Expected whenever the page is opened without the token path.
+    ctl.textContent = 'read-only · browse under the control-token path to enable controls';
+    ctl.title = 'The viewer prints that URL on startup (scripts/start_viewer.sh output, or $HOME/.trellis-viewer.log).';
+  } else {
+    ctl.className = 'ctl off';
+    ctl.textContent = 'control OFF (TRELLIS_VIEWER_CONTROL=0)';
+  }
+
+  const host = document.getElementById('host');
+  host.textContent = '';
+
+  // RAM, stated against the documented requirement rather than as a bare
+  // number: 32 GB minimum / 48 GB recommended (INSTALLATION.md).
+  const m = h.memory;
+  const usedPct = m.total_bytes
+    ? Math.round(((m.total_bytes - (m.available_bytes ?? 0)) / m.total_bytes) * 100)
+    : null;
+  const verdictText = {
+    meets_recommended: `meets the recommended ${m.requirement_recommended_gb} GB`,
+    meets_minimum: `meets the ${m.requirement_min_gb} GB minimum, under the recommended ${m.requirement_recommended_gb} GB`,
+    below_minimum: `BELOW the ${m.requirement_min_gb} GB minimum — expect OOM kills mid-burst`,
+    unknown: 'could not read /proc/meminfo',
+  }[m.verdict] || m.verdict;
+  const verdictCls = { meets_recommended: 'ok', meets_minimum: 'warn', below_minimum: 'bad' }[m.verdict] || 'warn';
+  host.appendChild(tile(
+    'RAM',
+    `${fmtBytes(m.available_bytes)} free of ${fmtBytes(m.total_bytes)}`,
+    `<span class="verdict ${verdictCls}">${verdictText}</span>`,
+    usedPct,
+  ));
+
+  const sw = h.swap;
+  const swapPct = sw.total_bytes ? Math.round((sw.used_bytes / sw.total_bytes) * 100) : null;
+  const devices = (sw.devices || []).map(d => `${d.name} (${d.type})`).join('<br>');
+  host.appendChild(tile(
+    'Swap',
+    sw.present ? `${fmtBytes(sw.used_bytes)} used of ${fmtBytes(sw.total_bytes)}` : 'none',
+    (devices ? devices + '<br>' : '') + `<span class="verdict ${sw.present ? 'ok' : 'bad'}">${sw.note}</span>`,
+    swapPct,
+  ));
+
+  for (const d of h.disks || []) {
+    if (d.error) { host.appendChild(tile('Disk', d.path, `unreadable: ${d.error}`)); continue; }
+    host.appendChild(tile(
+      `Disk ${d.path}`,
+      `${fmtBytes(d.avail_bytes)} free`,
+      `${d.pct_used}% used of ${fmtBytes(d.total_bytes)}`,
+      d.pct_used,
+    ));
+  }
+
+  // Presence and age only — these are provider OAuth credentials and the
+  // viewer never reads their contents.
+  const auth = (h.provider_auth || []).map(a =>
+    `${a.present ? '<span class="verdict ok">✓</span>' : '<span class="verdict bad">✗</span>'} ${a.provider}`
+    + (a.present ? ` <span style="color:#44507a">${fmtAge(a.mtime_ms)}</span>` : '')).join('<br>');
+  host.appendChild(tile('Provider auth', `${(h.provider_auth || []).filter(a => a.present).length}/${(h.provider_auth || []).length} present`, auth));
+}
+
+function quotaLine(quota) {
+  const parts = [];
+  for (const [provider, q] of Object.entries(quota || {})) {
+    const w = q.weekly_budget;
+    if (!w) continue;
+    parts.push(`${provider} ${Math.round(w.pct_used)}% used${w.resets_at_repr ? ` · resets ${w.resets_at_repr}` : ''}`);
+  }
+  return parts.join(' · ');
+}
+
+function chip(parent, label, state) {
+  parent.appendChild(el('span', `chip ${state}`, label));
+}
+
+function renderCard(p) {
+  const a = document.createElement('a');
+  a.className = `card lc-${p.lifecycle}`;
+  a.href = projectHref(p.slug);
+
+  const top = el('div', 'top');
+  top.appendChild(el('span', 'slug', p.slug));
+  top.appendChild(el('span', `badge lc-${p.lifecycle}`, p.lifecycle_label || p.lifecycle));
+  a.appendChild(top);
+
+  const bits = [];
+  if (p.phase) bits.push(p.phase + (p.stage ? ` / ${p.stage}` : ''));
+  if (p.cycle !== null && p.cycle !== undefined) bits.push(`cycle ${p.cycle}`);
+  if (p.halt && p.halt.markers && p.halt.markers.length) bits.push(p.halt.markers.join(', '));
+  if (bits.length) a.appendChild(el('div', 'meta', bits.join(' · ')));
+
+  if (p.lifecycle_reason) a.appendChild(el('div', 'why', p.lifecycle_reason));
+
+  const chips = el('div', 'chips');
+  const sup = p.supervisor || {};
+  chip(chips, `supervisor ${sup.state || 'unknown'}${sup.pid ? ` (${sup.pid})` : ''}`,
+    sup.state === 'running' ? 'up' : sup.state === 'arming' ? 'warn' : 'down');
+  const chk = p.checker || {};
+  chip(chips, `checker ${chk.state || 'unknown'}${chk.socket_present ? ' +sock' : ''}`,
+    chk.state === 'running' ? 'up' : 'down');
+  const sc = p.sidecar || {};
+  if (sc.configured || sc.state === 'running') {
+    chip(chips, `sidecar ${sc.state}${sc.pool_size ? ` ×${sc.pool_size}` : ''}`,
+      sc.state === 'running' ? (sc.status_stale ? 'warn' : 'up') : 'down');
+  }
+  a.appendChild(chips);
+
+  const q = quotaLine(p.quota);
+  if (q) a.appendChild(el('div', 'meta', q));
+  return a;
+}
+
+// Cards for in-flight run creations (server-side `create_jobs`). They are a
+// section of their own, not a lifecycle rung: a create job may have no repo
+// at all yet. Clicking one opens the wizard bound to that job; the buttons
+// appear only where the server says they are eligible.
+function renderCreateCard(j) {
+  const card = el('div', `card lc-${j.bucket === 'create_failed' ? 'create_failed' : 'creating'}`);
+  const top = el('div', 'top');
+  top.appendChild(el('span', 'slug', j.slug));
+  top.appendChild(el('span', `badge lc-${j.bucket === 'create_failed' ? 'create_failed' : 'creating'}`,
+    j.effective_state.replace(/_/g, ' ')));
+  card.appendChild(top);
+
+  const bits = [];
+  if (j.stage && j.stage !== j.effective_state) bits.push(`stage ${j.stage}`);
+  if (j.paper_name) bits.push(j.paper_name);
+  if (j.goal_name) bits.push(j.goal_name);
+  if (j.crate_name) bits.push(j.crate_name);
+  // Row 9: a parked job is stable forever by design — say "parked 3d",
+  // which reads as the calm fact it is, not as staleness.
+  if (j.parked_secs) bits.push(`parked ${fmtDur(j.parked_secs)} — waits indefinitely`);
+  else if (j.updated_ts) bits.push(`updated ${fmtAge(j.updated_ts * 1000)}`);
+  if (bits.length) card.appendChild(el('div', 'meta', bits.join(' · ')));
+  if (j.error) card.appendChild(el('div', 'why', j.error));
+  else if (j.reason) card.appendChild(el('div', 'why', j.reason));
+
+  if (window.__TRELLIS_CONTROL__) {
+    const actions = el('div', 'actions');
+    const open = el('button', null, j.effective_state === 'awaiting_targets' ? 'choose targets' : 'open');
+    open.onclick = () => createFlowAction(j, 'open');
+    actions.appendChild(open);
+    if (j.retry_eligible) {
+      const retry = el('button', 'primary', 'retry');
+      retry.onclick = () => createFlowAction(j, 'retry');
+      actions.appendChild(retry);
+    }
+    if (j.delete_eligible) {
+      const del = el('button', 'danger', 'delete');
+      del.onclick = () => createFlowAction(j, 'delete');
+      actions.appendChild(del);
+    }
+    card.appendChild(actions);
+  }
+  return card;
+}
+
+function renderRuns(idx) {
+  const runs = document.getElementById('runs');
+  runs.textContent = '';
+
+  const creating = idx.create_jobs || [];
+  if (creating.length) {
+    runs.appendChild(el('h2', null, `creating — ${creating.length}`));
+    const cards = el('div', 'cards');
+    for (const j of creating) cards.appendChild(renderCreateCard(j));
+    runs.appendChild(cards);
+  }
+
+  if (!idx.projects.length && !creating.length) {
+    runs.appendChild(el('h2', null, 'Runs'));
+    const e = el('div', 'empty');
+    e.innerHTML =
+      `No projects found under <code>${idx.projects_root}</code>.<br><br>`
+      + 'A project is a directory holding a <code>trellis.config.json</code>. '
+      + 'Create one with <code>scripts/setup_repo.sh</code>, then launch it with '
+      + '<code>scripts/trellis.sh</code> — see INSTALLATION.md.<br><br>'
+      + 'This page reads the projects root on every refresh, so a run created '
+      + 'in a terminal shows up here without restarting the viewer.';
+    runs.appendChild(e);
+    return;
+  }
+
+  const groups = new Map();
+  for (const p of idx.projects) {
+    if (!groups.has(p.lifecycle)) groups.set(p.lifecycle, []);
+    groups.get(p.lifecycle).push(p);
+  }
+  const order = (idx.lifecycle_order || []).concat(['unknown']);
+  const seen = new Set();
+  for (const lifecycle of order) {
+    if (!groups.has(lifecycle) || seen.has(lifecycle)) continue;
+    seen.add(lifecycle);
+    const list = groups.get(lifecycle);
+    const label = (idx.lifecycle_labels && idx.lifecycle_labels[lifecycle]) || lifecycle;
+    runs.appendChild(el('h2', null, `${label} — ${list.length}`));
+    const cards = el('div', 'cards');
+    for (const p of list) cards.appendChild(renderCard(p));
+    runs.appendChild(cards);
+  }
+}
+
+// ===========================================================================
+// Run-creation wizard. Upload -> target page -> build -> launch -> verify.
+//
+// Everything rendered here comes verbatim from the create-status payload:
+// which candidates arrive checked (`checked`), whether confirm is possible
+// (`confirm_allowed`), when the general rules show (`show_general_rules`),
+// retry/delete eligibility, and the interrupted classification are all
+// server-side answers. This code uploads bytes, posts actions, polls, and
+// draws — nothing else.
+// ===========================================================================
+const wizard = { slug: null, timer: null, meta: null, options: null, lastState: null, notFound: 0 };
+// Consecutive exists:false polls tolerated before a wizard gives up on its job
+// and returns to the form. Polls run every 2s, so this is a ~6s grace window.
+const WIZARD_NOT_FOUND_POLLS = 3;
+const createFlowHandlers = new Map();
+
+// Release-removable client chunks register a handler by the opaque flow name
+// recorded in job.json. Unknown/legacy jobs retain the math wizard behavior.
+function registerCreateFlow(name, handlers) {
+  createFlowHandlers.set(name, handlers || {});
+}
+
+function createFlowAction(job, action) {
+  const handler = createFlowHandlers.get(job.create_flow || 'math');
+  if (handler && typeof handler[action] === 'function') return handler[action](job);
+  if (action === 'open') return wizardOpenJob(job.slug);
+  if (action === 'retry') return wizardAction(job.slug, 'retry', {}).then(() => wizardOpenJob(job.slug));
+  if (action === 'delete') return wizardDelete(job.slug);
+  return undefined;
+}
+
+function controlHeaders(json) {
+  const h = {};
+  const ctl = window.__TRELLIS_CONTROL__;
+  if (ctl && ctl.header && ctl.token) h[ctl.header] = ctl.token;
+  if (json) h['Content-Type'] = 'application/json';
+  return h;
+}
+
+async function controlPost(rel, body) {
+  const res = await fetch(apiPath(`control/${rel}`), {
+    method: 'POST', headers: controlHeaders(true), body: JSON.stringify(body || {}),
+  });
+  let data = {};
+  try { data = await res.json(); } catch { /* non-JSON error page */ }
+  return { status: res.status, ok: res.ok, data };
+}
+
+async function controlGet(rel) {
+  const res = await fetch(apiPath(`control/${rel}`), { headers: controlHeaders(false) });
+  let data = {};
+  try { data = await res.json(); } catch {}
+  return { status: res.status, ok: res.ok, data };
+}
+
+// Raw-body upload, no multipart (plan §3): the file's bytes ARE the body and
+// the server names the stored file.
+async function uploadTex(file) {
+  const buf = await file.arrayBuffer();
+  const res = await fetch(apiPath('control/uploads'), {
+    method: 'POST',
+    headers: { ...controlHeaders(false), 'Content-Type': 'application/octet-stream' },
+    body: buf,
+  });
+  let data = {};
+  try { data = await res.json(); } catch {}
+  return { status: res.status, ok: res.ok, data };
+}
+
+function wizardEl() { return document.getElementById('wizard'); }
+
+function wizardClose() {
+  if (wizard.timer) { clearInterval(wizard.timer); wizard.timer = null; }
+  wizard.slug = null;
+  const w = wizardEl();
+  w.classList.remove('open');
+  w.textContent = '';
+}
+
+function wizardError(msg) {
+  const w = wizardEl();
+  let err = w.querySelector('.err');
+  if (!err) { err = el('div', 'err'); w.appendChild(err); }
+  err.textContent = msg;
+}
+
+async function wizardAction(slug, action, body) {
+  const r = await controlPost(`create-jobs/${slug}/${action}`, body);
+  if (!r.ok) wizardError(r.data.detail || r.data.error || `HTTP ${r.status}`);
+  return r;
+}
+
+// Delete is a two-step confirmation: the first POST is refused with the
+// doomed paths, the operator reads them, and only echoing every path back
+// deletes (design §4 — the confirmation NAMES the paths).
+async function wizardDelete(slug) {
+  const first = await controlPost(`create-jobs/${slug}/delete`, {});
+  if (first.status === 409 && Array.isArray(first.data.paths)) {
+    const msg = `Delete create job "${slug}"?\n\nThis permanently removes:\n\n`
+      + first.data.paths.join('\n');
+    if (!window.confirm(msg)) return;
+    const second = await controlPost(`create-jobs/${slug}/delete`, { paths: first.data.paths });
+    if (!second.ok) { wizardError(second.data.detail || 'delete failed'); return; }
+    if (wizard.slug === slug) wizardClose();
+    refresh();
+  } else if (!first.ok) {
+    wizardError(first.data.detail || first.data.error || `HTTP ${first.status}`);
+  }
+}
+
+function wizardHeader(title) {
+  const w = wizardEl();
+  w.textContent = '';
+  w.classList.add('open');
+  const head = el('div', 'row');
+  head.appendChild(el('h3', null, title));
+  const spacer = el('span'); spacer.style.marginLeft = 'auto'; head.appendChild(spacer);
+  const close = el('button', null, 'close');
+  close.onclick = wizardClose;
+  head.appendChild(close);
+  w.appendChild(head);
+  return w;
+}
+
+// The loogle probe (server-side, GET loogle-probe.json): shows the result of
+// an ACTUAL attempt to reach the local Loogle server next to the on/off
+// choice, so the operator is not guessing. Four states: not checked yet
+// (this page's initial state), answering, erroring, unreachable — all
+// computed server-side from scripts/loogle_json.sh. The probe informs and
+// never touches the choice: selecting `on` for a server you are about to
+// start is legitimate, and submission never waits on this.
+async function runLoogleProbe(target, btn) {
+  btn.disabled = true;
+  target.className = 'hint';
+  target.textContent = 'probe: checking…';
+  try {
+    const r = await controlGet('loogle-probe.json');
+    const d = r.data || {};
+    const cls = d.state === 'answering' ? 'verdict ok'
+      : d.state === 'unreachable' ? 'verdict bad' : 'verdict warn';
+    target.className = cls;
+    target.textContent = `probe: ${d.state || 'failed'} — ${d.detail || `HTTP ${r.status}`}`;
+  } catch (e) {
+    target.className = 'verdict warn';
+    target.textContent = `probe: failed (${e.message})`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 're-check';
+  }
+}
+
+// A dynamic list of reference rows (id + file + optional source id), shared
+// by the new-run form and the target page's edit surface. Rows seeded from
+// `existing` are keep-entries — the server re-points them at the job's
+// already-ingested file, so editing the set never forces re-uploading what
+// the browser no longer holds. Validation here is cosmetic; the server
+// re-checks everything (row 25).
+function referenceRowsControl(section, existing) {
+  const list = el('div');
+  section.appendChild(list);
+  const addRow = (ref) => {
+    const row = el('div', 'row refrow');
+    const idIn = el('input'); idIn.type = 'text'; idIn.placeholder = 'id (e.g. smith2020)';
+    idIn.className = 'ref-id'; if (ref) idIn.value = ref.id;
+    const fileIn = el('input'); fileIn.type = 'file'; fileIn.accept = '.tex,text/plain';
+    fileIn.className = 'ref-file';
+    const srcIn = el('input'); srcIn.type = 'text'; srcIn.placeholder = 'source id (optional)';
+    srcIn.className = 'ref-source'; if (ref && ref.source_id && ref.source_id !== ref.id) srcIn.value = ref.source_id;
+    row.dataset.keep = ref ? '1' : '';
+    row.dataset.sourceDefault = ref ? (ref.source_id || ref.id) : '';
+    const rm = el('button', null, 'remove');
+    rm.onclick = () => row.remove();
+    row.appendChild(idIn); row.appendChild(fileIn); row.appendChild(srcIn); row.appendChild(rm);
+    if (ref) {
+      row.appendChild(el('span', 'hint',
+        'already ingested — changed content needs a NEW id (ids are immutable)'));
+    }
+    list.appendChild(row);
+  };
+  for (const ref of existing || []) addRow(ref);
+  const add = el('button', null, '+ add reference');
+  add.onclick = () => addRow(null);
+  section.appendChild(add);
+  return {
+    // Uploads fresh files (via the one upload endpoint) and returns the
+    // references array for the POST; throws with a user-facing message.
+    // Upload warnings (transcode, no-\begin) render into the section.
+    async collect() {
+      const out = [];
+      const seen = new Set();
+      for (const row of [...list.querySelectorAll('.refrow')]) {
+        const id = row.querySelector('.ref-id').value.trim();
+        const source = row.querySelector('.ref-source').value.trim()
+          || row.dataset.sourceDefault || '';
+        const file = (row.querySelector('.ref-file').files || [])[0] || null;
+        const keep = row.dataset.keep === '1' && !file;
+        if (!id && !file) continue; // an untouched extra row
+        if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(id)) {
+          throw new Error(`reference id "${id}" is invalid (letters, digits, . _ -; starts alphanumeric)`);
+        }
+        if (seen.has(id)) throw new Error(`reference id "${id}" appears twice`);
+        seen.add(id);
+        if (keep) {
+          out.push({ id, keep: true, source_id: source || undefined });
+          continue;
+        }
+        if (!file) throw new Error(`reference "${id}" needs a .tex file`);
+        const up = await uploadTex(file);
+        if (!up.ok) {
+          throw new Error(`reference "${id}": ${up.data.detail || up.data.error || `upload failed (${up.status})`}`);
+        }
+        for (const warning of up.data.warnings || []) {
+          section.appendChild(el('div', 'warn', `reference ${id}: ${warning.message}`));
+        }
+        out.push({ id, upload_id: up.data.upload_id, source_id: source || undefined });
+      }
+      return out;
+    },
+  };
+}
+
+const OTHER_CREATE_OPTION = '__other__';
+
+// Pinned rows lead, derived rows follow, duplicates keep their first
+// position, and the freeform escape hatch is always last. The derived lists
+// inform the dropdown without becoming a model/effort allowlist.
+function createChoiceRows(pinned, derived) {
+  const rows = [];
+  const seen = new Set();
+  for (const raw of [...(pinned || []), ...(derived || [])]) {
+    const row = typeof raw === 'string' ? { value: raw, label: '' } : raw;
+    const value = String((row && row.value) || '').trim();
+    if (!value || seen.has(value)) continue;
+    seen.add(value);
+    rows.push({ value, label: String(row.label || '') });
+  }
+  return rows;
+}
+
+function createChoiceControl(kind, role, rows, defaultValue, changed) {
+  const wrap = el('div', 'choice-other');
+  const select = el('select', `role-${kind}-select`);
+  select.dataset.role = role;
+  for (const row of rows) {
+    const text = row.label ? `${row.value} — ${row.label}` : row.value;
+    const option = el('option', null, text);
+    option.value = row.value;
+    if (row.value === defaultValue) option.selected = true;
+    select.appendChild(option);
+  }
+  const other = el('option', null, 'other…');
+  other.value = OTHER_CREATE_OPTION;
+  select.appendChild(other);
+
+  const custom = el('input', `role-${kind}-other`);
+  custom.type = 'text';
+  custom.dataset.role = role;
+  custom.placeholder = kind === 'model' ? 'enter model name' : 'enter effort';
+  custom.style.display = 'none';
+  select.onchange = () => {
+    const open = select.value === OTHER_CREATE_OPTION;
+    custom.style.display = open ? '' : 'none';
+    if (open) custom.focus();
+    if (changed) changed();
+  };
+  custom.oninput = () => { if (changed) changed(); };
+  wrap.appendChild(select);
+  wrap.appendChild(custom);
+  return {
+    element: wrap,
+    value() {
+      if (select.value !== OTHER_CREATE_OPTION) return select.value;
+      const value = custom.value.trim();
+      if (!value) throw new Error(`enter an ${kind} for ${role}, or choose a listed value`);
+      return value;
+    },
+    current() {
+      return select.value === OTHER_CREATE_OPTION ? custom.value.trim() : select.value;
+    },
+    // Programmatic selection (presets). Unlisted values go through the
+    // freeform input, exactly as if the operator had typed them.
+    set(value) {
+      const wanted = String(value || '').trim();
+      if (rows.some(row => row.value === wanted)) {
+        select.value = wanted;
+        custom.style.display = 'none';
+      } else {
+        select.value = OTHER_CREATE_OPTION;
+        custom.value = wanted;
+        custom.style.display = '';
+      }
+    },
+  };
+}
+
+// Resolve a launch preset into per-role model/effort selections. Guide roles
+// take the preset's guide model; every other role takes the base model. An
+// "all X" preset puts X on every role, Phase-0 audit lanes included.
+function resolvePresetRoleSettings(preset, roles, guideRoles) {
+  const out = {};
+  if (!preset || !preset.base) return out;
+  const guide = preset.guide || preset.base;
+  const guideSet = new Set(guideRoles || []);
+  for (const role of roles || []) {
+    out[role.key] = guideSet.has(role.key)
+      ? { model: guide.model, effort: guide.effort }
+      : { model: preset.base.model, effort: preset.base.effort };
+  }
+  return out;
+}
+
+function describePreset(preset) {
+  if (!preset || !preset.base) return '';
+  const guide = preset.guide || preset.base;
+  const base = `${preset.base.model} ${preset.base.effort}`;
+  if (guide.model === preset.base.model && guide.effort === preset.base.effort) return base;
+  return `${base}; audit lane ${guide.model} ${guide.effort}`;
+}
+
+const CUSTOM_PRESET = '__custom__';
+
+// One settings component serves every create flow. Callers supply role rows
+// discovered from their config template plus the launch presets; the
+// model/effort and other-override markup, value collection, and freeform
+// escape hatch stay here.
+function createRunSettingsComponent(meta, options) {
+  const opts = options || {};
+  const section = el('div', 'wsection run-settings');
+  section.dataset.settingsComponent = 'trellis-run-settings-v1';
+  section.appendChild(el('div', 't', 'model and effort by role'));
+  section.appendChild(el('div', 'hint', meta.defaults_note
+    || 'Defaults come from the selected config template. “Other…” reveals a freeform input; accepted values are charset-checked, not allowlisted.'));
+
+  const roles = meta.roles || [];
+  const presets = meta.presets || [];
+  const guideRoles = meta.guide_roles || [];
+  let activePreset = null;
+  let markCustom = () => {};
+  let presetSelect = null;
+  let roleTable = section;
+
+  if (presets.length) {
+    const presetRow = el('div', 'row preset-row');
+    presetRow.appendChild(el('label', null, 'preset'));
+    presetSelect = el('select', 'launch-preset-select');
+    for (const preset of presets) {
+      const option = el('option', null, `${preset.label} — ${describePreset(preset)}`);
+      option.value = preset.key;
+      if (preset.key === meta.default_preset) option.selected = true;
+      presetSelect.appendChild(option);
+    }
+    const customOption = el('option', null, 'custom (per role)');
+    customOption.value = CUSTOM_PRESET;
+    presetSelect.appendChild(customOption);
+    presetRow.appendChild(presetSelect);
+    section.appendChild(presetRow);
+    section.appendChild(el('div', 'hint',
+      'A preset sets every role. Guided presets put the guide model on the audit lane only '
+      + `(${guideRoles.join(', ') || 'none in this flow'}); roles that run every cycle take the base model.`));
+
+    roleTable = el('div', 'role-table');
+    const expandRow = el('div', 'row preset-expand-row');
+    const expand = el('button', 'preset-expand', 'show per-role settings');
+    expand.type = 'button';
+    expandRow.appendChild(expand);
+    section.appendChild(expandRow);
+    section.appendChild(roleTable);
+    const showTable = (open) => {
+      roleTable.style.display = open ? '' : 'none';
+      expand.textContent = open ? 'hide per-role settings' : 'show per-role settings';
+    };
+    expand.onclick = () => showTable(roleTable.style.display === 'none');
+    markCustom = () => {
+      if (activePreset === null) return;
+      activePreset = null;
+      presetSelect.value = CUSTOM_PRESET;
+      showTable(true);
+    };
+    presetSelect.onchange = () => {
+      const chosen = presets.find(preset => preset.key === presetSelect.value);
+      if (!chosen) { activePreset = null; showTable(true); return; }
+      applyPreset(chosen);
+    };
+    showTable(false);
+  }
+
+  const roleHead = el('div', 'role-head');
+  roleHead.appendChild(el('span', null, 'role'));
+  roleHead.appendChild(el('span', null, 'model'));
+  roleHead.appendChild(el('span', null, 'effort'));
+  roleTable.appendChild(roleHead);
+
+  const pinnedModels = meta.pinned_models || [];
+  const defaultModel = meta.default_model || 'gpt-5.6-sol';
+  const defaultEffort = meta.default_effort || 'xhigh';
+  const derivedModels = (opts.create_options && opts.create_options.models) || [];
+  const derivedEfforts = (opts.create_options && opts.create_options.efforts) || [];
+  // Preset models and efforts join each role's dropdown so a preset selection
+  // shows as a listed value rather than a freeform entry.
+  const presetModels = [];
+  const presetEfforts = [];
+  for (const preset of presets) {
+    for (const lane of [preset.base, preset.guide]) {
+      if (!lane) continue;
+      if (lane.model) presetModels.push({ value: lane.model });
+      if (lane.effort) presetEfforts.push(lane.effort);
+    }
+  }
+  const roleControls = [];
+
+  for (const role of roles) {
+    const row = el('div', 'role-choice');
+    row.dataset.role = role.key;
+    const name = el('div', 'role-name', role.label || role.key);
+    name.appendChild(el('span', 'path', role.key));
+    const roleModel = role.model || defaultModel;
+    const roleEffort = role.effort || defaultEffort;
+    const modelRows = createChoiceRows(pinnedModels, [
+      { value: roleModel }, ...presetModels, ...derivedModels,
+    ]);
+    const effortRows = createChoiceRows([roleEffort, defaultEffort],
+      [...presetEfforts, ...derivedEfforts]);
+    const model = createChoiceControl('model', role.key, modelRows, roleModel,
+      () => markCustom());
+    const effort = createChoiceControl('effort', role.key, effortRows, roleEffort,
+      () => markCustom());
+    row.appendChild(name);
+    row.appendChild(model.element);
+    row.appendChild(effort.element);
+    roleTable.appendChild(row);
+    roleControls.push({ role, model, effort });
+  }
+  if (!roleControls.length) {
+    section.appendChild(el('div', 'err',
+      'No model-bearing roles were found in the launchable config template; reload after fixing the create-job metadata.'));
+  }
+
+  function applyPreset(preset) {
+    const resolved = resolvePresetRoleSettings(preset, roles, guideRoles);
+    for (const control of roleControls) {
+      const selected = resolved[control.role.key];
+      if (!selected) continue;
+      control.model.set(selected.model);
+      control.effort.set(selected.effort);
+    }
+    activePreset = preset;
+  }
+  const defaultPreset = presets.find(preset => preset.key === meta.default_preset) || presets[0];
+  if (defaultPreset) applyPreset(defaultPreset);
+
+  section.appendChild(el('div', 't', 'other overrides (optional)'));
+
+  const rowGrunts = el('div', 'row');
+  rowGrunts.appendChild(el('label', null, 'grunts'));
+  const grunts = el('input'); grunts.type = 'text'; grunts.placeholder = 'inherit (off)';
+  rowGrunts.appendChild(grunts);
+  rowGrunts.appendChild(el('span', 'hint',
+    "'off', or a pool size like 2. Each grunt adds a workspace clone and a concurrent Lean build."));
+  section.appendChild(rowGrunts);
+
+  const rowWall = el('div', 'row');
+  rowWall.appendChild(el('label', null, 'grunt wall'));
+  const gruntWall = el('input'); gruntWall.type = 'text'; gruntWall.placeholder = 'inherit (3600 = 60 min)';
+  rowWall.appendChild(gruntWall);
+  rowWall.appendChild(el('span', 'hint',
+    'seconds per grunt attempt; a hard kill, so a stuck grunt is dropped at this point'));
+  section.appendChild(rowWall);
+
+  const rowRemote = el('div', 'row');
+  rowRemote.appendChild(el('label', null, 'git remote'));
+  const remoteUrl = el('input'); remoteUrl.type = 'text'; remoteUrl.placeholder = 'none (no mirror)';
+  rowRemote.appendChild(remoteUrl);
+  rowRemote.appendChild(el('span', 'hint',
+    'git@host:owner/repo.git — optional; if omitted, formalization is only stored locally.'));
+  section.appendChild(rowRemote);
+
+  return {
+    element: section,
+    roleCount: roleControls.length,
+    collect() {
+      if (!roleControls.length) throw new Error('cannot launch without model-bearing roles');
+      const roleOverrides = {};
+      for (const control of roleControls) {
+        roleOverrides[control.role.key] = {
+          model: control.model.value(),
+          effort: control.effort.value(),
+        };
+      }
+      return {
+        role_overrides: roleOverrides,
+        preset: activePreset ? activePreset.key : undefined,
+        preset_label: activePreset ? activePreset.label : undefined,
+        grunts: grunts.value.trim() || undefined,
+        grunt_wall: gruntWall.value.trim() || undefined,
+        remote_url: remoteUrl.value.trim() || undefined,
+      };
+    },
+  };
+}
+
+function renderRunSettingsSummary(settings) {
+  if (!settings || !settings.role_overrides) return null;
+  const section = el('div', 'wsection run-settings-summary');
+  section.appendChild(el('div', 't', 'launch settings'));
+  if (settings.preset_label) {
+    section.appendChild(el('div', 'hint', `preset: ${settings.preset_label}`));
+  }
+  for (const [role, selected] of Object.entries(settings.role_overrides)) {
+    section.appendChild(el('div', 'hint',
+      `${role}: ${selected.model || '(template model)'} · ${selected.effort || '(template effort)'}`));
+  }
+  const extras = [];
+  if (settings.grunts) extras.push(`grunts ${settings.grunts}`);
+  if (settings.grunt_wall) extras.push(`grunt wall ${settings.grunt_wall}s`);
+  if (settings.remote_url) extras.push(`git remote ${settings.remote_url}`);
+  if (extras.length) section.appendChild(el('div', 'hint', extras.join(' · ')));
+  return section;
+}
+
+// --- step 1: the new-run form ------------------------------------------
+async function wizardOpenNew() {
+  if (wizard.timer) { clearInterval(wizard.timer); wizard.timer = null; }
+  wizard.slug = null;
+  const w = wizardHeader('New run');
+  if (!wizard.meta) {
+    const meta = await controlGet('create-jobs.json');
+    if (meta.ok) wizard.meta = meta.data;
+  }
+  if (!wizard.options) {
+    try {
+      const options = await controlGet('create-options.json');
+      wizard.options = options.ok ? options.data : { models: [], efforts: [] };
+    } catch {
+      wizard.options = { models: [], efforts: [] };
+    }
+  }
+  const templates = (wizard.meta && wizard.meta.templates) || [];
+
+  const rowSlug = el('div', 'row');
+  rowSlug.appendChild(el('label', null, 'name'));
+  const slugInput = el('input'); slugInput.type = 'text'; slugInput.placeholder = 'e.g. designs2';
+  rowSlug.appendChild(slugInput);
+  rowSlug.appendChild(el('span', 'hint', 'letters, digits, - and _; becomes the repo name under the projects root'));
+  w.appendChild(rowSlug);
+
+  const rowPaper = el('div', 'row');
+  rowPaper.appendChild(el('label', null, 'paper .tex'));
+  const fileInput = el('input'); fileInput.type = 'file'; fileInput.accept = '.tex,text/plain';
+  rowPaper.appendChild(fileInput);
+  rowPaper.appendChild(el('span', 'hint', 'single file; \\input/\\include are not expanded — upload a flattened source'));
+  w.appendChild(rowPaper);
+
+  const rowLoogle = el('div', 'row');
+  rowLoogle.appendChild(el('label', null, 'loogle'));
+  const loogleSel = el('select');
+  for (const v of ['off', 'on']) {
+    const o = el('option', null, v); o.value = v; if (v === 'off') o.selected = true; loogleSel.appendChild(o);
+  }
+  rowLoogle.appendChild(loogleSel);
+  rowLoogle.appendChild(el('span', 'hint', 'does this host run a local Loogle (Mathlib search) server? It is host-global.'));
+  w.appendChild(rowLoogle);
+
+  // The probe result sits directly under the choice it informs. It never
+  // gates the form: `on` for a server about to be started is legitimate.
+  const rowProbe = el('div', 'row');
+  rowProbe.appendChild(el('label', null, ''));
+  const probeState = el('span', 'hint', 'probe: not checked yet');
+  const probeBtn = el('button', null, 'check');
+  probeBtn.onclick = () => runLoogleProbe(probeState, probeBtn);
+  rowProbe.appendChild(probeState);
+  rowProbe.appendChild(probeBtn);
+  w.appendChild(rowProbe);
+  runLoogleProbe(probeState, probeBtn);
+
+  const rowTemplate = el('div', 'row');
+  rowTemplate.appendChild(el('label', null, 'template'));
+  const templateSel = el('select');
+  for (const t of templates) {
+    const o = el('option', null, t.label); o.value = t.path;
+    if (t.default) o.selected = true;
+    templateSel.appendChild(o);
+  }
+  rowTemplate.appendChild(templateSel);
+  w.appendChild(rowTemplate);
+
+  const settings = createRunSettingsComponent(wizard.meta || {}, {
+    create_options: wizard.options,
+  });
+  w.appendChild(settings.element);
+
+  // Reference papers ride the same flow (design §6): zero or more uploads,
+  // each with an id and optional source id, uploaded through the same
+  // endpoint as the paper and named in the create request.
+  const refSec = el('div', 'wsection');
+  refSec.appendChild(el('div', 't', 'reference papers (optional)'));
+  refSec.appendChild(el('div', 'hint',
+    'Reference papers ground the run; they never produce targets — the primary paper is the sole target authority. Ids are immutable once built.'));
+  const refCtl = referenceRowsControl(refSec, []);
+  w.appendChild(refSec);
+
+  const rowGo = el('div', 'row');
+  const go = el('button', 'primary', 'upload & resolve targets');
+  go.onclick = async () => {
+    const slug = slugInput.value.trim();
+    const file = fileInput.files && fileInput.files[0];
+    if (!slug) { wizardError('pick a name'); return; }
+    if (!file) { wizardError('pick a .tex file'); return; }
+    let selectedSettings;
+    try {
+      selectedSettings = settings.collect();
+    } catch (e) {
+      wizardError(e.message);
+      return;
+    }
+    go.disabled = true;
+    try {
+      let references;
+      try {
+        references = await refCtl.collect();
+      } catch (e) { wizardError(e.message); return; }
+      const up = await uploadTex(file);
+      if (!up.ok) { wizardError(up.data.detail || up.data.error || `upload failed (${up.status})`); return; }
+      for (const warning of up.data.warnings || []) {
+        const note = el('div', 'warn', warning.message);
+        w.appendChild(note);
+      }
+      const start = await controlPost('create-jobs', {
+        slug,
+        paper_upload_id: up.data.upload_id,
+        loogle: loogleSel.value,
+        template: templateSel.value || undefined,
+        ...selectedSettings,
+        references,
+      });
+      if (!start.ok) { wizardError(start.data.detail || start.data.error || `create failed (${start.status})`); return; }
+      wizardOpenJob(slug);
+    } finally {
+      go.disabled = false;
+    }
+  };
+  rowGo.appendChild(go);
+  w.appendChild(rowGo);
+}
+
+// --- steps 2..n: poll one job and render its state ----------------------
+function wizardOpenJob(slug) {
+  wizard.slug = slug;
+  wizard.lastState = null;
+  wizard.notFound = 0;
+  wizardHeader(`Creating: ${slug}`);
+  if (wizard.timer) clearInterval(wizard.timer);
+  const poll = async () => {
+    if (wizard.slug !== slug) return;
+    const r = await controlGet(`create-status/${slug}`);
+    if (wizard.slug !== slug) return;
+    if (!r.ok) { wizardError(r.data.detail || r.data.error || `HTTP ${r.status}`); return; }
+    wizardRender(r.data);
+  };
+  wizard.poll = poll;
+  poll();
+  wizard.timer = setInterval(poll, 2000);
+}
+
+// Force a full redraw on the next poll, and poll now — the redraw guard keys
+// on state+updated_ts, which auth-file changes and re-checks do not touch.
+function wizardRedraw() {
+  wizard.lastState = null;
+  if (wizard.poll) wizard.poll();
+}
+
+function logBlock(payload) {
+  const pre = el('div', 'wlog', (payload.log && payload.log.lines || []).join('\n') || '(no log yet)');
+  return pre;
+}
+
+function candidateBlock(c, index) {
+  const box = el('div', 'cand');
+  const head = el('div', 'head');
+  const cb = el('input'); cb.type = 'checkbox'; cb.checked = Boolean(c.checked);
+  cb.dataset.key = c.key; cb.className = 'cand-select'; cb.id = `cand-${index}`;
+  head.appendChild(cb);
+  const name = el('label', null, c.tex_label || c.key);
+  name.htmlFor = cb.id; name.className = 'keyname';
+  head.appendChild(name);
+  head.appendChild(el('span', 'tag rank', `#${c.rank} ${c.env} · lines ${c.start_line}-${c.end_line}`));
+  if (!c.first_class) head.appendChild(el('span', 'tag second', 'unlabeled'));
+  box.appendChild(head);
+  if (c.rank_reasons && c.rank_reasons.length) {
+    box.appendChild(el('div', 'reasons', `suggested: ${c.rank_reasons.join('; ')}`));
+  }
+  if (c.note) box.appendChild(el('div', 'reasons', c.note));
+  const pre = el('pre', null, c.text || '');
+  box.appendChild(pre);
+  return box;
+}
+
+// The author-language rules, shown only when the server says nothing else
+// explains an empty candidate list (§1.3's honesty boundary).
+const GENERAL_RULES = [
+  'Only \\begin{theorem} and \\begin{corollary} blocks are candidates by default (widen below).',
+  '\\newtheorem aliases are recognized when their title matches (e.g. \\newtheorem{thm}{Theorem}); title-less ones need a mapping below.',
+  'Starred environments (theorem*) are not recognized — use the numbered form.',
+  'A \\label must sit inside the block, and the first label wins.',
+  '\\input/\\include are not expanded: upload a flattened file.',
+  'Only the \\begin{document}..\\end{document} span is scanned, and % comments are stripped.',
+  'A \\begin{ with no closing brace abandons the rest of the scan.',
+];
+
+function envsControlBlock(view) {
+  const section = el('div', 'wsection');
+  section.appendChild(el('div', 't', 'environments'));
+  section.appendChild(el('div', 'hint',
+    'Which environments count as main results. Canonical envs toggle directly; '
+    + 'others map onto a canonical env first (this rewrites the normalized copy only — your source is never edited).'));
+  const canonical = ['theorem', 'lemma', 'definition', 'corollary', 'proposition', 'helper'];
+  const active = new Set(view.main_result_envs || []);
+  for (const row of view.envs_present || []) {
+    const line = el('div', 'envrow');
+    const name = el('span', 'name', `\\begin{${row.env}}`);
+    line.appendChild(name);
+    line.appendChild(el('span', null, `×${row.count}${row.declared_title ? ` ("${row.declared_title}")` : ''}`));
+    if (row.canonical === row.env) {
+      const cb = el('input'); cb.type = 'checkbox';
+      cb.checked = active.has(row.env);
+      cb.className = 'env-toggle'; cb.dataset.env = row.env;
+      const lab = el('label', null, 'counts as a main result');
+      line.appendChild(cb); line.appendChild(lab);
+    } else if (row.canonical) {
+      line.appendChild(el('span', null, `→ ${row.canonical}${row.main_result ? ' (main result)' : ''}`));
+    } else {
+      const sel = el('select'); sel.className = 'env-map'; sel.dataset.alias = row.env;
+      const none = el('option', null, 'not mapped'); none.value = ''; sel.appendChild(none);
+      for (const c of canonical) {
+        const o = el('option', null, `map to ${c}`); o.value = c;
+        if (row.suggested_canonical === c) o.selected = true;
+        sel.appendChild(o);
+      }
+      line.appendChild(sel);
+    }
+    section.appendChild(line);
+  }
+  const apply = el('button', null, 're-resolve with these environments');
+  apply.onclick = async () => {
+    const w = wizardEl();
+    const envs = [...w.querySelectorAll('.env-toggle')]
+      .filter(cb => cb.checked).map(cb => cb.dataset.env);
+    // The default pair is expressed as "no explicit set" so a default-set run
+    // keeps the absent-config-key path.
+    const isDefault = envs.length === 2 && envs.includes('theorem') && envs.includes('corollary');
+    const envMap = [...w.querySelectorAll('.env-map')]
+      .filter(sel => sel.value).map(sel => `${sel.dataset.alias}=${sel.value}`);
+    apply.disabled = true;
+    const body = { env_map: envMap };
+    body.main_result_envs = isDefault ? '' : envs.join(',');
+    await wizardAction(wizard.slug, 'resolve', body);
+  };
+  section.appendChild(apply);
+  return section;
+}
+
+// The changes-since-last-resolve banner (§5.5 item 3): what a re-upload or
+// env change did to the candidate set, with row-29 swallowed candidates
+// singled out. Rendered from the server's diff verbatim.
+function resolutionDiffBanner(diff) {
+  if (!diff || !diff.changed) return null;
+  const sec = el('div', 'wsection');
+  sec.appendChild(el('div', 't', 'changes since the last resolve'));
+  const name = c => c.tex_label || c.key;
+  const bits = [];
+  if (diff.added.length) bits.push(`+${diff.added.length} new: ${diff.added.map(name).join(', ')}`);
+  if (diff.removed.length) bits.push(`−${diff.removed.length} removed: ${diff.removed.map(name).join(', ')}`);
+  if (diff.moved.length) bits.push(`${diff.moved.length} moved: ${diff.moved.map(name).join(', ')}`);
+  bits.push(`${diff.unchanged} unchanged`);
+  sec.appendChild(el('div', 'hint', bits.join(' · ')));
+  for (const s of diff.swallowed || []) sec.appendChild(el('div', 'warn', s.message));
+  return sec;
+}
+
+// Row 16: the provider-auth verdict, per configured lane, with the exact
+// terminal command for anything missing. Confirm is refused (client-side
+// here, and by the confirm endpoint) while a lane lacks auth; the re-check
+// button just redraws from a fresh poll — the server recomputes presence on
+// every status request.
+function authPreflightBlock(payload) {
+  const auth = payload.auth_preflight;
+  if (!auth || (auth.ok && !(auth.providers || []).length)) return null;
+  const sec = el('div', 'wsection');
+  sec.appendChild(el('div', 't', 'provider auth preflight'));
+  if (auth.note) sec.appendChild(el('div', 'hint', auth.note));
+  for (const p of auth.providers || []) {
+    const line = el('div', 'envrow');
+    const mark = p.present === true ? '✓' : p.present === false ? '✗' : '?';
+    const cls = p.present === true ? 'verdict ok' : p.present === false ? 'verdict bad' : 'verdict warn';
+    line.appendChild(el('span', cls, mark));
+    line.appendChild(el('span', 'name', p.provider));
+    line.appendChild(el('span', null, (p.lanes || []).join(', ')));
+    sec.appendChild(line);
+    if (p.message) sec.appendChild(el('div', p.present === false ? 'warn' : 'hint', p.message));
+  }
+  const re = el('button', null, 're-check auth');
+  re.onclick = wizardRedraw;
+  sec.appendChild(re);
+  return sec;
+}
+
+function targetPage(w, payload) {
+  const view = payload.resolution;
+  if (!view) { w.appendChild(el('div', 'err', 'no targets_resolution.json — re-resolve')); return; }
+
+  // Row 9: the park is process-down by design and decays into nothing.
+  if (payload.parked_secs && payload.parked_secs > 3600) {
+    w.appendChild(el('div', 'hint',
+      `parked ${fmtDur(payload.parked_secs)} — nothing is running while you decide; this job waits indefinitely and costs nothing. Delete it if abandoned.`));
+  }
+
+  const diffBanner = resolutionDiffBanner(payload.resolution_diff);
+  if (diffBanner) w.appendChild(diffBanner);
+
+  const sec = el('div', 'wsection');
+  sec.appendChild(el('div', 't',
+    `candidates — ${view.candidates.length} (${view.paper_name || 'paper'} · scanning ${view.main_result_envs.join(', ')})`));
+  if (view.zero_candidates) {
+    sec.appendChild(el('div', 'warn', 'No main-result candidates were found. The build cannot proceed until at least one exists — fix the source per the notes below and re-upload, or adjust the environments.'));
+    if (view.show_general_rules) {
+      const list = el('div', 'rejected');
+      list.appendChild(el('div', 'code', 'How candidacy works (no specific block explains the empty list):'));
+      for (const rule of GENERAL_RULES) list.appendChild(el('div', null, `· ${rule}`));
+      sec.appendChild(list);
+    }
+  }
+  view.candidates.forEach((c, i) => sec.appendChild(candidateBlock(c, i)));
+  // Row 29: a would-be candidate swallowed by nesting inside another matched
+  // block — inline, before confirm; confirm stays enabled.
+  for (const nw of view.nesting_warnings || []) {
+    sec.appendChild(el('div', 'warn', nw.message));
+  }
+  w.appendChild(sec);
+
+  w.appendChild(envsControlBlock(view));
+
+  if (view.rejected_blocks.length) {
+    const sec2 = el('div', 'wsection');
+    sec2.appendChild(el('div', 't', `why isn't my theorem here? — ${view.rejected_blocks.length} block(s) explained`));
+    for (const r of view.rejected_blocks) {
+      const row = el('div', 'rejected');
+      row.appendChild(el('div', 'code',
+        `${r.env || '?'}${r.label ? ` (${r.label})` : ''} lines ${r.start_line}-${r.end_line}: ${r.reason_code}`));
+      row.appendChild(el('div', null, r.message || ''));
+      sec2.appendChild(row);
+    }
+    w.appendChild(sec2);
+  }
+
+  const warnings = [...(view.file_warnings || [])];
+  if (view.scan_truncated) warnings.push({ code: 'scan_truncated', message: view.scan_truncated.message });
+  if (warnings.length) {
+    const sec3 = el('div', 'wsection');
+    sec3.appendChild(el('div', 't', 'file notes'));
+    for (const fwarn of warnings) {
+      sec3.appendChild(el('div', 'warn', `${fwarn.code}: ${fwarn.message}`));
+    }
+    w.appendChild(sec3);
+  }
+
+  // Reference grounding (design §6): explicitly NOT candidates, and editable
+  // until confirm — the row-26 recovery ("a changed file needs a NEW id")
+  // happens here. Kept rows re-point at the job's ingested files; only new
+  // or replaced files are uploaded.
+  const refs = el('div', 'wsection');
+  refs.appendChild(el('div', 't', `reference grounding — ${(payload.references || []).length}`));
+  refs.appendChild(el('div', 'hint',
+    'Reference papers ground the run; they never produce targets — the primary paper is the sole target authority. Ids are immutable once registered: changed content needs a NEW id.'));
+  const refCtl = referenceRowsControl(refs, payload.references || []);
+  const applyRefs = el('button', null, 'apply reference changes & re-resolve');
+  applyRefs.onclick = async () => {
+    applyRefs.disabled = true;
+    try {
+      const references = await refCtl.collect();
+      const r = await wizardAction(wizard.slug, 'resolve', { references });
+      if (r.ok) wizardRedraw(); else applyRefs.disabled = false;
+    } catch (e) {
+      wizardError(e.message);
+      applyRefs.disabled = false;
+    }
+  };
+  refs.appendChild(applyRefs);
+  w.appendChild(refs);
+
+  // Re-upload a corrected source: same job, new resolve — the fix-verify
+  // loop is seconds, and the author's source is never edited server-side.
+  const reup = el('div', 'wsection');
+  reup.appendChild(el('div', 't', 'corrected source'));
+  const reupRow = el('div', 'row');
+  const reupFile = el('input'); reupFile.type = 'file'; reupFile.accept = '.tex,text/plain';
+  reupRow.appendChild(reupFile);
+  const reupBtn = el('button', null, 're-upload & re-resolve');
+  reupBtn.onclick = async () => {
+    const file = reupFile.files && reupFile.files[0];
+    if (!file) { wizardError('pick the corrected .tex first'); return; }
+    reupBtn.disabled = true;
+    const up = await uploadTex(file);
+    if (!up.ok) { wizardError(up.data.detail || 'upload failed'); reupBtn.disabled = false; return; }
+    await wizardAction(wizard.slug, 'resolve', { paper_upload_id: up.data.upload_id });
+  };
+  reupRow.appendChild(reupBtn);
+  reup.appendChild(reupRow);
+  w.appendChild(reup);
+
+  // Row 16: launch is refused while a configured lane lacks auth.
+  const authBlock = authPreflightBlock(payload);
+  if (authBlock) w.appendChild(authBlock);
+  const authOk = !payload.auth_preflight || payload.auth_preflight.ok;
+
+  // Row 14: free-space warning before the S9 prewarm. Warn, never block.
+  if (payload.disk_preflight && payload.disk_preflight.warn) {
+    w.appendChild(el('div', 'warn', `disk: ${payload.disk_preflight.message}`));
+  }
+
+  const act = el('div', 'row');
+  act.style.marginTop = '14px';
+  const confirmBtn = el('button', 'primary', 'confirm targets & build');
+  confirmBtn.disabled = !view.confirm_allowed || !authOk;
+  if (!authOk) {
+    confirmBtn.title = 'provider auth is missing for configured lanes — log in in a terminal, then re-check';
+  }
+  confirmBtn.onclick = async () => {
+    const selected = [...wizardEl().querySelectorAll('.cand-select')]
+      .filter(cb => cb.checked).map(cb => cb.dataset.key);
+    if (!selected.length) { wizardError('select at least one target'); return; }
+    confirmBtn.disabled = true;
+    const r = await wizardAction(wizard.slug, 'confirm', { selected });
+    if (!r.ok) confirmBtn.disabled = false;
+  };
+  act.appendChild(confirmBtn);
+  if (!authOk) act.appendChild(el('span', 'verdict bad', 'launch refused: provider auth missing (see preflight above)'));
+  const del = el('button', 'danger', 'delete this job');
+  del.onclick = () => wizardDelete(payload.slug);
+  act.appendChild(del);
+  w.appendChild(act);
+}
+
+function wizardRender(payload) {
+  // A job can vanish under an open wizard — deleted from another tab, or its
+  // directory removed on disk. This is checked before the redraw guard below,
+  // because a missing job reports no state and no updated_ts, so its stateKey
+  // never changes and the guard would short-circuit every later poll: the
+  // panel used to freeze on "job not found" with no route back to the form.
+  // Tolerate a few polls first, since `create-status` briefly reports
+  // exists:false between the create POST returning and the job directory
+  // appearing.
+  if (!payload.exists) {
+    wizard.notFound += 1;
+    if (wizard.notFound < WIZARD_NOT_FOUND_POLLS) return;
+    const slug = wizard.slug;
+    wizardOpenNew().then(() => {
+      wizardError(`job "${slug}" no longer exists — it was deleted. Start a new run.`);
+    });
+    return;
+  }
+  wizard.notFound = 0;
+  // Re-rendering the whole panel on every poll would fight the operator's
+  // checkboxes; redraw only when the state actually moves (the log block is
+  // refreshed in place for running states).
+  const stateKey = `${payload.effective_state}:${payload.updated_ts}`;
+  const w = wizardEl();
+  if (wizard.lastState === stateKey) return;
+  const stateChanged = !wizard.lastState
+    || wizard.lastState.split(':')[0] !== payload.effective_state;
+  wizard.lastState = stateKey;
+  if (!stateChanged) {
+    const log = w.querySelector('.wlog');
+    if (log) log.textContent = (payload.log && payload.log.lines || []).join('\n');
+    const stageLine = w.querySelector('.wstage');
+    if (stageLine && payload.stage) stageLine.textContent = `${payload.effective_state} — stage: ${payload.stage}`;
+    return;
+  }
+
+  wizardHeader(`Creating: ${payload.slug}`);
+  const state = payload.effective_state;
+
+  const settingsSummary = renderRunSettingsSummary(payload.settings);
+  if (settingsSummary) w.appendChild(settingsSummary);
+
+  if (state === 'awaiting_targets') {
+    targetPage(w, payload);
+    return;
+  }
+
+  if (state === 'done') {
+    const okLine = el('div', 'wstage', 'done — the run is launched and verified.');
+    w.appendChild(okLine);
+    const link = document.createElement('a');
+    link.href = projectHref(payload.slug);
+    link.textContent = `open the ${payload.slug} run viewer →`;
+    link.style.color = '#50fa7b';
+    w.appendChild(link);
+    if (wizard.timer) { clearInterval(wizard.timer); wizard.timer = null; }
+    refresh();
+    return;
+  }
+
+  const failed = payload.bucket === 'create_failed';
+  w.appendChild(el('div', 'wstage',
+    `${state}${payload.stage && payload.stage !== state ? ` — stage: ${payload.stage}` : ''}`));
+  if (payload.error) w.appendChild(el('div', 'err', payload.error));
+  if (state === 'interrupted') {
+    w.appendChild(el('div', 'warn', payload.reason || 'the phase process is gone; resume relaunches it (verified stages are skipped)'));
+  }
+  if (state === 'resolve_stale') {
+    w.appendChild(el('div', 'warn',
+      'The confirmed selection no longer matches the paper (it changed between confirm and build). Re-resolve, pick targets again, and re-confirm — the mathlib prewarm and other verified stages are kept.'));
+  }
+  // Recovery hints mined server-side from the error + log tail (rows 14/26):
+  // the page repeats them verbatim instead of asking the operator to
+  // recognize the signature in the log.
+  for (const hint of payload.hints || []) {
+    w.appendChild(el('div', 'warn', hint.message));
+  }
+  if (payload.log && payload.log.notice) w.appendChild(el('div', 'hint', payload.log.notice));
+  w.appendChild(logBlock(payload));
+
+  if (failed) {
+    const act = el('div', 'row');
+    if (payload.retry_eligible) {
+      const retry = el('button', 'primary',
+        state === 'interrupted' ? 'resume' : state === 'resolve_stale' ? 're-resolve' : 'retry');
+      retry.onclick = async () => {
+        retry.disabled = true;
+        await wizardAction(payload.slug, 'retry', {});
+        wizard.lastState = null;
+      };
+      act.appendChild(retry);
+    }
+    if (['resolve_failed', 'resolve_stale', 'build_failed'].includes(payload.effective_state)) {
+      const reresolve = el('button', null, 'back to target selection');
+      reresolve.onclick = async () => {
+        await wizardAction(payload.slug, 'resolve', {});
+        wizard.lastState = null;
+      };
+      act.appendChild(reresolve);
+    }
+    if (payload.delete_eligible) {
+      const del = el('button', 'danger', 'delete');
+      del.onclick = () => wizardDelete(payload.slug);
+      act.appendChild(del);
+    }
+    w.appendChild(act);
+  }
+}
+
+async function refresh() {
+  try {
+    const [idxRes, hostRes] = await Promise.all([
+      fetch(apiPath('projects.json')),
+      fetch(apiPath('host.json')),
+    ]);
+    const idx = await idxRes.json();
+    const host = await hostRes.json();
+    host.projects_root = idx.projects_root;
+    renderHost(host);
+    renderRuns(idx);
+    document.getElementById('refreshed').textContent = `updated ${new Date().toLocaleTimeString()}`;
+    document.getElementById('footer').textContent =
+      `Lifecycle is classified from disk: runtime_metadata.json, protocol_state.json, `
+      + `scripts/trellis_pause.sh status, and halt markers. `
+      + `Projects root ${idx.projects_root}.`;
+  } catch (e) {
+    document.getElementById('refreshed').textContent = `refresh failed: ${e.message}`;
+  }
+}
+
+// The new-run button appears only when this page holds the control token —
+// without it every create POST would be refused anyway.
+if (window.__TRELLIS_CONTROL__) {
+  const btn = document.getElementById('new-run-btn');
+  btn.style.display = '';
+  btn.onclick = wizardOpenNew;
+}
+
+refresh();
+setInterval(refresh, 15000);
+</script>
+</body>
+</html>

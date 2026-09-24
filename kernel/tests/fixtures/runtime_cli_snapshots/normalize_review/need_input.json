@@ -1,0 +1,49 @@
+{
+  "action": "normalize_review",
+  "input": {
+    "raw_payload": {
+      "allow_new_obligations": true,
+      "clear_human_input": false,
+      "comments": "",
+      "decision": "need_input",
+      "difficulty_updates": {},
+      "must_close_active": false,
+      "next_active": "",
+      "next_mode": "global",
+      "reason": "Want operator guidance on the proof sketch.",
+      "reset": "none",
+      "reset_blocker_ids": [],
+      "task_blocker_ids": []
+    },
+    "request": {
+      "allow_targeted_without_next_active": false,
+      "allowed_decisions": [
+        "continue",
+        "need_input"
+      ],
+      "allowed_difficulty_update_nodes": [],
+      "allowed_next_modes": [
+        "global"
+      ],
+      "allowed_resets": [
+        "none"
+      ],
+      "blockers": [],
+      "current_present_nodes": [
+        "main_node",
+        "Preamble"
+      ],
+      "cycle": 6,
+      "gate_kind": "none",
+      "human_input_outstanding": false,
+      "id": 10,
+      "kernel_hinted_next_active_nodes": [
+        "main_node"
+      ],
+      "kind": "review",
+      "mode": "global",
+      "phase": "theorem_stating",
+      "targeted_next_active_nodes": []
+    }
+  }
+}

@@ -1,0 +1,34 @@
+\documentclass{article}
+\usepackage{amsthm}
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\begin{document}
+\title{A paper with an ordinary shape}
+\maketitle
+
+\begin{abstract}
+We prove a bound; see Theorem~\ref{thm:main} for the statement.
+\end{abstract}
+
+\input{intro}
+
+\section{Preliminaries}
+
+\begin{lemma}\label{lem:key}
+Every widget is a gadget.
+\end{lemma}
+
+\begin{theorem}[Main Theorem]\label{thm:main}
+Our main result is that every gadget of order $n$ admits a decomposition into
+at most $n/2$ widgets, and moreover the decomposition can be computed in
+polynomial time. This statement is deliberately long so that it reads as a
+substantial statement rather than a one-line remark, which is one of the
+signals the advisory ranking uses when it orders the candidate list.
+\end{theorem}
+
+\begin{corollary}
+Every gadget of order two is a widget.
+\end{corollary}
+
+\end{document}

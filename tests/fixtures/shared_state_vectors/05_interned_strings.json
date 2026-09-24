@@ -1,0 +1,68 @@
+{
+  "name": "05_interned_strings",
+  "kind": "roundtrip",
+  "description": "A 64-hex digest string occurring in four unrelated positions is moved to `$strings` and referenced as {\"$s\": key}. The shorter strings stay inline because interning them would not pay for the table entry. Object keys are never interned.",
+  "plain": {
+    "state": {
+      "corr_approved_fingerprints": {
+        "Alpha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "Beta": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "sound_approved_fingerprints": {
+        "Alpha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "held_target": "Alpha",
+      "phase": "ProofFormalization",
+      "last_clean_corr_approved_fingerprints": {
+        "Alpha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  },
+  "encoded": {
+    "$format": "trellis-shared-state/1",
+    "$strings": {
+      "5a48ddc10faa588c": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "$pool": {
+      "c00ac8a9c0491c4b": {
+        "Alpha": {
+          "$s": "5a48ddc10faa588c"
+        }
+      }
+    },
+    "state": {
+      "corr_approved_fingerprints": {
+        "Alpha": {
+          "$s": "5a48ddc10faa588c"
+        },
+        "Beta": {
+          "$s": "5a48ddc10faa588c"
+        }
+      },
+      "held_target": "Alpha",
+      "last_clean_corr_approved_fingerprints": {
+        "$r": "c00ac8a9c0491c4b"
+      },
+      "phase": "ProofFormalization",
+      "sound_approved_fingerprints": {
+        "$r": "c00ac8a9c0491c4b"
+      }
+    }
+  },
+  "decoded": {
+    "state": {
+      "corr_approved_fingerprints": {
+        "Alpha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "Beta": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "held_target": "Alpha",
+      "last_clean_corr_approved_fingerprints": {
+        "Alpha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "phase": "ProofFormalization",
+      "sound_approved_fingerprints": {
+        "Alpha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    }
+  }
+}

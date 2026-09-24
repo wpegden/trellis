@@ -1,0 +1,15 @@
+{
+  "action": "validate_substantiveness_result",
+  "raw_payload": {
+    "substantiveness": {
+      "decision": "PASS",
+      "verdicts": [
+        {"node": "FooLemma", "verdict": "Pass"},
+        {"node": "BarThm", "verdict": "Pass", "comment": "ok"}
+      ]
+    },
+    "overall": "APPROVE",
+    "summary": "two passes",
+    "comments": ""
+  }
+}
