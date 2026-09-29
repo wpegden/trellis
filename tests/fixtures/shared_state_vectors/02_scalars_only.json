@@ -1,0 +1,80 @@
+{
+  "name": "02_scalars_only",
+  "kind": "roundtrip",
+  "description": "Passthrough members keep the input document's order and are copied verbatim. Inside `state` nothing repeats, so nothing is pooled or interned; note that members are re-emitted in UTF-8 byte order of their keys and that the integer 1 and the float 1.0 are distinct values.",
+  "plain": {
+    "event_count": 5841,
+    "metadata": {
+      "run": "alpha",
+      "cycle": 1086
+    },
+    "commands": [
+      "resume"
+    ],
+    "state": {
+      "s": "hi",
+      "i": -3,
+      "f_": 1.0,
+      "big": 1.5e-09,
+      "n": null,
+      "t": true,
+      "ff": false,
+      "arr": [
+        1,
+        "two",
+        null
+      ]
+    }
+  },
+  "encoded": {
+    "$format": "trellis-shared-state/1",
+    "event_count": 5841,
+    "metadata": {
+      "run": "alpha",
+      "cycle": 1086
+    },
+    "commands": [
+      "resume"
+    ],
+    "$strings": {},
+    "$pool": {},
+    "state": {
+      "arr": [
+        1,
+        "two",
+        null
+      ],
+      "big": 1.5e-09,
+      "f_": 1.0,
+      "ff": false,
+      "i": -3,
+      "n": null,
+      "s": "hi",
+      "t": true
+    }
+  },
+  "decoded": {
+    "event_count": 5841,
+    "metadata": {
+      "run": "alpha",
+      "cycle": 1086
+    },
+    "commands": [
+      "resume"
+    ],
+    "state": {
+      "arr": [
+        1,
+        "two",
+        null
+      ],
+      "big": 1.5e-09,
+      "f_": 1.0,
+      "ff": false,
+      "i": -3,
+      "n": null,
+      "s": "hi",
+      "t": true
+    }
+  }
+}

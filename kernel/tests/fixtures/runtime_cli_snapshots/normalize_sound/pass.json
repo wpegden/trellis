@@ -1,0 +1,26 @@
+{
+  "action": "normalize_sound",
+  "input": {
+    "request_id": 70,
+    "cycle": 4,
+    "verify_lanes": ["v1"],
+    "verify_nodes": ["MainResult"],
+    "members": [
+      {
+        "lane_id": "v1",
+        "ok": true,
+        "error": "",
+        "payload": {
+          "node": "MainResult",
+          "soundness": {
+            "decision": "SOUND",
+            "explanation": "The prose proof has no gaps; induction is correct."
+          },
+          "overall": "APPROVE",
+          "summary": "Sound.",
+          "comments": ""
+        }
+      }
+    ]
+  }
+}

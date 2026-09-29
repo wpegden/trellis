@@ -1,0 +1,61 @@
+{
+  "request": {
+    "action": "normalize_sound",
+    "input": {
+      "cycle": 5,
+      "members": [
+        {
+          "error": "",
+          "lane_id": "v1",
+          "ok": true,
+          "payload": {
+            "comments": "Treat n=0 explicitly.",
+            "node": "MainResult",
+            "overall": "REJECT",
+            "soundness": {
+              "decision": "UNSOUND",
+              "explanation": "The base case of the induction is missing."
+            },
+            "summary": "Missing base case."
+          }
+        }
+      ],
+      "request_id": 71,
+      "verify_lanes": [
+        "v1"
+      ],
+      "verify_nodes": [
+        "MainResult"
+      ]
+    }
+  },
+  "response": {
+    "output": {
+      "response": {
+        "cycle": 5,
+        "lane_updates": {
+          "v1": {
+            "MainResult": {
+              "Set": "Fail"
+            }
+          }
+        },
+        "request_id": 71,
+        "reviewer_evidence": {
+          "v1": {
+            "comments": "Treat n=0 explicitly.",
+            "node": "MainResult",
+            "overall": "REJECT",
+            "soundness": {
+              "decision": "UNSOUND",
+              "explanation": "The base case of the induction is missing."
+            },
+            "summary": "Missing base case."
+          }
+        },
+        "status": "Ok"
+      }
+    },
+    "status": "normalize_sound_ok"
+  }
+}

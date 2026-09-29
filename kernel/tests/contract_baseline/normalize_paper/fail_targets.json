@@ -1,0 +1,88 @@
+{
+  "request": {
+    "action": "normalize_paper",
+    "input": {
+      "cycle": 5,
+      "members": [
+        {
+          "error": "",
+          "lane_id": "v1",
+          "ok": true,
+          "payload": {
+            "comments": "",
+            "deviation_authorization": {
+              "comment": "",
+              "decision": "",
+              "id": ""
+            },
+            "overall": "REJECT",
+            "paper_faithfulness": {
+              "decision": "FAIL",
+              "issues": [
+                {
+                  "description": "Statement claims a stronger conclusion than the paper.",
+                  "target": "t.main"
+                }
+              ],
+              "verdicts": []
+            },
+            "substantiveness": {
+              "decision": "PASS",
+              "verdicts": []
+            },
+            "summary": "Target mismatch with paper."
+          }
+        }
+      ],
+      "request_id": 61,
+      "verify_deviations": [],
+      "verify_lanes": [
+        "v1"
+      ],
+      "verify_nodes": [],
+      "verify_targets": [
+        "t.main"
+      ]
+    }
+  },
+  "response": {
+    "output": {
+      "response": {
+        "cycle": 5,
+        "deviation_lane_updates": {
+          "v1": {}
+        },
+        "node_lane_updates": {
+          "v1": {}
+        },
+        "node_reviewer_evidence": {},
+        "request_id": 61,
+        "reviewer_evidence": {
+          "v1": {
+            "comments": "",
+            "overall": "REJECT",
+            "paper_faithfulness": {
+              "decision": "FAIL",
+              "issues": [
+                {
+                  "description": "Statement claims a stronger conclusion than the paper.",
+                  "node": ""
+                }
+              ]
+            },
+            "summary": "Target mismatch with paper."
+          }
+        },
+        "status": "Ok",
+        "target_lane_updates": {
+          "v1": {
+            "t.main": {
+              "Set": "Pass"
+            }
+          }
+        }
+      }
+    },
+    "status": "normalize_paper_ok"
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "name": "07_passthrough_only",
+  "kind": "roundtrip",
+  "description": "Neither `checkpoint` nor `state` is present. Both tables are emitted empty and every other member is deep-copied through in input order.",
+  "plain": {
+    "event_count": 3,
+    "metadata": {},
+    "commands": [],
+    "zz_extra": [
+      1,
+      2,
+      3
+    ]
+  },
+  "encoded": {
+    "$format": "trellis-shared-state/1",
+    "event_count": 3,
+    "metadata": {},
+    "commands": [],
+    "zz_extra": [
+      1,
+      2,
+      3
+    ],
+    "$strings": {},
+    "$pool": {}
+  },
+  "decoded": {
+    "event_count": 3,
+    "metadata": {},
+    "commands": [],
+    "zz_extra": [
+      1,
+      2,
+      3
+    ]
+  }
+}

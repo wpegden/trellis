@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trellis://schemas/rust-witness-artifact/v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "target_id", "relative_path", "artifact_sha256", "pinned_crate_tree_sha256", "execution", "correspondence", "freeze_episode_id", "gate_episode_id"],
+  "properties": {
+    "schema": { "const": "trellis-rust-witness-artifact/v1" },
+    "target_id": { "type": "string", "minLength": 1 },
+    "relative_path": { "type": "string", "pattern": "^reference/rust-witnesses/target-[0-9a-f]{64}/witness\\.rs$" },
+    "artifact_sha256": { "$ref": "#/$defs/hash" },
+    "pinned_crate_tree_sha256": { "$ref": "#/$defs/hash" },
+    "execution": { "$ref": "#/$defs/execution" },
+    "correspondence": { "$ref": "#/$defs/correspondence" },
+    "freeze_episode_id": { "type": "string", "minLength": 1 },
+    "gate_episode_id": { "type": "string", "minLength": 1 }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "execution": {
+      "oneOf": [
+        { "type": "object", "additionalProperties": false, "required": ["kind"], "properties": { "kind": { "const": "not_attempted" } } },
+        { "type": "object", "additionalProperties": false, "required": ["kind", "receipt_sha256", "runner_sha256", "timed_out", "exit_code"], "properties": { "kind": { "const": "receipt" }, "receipt_sha256": { "$ref": "#/$defs/hash" }, "runner_sha256": { "$ref": "#/$defs/hash" }, "timed_out": { "type": "boolean" }, "exit_code": { "type": ["integer", "null"] } } }
+      ]
+    },
+    "correspondence": {
+      "oneOf": [
+        { "type": "object", "additionalProperties": false, "required": ["kind"], "properties": { "kind": { "const": "not_reviewed" } } },
+        { "type": "object", "additionalProperties": false, "required": ["kind", "request_sha256", "verdict_sha256", "reason"], "properties": { "kind": { "const": "pass" }, "request_sha256": { "$ref": "#/$defs/hash" }, "verdict_sha256": { "$ref": "#/$defs/hash" }, "reason": { "type": "string", "minLength": 1 } } },
+        { "type": "object", "additionalProperties": false, "required": ["kind", "request_sha256", "verdict_sha256", "reason"], "properties": { "kind": { "const": "fail" }, "request_sha256": { "$ref": "#/$defs/hash" }, "verdict_sha256": { "$ref": "#/$defs/hash" }, "reason": { "type": "string", "minLength": 1 } } }
+      ]
+    }
+  }
+}

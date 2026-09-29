@@ -1,0 +1,394 @@
+{
+  "_doc": [
+    "Closure-carrying replay fixture (Patch C / plan §9 'TLA replay determinism fix').",
+    "",
+    "Demonstrates the determinism contract: a recorded WorkerResponse carries",
+    "`local_closure_results` and `local_closure_revalidation` payloads inline so",
+    "replay never re-invokes `run_local_closure_axioms`. The probe is I/O-",
+    "dependent (lake-spawned Lean script with timeouts and transport jitter)",
+    "and re-probing during replay would break byte-for-byte determinism.",
+    "",
+    "When recording a fixture from a live run, the runtime CLI is expected to",
+    "gate payload capture on the env var `TRELLIS_RECORD_CLOSURE_PAYLOADS=1`",
+    "and persist the captured payloads alongside the WorkerResponse fields.",
+    "Replay never sets this var.",
+    "",
+    "Why this fixture's test is `#[ignore]`d: byte-equality with engine output",
+    "requires Patch C-B's accept-time bookkeeping to be fully landed AND its",
+    "TODO_PATCH_C_D_* hash placeholders to stabilize. Until then this file",
+    "documents the wire format only — flip the ignore off when C-B is stable",
+    "and the placeholders match the engine's deterministic output."
+  ],
+  "cases": [
+    {
+      "name": "closure_carrying_worker_accept",
+      "initial": {
+        "proof_nodes": [
+          "a"
+        ],
+        "held_target": "a",
+        "live": {
+          "present_nodes": [
+            "a"
+          ],
+          "open_nodes": [
+            "a"
+          ],
+          "coverage": {
+            "t": [
+              "a"
+            ]
+          },
+          "target_fingerprints": {
+            "a": "ta"
+          },
+          "paper_current_fingerprints": {
+            "t": "a=ta"
+          },
+          "corr_current_fingerprints": {
+            "a": "ca"
+          },
+          "sound_current_fingerprints": {
+            "a": "sa"
+          }
+        },
+        "committed": {
+          "present_nodes": [
+            "a"
+          ],
+          "open_nodes": [
+            "a"
+          ],
+          "coverage": {
+            "t": [
+              "a"
+            ]
+          },
+          "target_fingerprints": {
+            "a": "ta"
+          },
+          "paper_current_fingerprints": {
+            "t": "a=ta"
+          },
+          "corr_current_fingerprints": {
+            "a": "ca"
+          },
+          "sound_current_fingerprints": {
+            "a": "sa"
+          }
+        },
+        "paper_status": {
+          "t": "Pass"
+        },
+        "paper_approved_fingerprints": {
+          "t": "a=ta"
+        },
+        "corr_status": {
+          "a": "Pass"
+        },
+        "corr_approved_fingerprints": {
+          "a": "ca"
+        },
+        "sound_status": {
+          "a": "Fail"
+        },
+        "sound_approved_fingerprints": {
+          "a": "sa"
+        }
+      },
+      "steps": [
+        {
+          "_doc": [
+            "Step 1: start the cycle. Identical to start_valid_soundness_path",
+            "in tla_replay.json — establishes that the closure trace exercises",
+            "the same Worker dispatch path and only diverges at the recorded",
+            "payload step below."
+          ],
+          "action": "start_cycle",
+          "event": {
+            "event": "start_cycle"
+          },
+          "expected": {
+            "proof_nodes": [
+              "a"
+            ],
+            "stage": "Worker",
+            "cycle": 1,
+            "attempt": 1,
+            "request_seq": 1,
+            "held_target": "a",
+            "live": {
+              "present_nodes": [
+                "a"
+              ],
+              "open_nodes": [
+                "a"
+              ],
+              "coverage": {
+                "t": [
+                  "a"
+                ]
+              },
+              "target_fingerprints": {
+                "a": "ta"
+              },
+              "paper_current_fingerprints": {
+                "t": "a=ta"
+              },
+              "corr_current_fingerprints": {
+                "a": "ca"
+              },
+              "sound_current_fingerprints": {
+                "a": "sa"
+              }
+            },
+            "committed": {
+              "present_nodes": [
+                "a"
+              ],
+              "open_nodes": [
+                "a"
+              ],
+              "coverage": {
+                "t": [
+                  "a"
+                ]
+              },
+              "target_fingerprints": {
+                "a": "ta"
+              },
+              "paper_current_fingerprints": {
+                "t": "a=ta"
+              },
+              "corr_current_fingerprints": {
+                "a": "ca"
+              },
+              "sound_current_fingerprints": {
+                "a": "sa"
+              }
+            },
+            "paper_status": {
+              "t": "Pass"
+            },
+            "paper_approved_fingerprints": {
+              "t": "a=ta"
+            },
+            "corr_status": {
+              "a": "Pass"
+            },
+            "corr_approved_fingerprints": {
+              "a": "ca"
+            },
+            "sound_status": {
+              "a": "Fail"
+            },
+            "sound_approved_fingerprints": {
+              "a": "sa"
+            },
+            "in_flight_request": {
+              "id": 1,
+              "kind": "Worker",
+              "cycle": 1
+            }
+          },
+          "expected_commands": [
+            {
+              "command": "issue_request",
+              "request": {
+                "id": 1,
+                "kind": "Worker",
+                "cycle": 1
+              }
+            }
+          ]
+        },
+        {
+          "_doc": [
+            "Step 2: a worker accept that closes node `a` (snapshot.open_nodes",
+            "is empty) AND carries the recorded local_closure_results payload",
+            "for `a`. The engine's `apply_local_closure_acceptance_bookkeeping`",
+            "consumes the inline payload and installs a LocalClosureRecord —",
+            "no probe invocation, no I/O, no env var.",
+            "",
+            "The local_closure_revalidation batch is also populated to",
+            "exercise the secondary code path (engine.rs line 1347).",
+            "",
+            "NOTE: the `expected` block below is a placeholder shape. The",
+            "engine writes hash sentinels (TODO_PATCH_C_D_*) into the",
+            "installed record; matching those exactly from a fixture is the",
+            "reason this test is `#[ignore]`d until Patch C-D stabilizes the",
+            "hash inputs."
+          ],
+          "action": "accept_valid_worker",
+          "event": {
+            "event": "wrapper_response",
+            "response": {
+              "kind": "worker",
+              "request_id": 1,
+              "cycle": 1,
+              "status": "Ok",
+              "outcome": "Valid",
+              "snapshot": {
+                "present_nodes": [
+                  "a"
+                ],
+                "open_nodes": [],
+                "coverage": {
+                  "t": [
+                    "a"
+                  ]
+                },
+                "target_fingerprints": {
+                  "a": "ta"
+                },
+                "paper_current_fingerprints": {
+                  "t": "a=ta"
+                },
+                "corr_current_fingerprints": {
+                  "a": "ca"
+                },
+                "sound_current_fingerprints": {
+                  "a": "sa"
+                }
+              },
+              "local_closure_results": {
+                "a": {
+                  "status": "ok",
+                  "kernel_axioms": [
+                    "Classical.choice",
+                    "Quot.sound",
+                    "propext"
+                  ],
+                  "boundary_theorems": {},
+                  "strict_theorem_deps": {},
+                  "strict_definition_deps": {},
+                  "errors": [],
+                  "raw_stdout": "",
+                  "raw_stderr": "",
+                  "returncode": 0,
+                  "timed_out": false
+                }
+              },
+              "local_closure_revalidation": {
+                "refreshed": [],
+                "still_unverified": []
+              }
+            }
+          },
+          "expected": {
+            "proof_nodes": [
+              "a"
+            ],
+            "stage": "Reviewer",
+            "cycle": 1,
+            "attempt": 1,
+            "request_seq": 2,
+            "held_target": "a",
+            "live": {
+              "present_nodes": [
+                "a"
+              ],
+              "open_nodes": [],
+              "coverage": {
+                "t": [
+                  "a"
+                ]
+              },
+              "target_fingerprints": {
+                "a": "ta"
+              },
+              "paper_current_fingerprints": {
+                "t": "a=ta"
+              },
+              "corr_current_fingerprints": {
+                "a": "ca"
+              },
+              "sound_current_fingerprints": {
+                "a": "sa"
+              }
+            },
+            "committed": {
+              "present_nodes": [
+                "a"
+              ],
+              "open_nodes": [
+                "a"
+              ],
+              "coverage": {
+                "t": [
+                  "a"
+                ]
+              },
+              "target_fingerprints": {
+                "a": "ta"
+              },
+              "paper_current_fingerprints": {
+                "t": "a=ta"
+              },
+              "corr_current_fingerprints": {
+                "a": "ca"
+              },
+              "sound_current_fingerprints": {
+                "a": "sa"
+              }
+            },
+            "paper_status": {
+              "t": "Pass"
+            },
+            "paper_approved_fingerprints": {
+              "t": "a=ta"
+            },
+            "corr_status": {
+              "a": "Pass"
+            },
+            "corr_approved_fingerprints": {
+              "a": "ca"
+            },
+            "sound_status": {
+              "a": "Fail"
+            },
+            "sound_approved_fingerprints": {
+              "a": "sa"
+            },
+            "local_closure_records": {
+              "a": {
+                "node": "a",
+                "closure_version": "TODO_PATCH_C_D_VERSION",
+                "toolchain_hash": "TODO_PATCH_C_D_HASH",
+                "lake_manifest_hash": "TODO_PATCH_C_D_HASH",
+                "preamble_hash": "TODO_PATCH_C_D_HASH",
+                "approved_axioms_hash": "TODO_PATCH_C_D_HASH",
+                "active_decl_hash": "TODO_PATCH_C_D_HASH",
+                "active_statement_hash": "TODO_PATCH_C_D_HASH",
+                "kernel_axioms": [
+                  "Classical.choice",
+                  "Quot.sound",
+                  "propext"
+                ],
+                "boundary_theorems": {},
+                "strict_theorem_deps": {},
+                "strict_definition_deps": {},
+                "accepted_at_snapshot_id": "cycle-1"
+              }
+            },
+            "in_flight_request": {
+              "id": 2,
+              "kind": "Review",
+              "cycle": 1
+            }
+          },
+          "expected_commands": [
+            {
+              "command": "issue_request",
+              "request": {
+                "id": 2,
+                "kind": "Review",
+                "cycle": 1
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

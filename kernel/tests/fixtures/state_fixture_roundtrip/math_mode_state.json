@@ -1,0 +1,1265 @@
+{
+  "phase": "ProofFormalization",
+  "stage": "VerifyPaper",
+  "cycle": 5,
+  "attempt": 1,
+  "max_theorem_invalid_attempt": 2,
+  "proof_invalid_review_threshold": 2,
+  "transport_attempt": 0,
+  "transport_invalid_review_threshold": 5,
+  "consecutive_transport_failure_node": null,
+  "consecutive_transport_failure_count": 0,
+  "consecutive_transport_failure_halt_threshold": 5,
+  "easy_max_retries": 2,
+  "verifier_lanes": [
+    "v1",
+    "v2"
+  ],
+  "request_seq": 5,
+  "cycles_since_clean": 1,
+  "progress_history": {
+    "snapshots": [
+      {
+        "snapshot_index": 0,
+        "present": [
+          "A",
+          "B",
+          "Helper"
+        ],
+        "progressed": [
+          "B",
+          "Helper"
+        ]
+      }
+    ],
+    "last_dispatched_index": null,
+    "next_index": 1
+  },
+  "shallow_coarse_closed_count": 0,
+  "cycles_since_shallow_coarse_closed_count_increase": 1,
+  "has_ever_been_clean": false,
+  "invalid_attempt": false,
+  "gate_kind": "None",
+  "trust_base": {
+    "format_version": 0,
+    "mode": "disabled",
+    "seed_manifest_sha256": null,
+    "seed_definition_bundle_sha256": null,
+    "evidence_tool_manifest_sha256": null,
+    "authored_semantic_root": null,
+    "approved_evidence_tool_input_root": null,
+    "advance_gate_episode_id": null,
+    "current_human_approval_event_hash": null,
+    "active_revision_lane_id": null,
+    "routine_gate_state": "not_presented",
+    "gate_commit_pending": false,
+    "last_fail_closed_reason": null
+  },
+  "gate_from_invalid_attempt": false,
+  "active_node": "A",
+  "held_target": null,
+  "target_edit_mode": "Global",
+  "proof_edit_mode": "Local",
+  "configured_targets": [
+    "t"
+  ],
+  "approved_targets": {
+    "configured_targets": [],
+    "coverage": {},
+    "protected_closure_nodes": []
+  },
+  "coarse_dag_nodes": [
+    "A"
+  ],
+  "active_coarse_node": "A",
+  "cycles_in_coarse_repair_mode": 1,
+  "corr_fingerprint_schema_version": 0,
+  "sound_assessment_schema_version": 1,
+  "node_kinds": {
+    "A": "Proof",
+    "B": "Proof",
+    "Helper": "Definition"
+  },
+  "committed_node_kinds": {
+    "A": "Proof",
+    "B": "Proof",
+    "Helper": "Definition"
+  },
+  "proof_nodes": [
+    "A",
+    "B"
+  ],
+  "committed_proof_nodes": [
+    "A",
+    "B"
+  ],
+  "deps": {
+    "A": [],
+    "B": [
+      "Helper"
+    ]
+  },
+  "committed_deps": {
+    "A": [],
+    "B": [
+      "Helper"
+    ]
+  },
+  "target_claims": {
+    "A": [
+      "t"
+    ]
+  },
+  "committed_target_claims": {
+    "A": [
+      "t"
+    ]
+  },
+  "deviation_files": {},
+  "committed_deviation_files": {},
+  "node_deviation_claims": {},
+  "committed_node_deviation_claims": {},
+  "last_clean_live": {
+    "present_nodes": [],
+    "open_nodes": [],
+    "coverage": {},
+    "target_fingerprints": {},
+    "corr_current_fingerprints": {},
+    "paper_current_fingerprints": {},
+    "sound_current_fingerprints": {},
+    "deviation_current_fingerprints": {},
+    "sound_current_fingerprint_parts": {},
+    "sketch_proof_nodes": [],
+    "placeholder_definition_nodes": [],
+    "substantiveness_current_fingerprints": {},
+    "protected_closure_nodes_per_target": {}
+  },
+  "last_clean_node_kinds": {},
+  "last_clean_proof_nodes": [],
+  "last_clean_deps": {},
+  "last_clean_target_claims": {},
+  "last_clean_deviation_files": {},
+  "last_clean_node_deviation_claims": {},
+  "last_clean_corr_status": {},
+  "last_clean_paper_status": {},
+  "last_clean_deviation_status": {},
+  "last_clean_substantiveness_status": {},
+  "last_clean_sound_status": {},
+  "last_clean_corr_approved_fingerprints": {},
+  "last_clean_paper_approved_fingerprints": {},
+  "last_clean_substantiveness_approved_fingerprints": {},
+  "last_clean_deviation_approved_fingerprints": {},
+  "last_clean_sound_approved_fingerprints": {},
+  "last_clean_verifier_mirror_ready": false,
+  "last_clean_commit": null,
+  "local_closure_records": {
+    "B": {
+      "node": "B",
+      "closure_version": "v1",
+      "toolchain_hash": "tc-fixture",
+      "lean_executable_hash": "",
+      "lake_executable_hash": "",
+      "checker_script_hash": "",
+      "lake_manifest_hash": "lk-fixture",
+      "preamble_hash": "pre-fixture",
+      "approved_axioms_hash": "ax-fixture",
+      "active_decl_hash": "decl-b",
+      "active_statement_hash": "stmt-b",
+      "kernel_axioms": [
+        "propext"
+      ],
+      "boundary_theorems": {
+        "Helper": "stmt-helper"
+      },
+      "strict_theorem_deps": {},
+      "strict_definition_deps": {},
+      "seed_support_definition_deps": {},
+      "seed_support_evidence_root": null,
+      "seed_support_file_hashes": {},
+      "kernel_semantic_hashes": {
+        "Helper": "corr-helper"
+      },
+      "accepted_at_snapshot_id": "snap-fixture-1",
+      "axcheck_status": "Skipped"
+    }
+  },
+  "local_closure_unverified_nodes": [],
+  "local_closure_failures": {},
+  "committed_local_closure_records": {
+    "B": {
+      "node": "B",
+      "closure_version": "v1",
+      "toolchain_hash": "tc-fixture",
+      "lean_executable_hash": "",
+      "lake_executable_hash": "",
+      "checker_script_hash": "",
+      "lake_manifest_hash": "lk-fixture",
+      "preamble_hash": "pre-fixture",
+      "approved_axioms_hash": "ax-fixture",
+      "active_decl_hash": "decl-b",
+      "active_statement_hash": "stmt-b",
+      "kernel_axioms": [
+        "propext"
+      ],
+      "boundary_theorems": {
+        "Helper": "stmt-helper"
+      },
+      "strict_theorem_deps": {},
+      "strict_definition_deps": {},
+      "seed_support_definition_deps": {},
+      "seed_support_evidence_root": null,
+      "seed_support_file_hashes": {},
+      "kernel_semantic_hashes": {
+        "Helper": "corr-helper"
+      },
+      "accepted_at_snapshot_id": "snap-fixture-1",
+      "axcheck_status": "Skipped"
+    }
+  },
+  "committed_local_closure_unverified_nodes": [],
+  "committed_local_closure_failures": {},
+  "last_clean_local_closure_records": {},
+  "last_clean_local_closure_unverified_nodes": [],
+  "last_clean_local_closure_failures": {},
+  "last_clean_local_closure_mirror_ready": false,
+  "last_clean_rewind_count": 0,
+  "force_stuck_math_audit_after_rewind": false,
+  "force_review_after_cone_clean": false,
+  "post_advance_routing_pending": false,
+  "node_rank": {},
+  "live": {
+    "present_nodes": [
+      "A",
+      "B",
+      "Helper"
+    ],
+    "open_nodes": [
+      "A"
+    ],
+    "coverage": {
+      "t": [
+        "A"
+      ]
+    },
+    "target_fingerprints": {},
+    "corr_current_fingerprints": {
+      "A": "corr-a",
+      "B": "corr-b",
+      "Helper": "corr-helper"
+    },
+    "paper_current_fingerprints": {
+      "t": ""
+    },
+    "sound_current_fingerprints": {},
+    "deviation_current_fingerprints": {},
+    "sound_current_fingerprint_parts": {},
+    "sketch_proof_nodes": [],
+    "placeholder_definition_nodes": [],
+    "substantiveness_current_fingerprints": {
+      "A": "",
+      "B": "",
+      "Helper": ""
+    },
+    "protected_closure_nodes_per_target": {}
+  },
+  "committed": {
+    "present_nodes": [
+      "A",
+      "B",
+      "Helper"
+    ],
+    "open_nodes": [
+      "A"
+    ],
+    "coverage": {
+      "t": [
+        "A"
+      ]
+    },
+    "target_fingerprints": {},
+    "corr_current_fingerprints": {
+      "A": "corr-a",
+      "B": "corr-b",
+      "Helper": "corr-helper"
+    },
+    "paper_current_fingerprints": {
+      "t": ""
+    },
+    "sound_current_fingerprints": {},
+    "deviation_current_fingerprints": {},
+    "sound_current_fingerprint_parts": {},
+    "sketch_proof_nodes": [],
+    "placeholder_definition_nodes": [],
+    "substantiveness_current_fingerprints": {
+      "A": "",
+      "B": "",
+      "Helper": ""
+    },
+    "protected_closure_nodes_per_target": {}
+  },
+  "corr_status": {
+    "A": "Unknown",
+    "B": "Unknown",
+    "Helper": "Unknown"
+  },
+  "corr_approved_fingerprints": {},
+  "paper_status": {},
+  "paper_approved_fingerprints": {},
+  "deviation_status": {},
+  "deviation_approved_fingerprints": {},
+  "substantiveness_status": {
+    "A": "Unknown",
+    "B": "Unknown",
+    "Helper": "Unknown"
+  },
+  "substantiveness_approved_fingerprints": {},
+  "sound_assessments": {},
+  "reviewer_requested_sound_verifier_nodes": [],
+  "sound_status": {},
+  "sound_approved_fingerprints": {},
+  "node_difficulty": {
+    "A": "Hard",
+    "B": "Hard",
+    "Helper": "Hard"
+  },
+  "easy_attempts": {
+    "A": 0,
+    "B": 0,
+    "Helper": 0
+  },
+  "human_input_outstanding": true,
+  "pending_task": null,
+  "pending_protected_semantic_scope_confirmation": null,
+  "pending_protected_reapproval_nodes": [],
+  "retry_outcome_kind": "None",
+  "reviewer_comments": "",
+  "latest_worker_summary": "",
+  "latest_worker_comments": "",
+  "latest_worker_needs_restructure_suggested_nodes": [],
+  "latest_worker_under_model_disproof": "",
+  "latest_worker_under_model_route_opinion": "",
+  "latest_worker_under_model_reasoning": "",
+  "assumption_authoring": null,
+  "pending_assumption_draft": null,
+  "pending_authoring_candidate": "",
+  "deterministic_worker_rejection_reasons": [],
+  "latest_review_rejection_reasons": [],
+  "latest_paper_reviewer_evidence": {},
+  "latest_deviation_reviewer_evidence": {},
+  "latest_deviation_review_ids": [],
+  "latest_substantiveness_reviewer_evidence": {},
+  "latest_corr_reviewer_evidence": {},
+  "latest_sound_reviewer_evidence": {},
+  "latest_assumptions_lane_evidence": [],
+  "latest_paper_review_targets": [],
+  "latest_substantiveness_review_nodes": [],
+  "latest_corr_review_nodes": [],
+  "latest_sound_review_nodes": [],
+  "previous_paper_lane_findings": {},
+  "previous_substantiveness_lane_findings": {},
+  "substantiveness_consecutive_no_progress_requests": 0,
+  "previous_corr_lane_findings": {},
+  "previous_sound_lane_findings": {},
+  "cleanup_audit_tasks": [],
+  "cleanup_audit_scratchpad": "",
+  "cleanup_audit_burst_count": 0,
+  "cleanup_audit_round": 1,
+  "cleanup_consecutive_invalid_workers": 0,
+  "cleanup_active_task": null,
+  "cleanup_force_done": false,
+  "latest_audit_rejection_reason": "",
+  "audit_burst_retry_count": 0,
+  "stuck_math_audit": {
+    "active": true,
+    "trigger": "reviewer requested audit (approach): fixture generation: exercise the stuck-math-audit surface",
+    "active_since_cycle": 4,
+    "trigger_blockers": [
+      {
+        "kind": "Soundness",
+        "object": {
+          "otype": "node",
+          "node": "A"
+        },
+        "fingerprint": "",
+        "deferred": false
+      },
+      {
+        "kind": "Substantiveness",
+        "object": {
+          "otype": "node",
+          "node": "A"
+        },
+        "fingerprint": "",
+        "deferred": false
+      },
+      {
+        "kind": "Substantiveness",
+        "object": {
+          "otype": "node",
+          "node": "B"
+        },
+        "fingerprint": "",
+        "deferred": false
+      },
+      {
+        "kind": "Substantiveness",
+        "object": {
+          "otype": "node",
+          "node": "Helper"
+        },
+        "fingerprint": "",
+        "deferred": false
+      }
+    ],
+    "last_reviewer_lean_product": null,
+    "need_input_audit": null,
+    "gap_research": null,
+    "gap_plan_critique": null,
+    "revision_planning": null,
+    "initial_planning": null,
+    "assumptions_lane": null
+  },
+  "audit_plan": {
+    "report": "Fixture stuck-math-audit report. fixture audit narrative; fixture audit narrative; fixture audit narrative; fixture audit narrative; fixture audit narrative; fixture audit narrative; fixture audit narrative;",
+    "tasks": [],
+    "probe_paths": [
+      "Tablet/Probe.lean"
+    ],
+    "need_input_audit": false,
+    "revision_audit": false,
+    "initial_plan": false,
+    "cone_clean_node": null,
+    "written_at_cycle": 4,
+    "written_by_request": 3,
+    "trigger_at_write": "reviewer requested audit (approach): fixture generation: exercise the stuck-math-audit surface",
+    "route_tex": ""
+  },
+  "superseded_audit_plan": null,
+  "last_stuck_math_audit_dispatched_cycle": 4,
+  "stuck_math_audit_burst_retry_count": 0,
+  "latest_stuck_math_audit_rejection_reason": "",
+  "pending_global_repair_request": null,
+  "pending_global_repair_grant": null,
+  "latest_global_repair_audit_decline_reason": "",
+  "latest_global_repair_audit_decline_cycle": null,
+  "last_reviewer_global_repair_request_cycle": null,
+  "pending_audit_request": null,
+  "pending_worker_audit_request": null,
+  "last_audit_request_cycle": 4,
+  "process_memory_seq": 0,
+  "gap_plan_reject_count": 0,
+  "undermodel_deferral_count": 0,
+  "gap_plan_budget_gap_key": null,
+  "gap_human_escalation": null,
+  "ever_shallow_coarse_closed": [],
+  "global_repair_mode_enabled": true,
+  "revision_context": null,
+  "tablet_target": "lean",
+  "in_flight_request": {
+    "id": 5,
+    "kind": "Paper",
+    "cycle": 5,
+    "phase": "ProofFormalization",
+    "active_node": "A",
+    "held_target": null,
+    "mode": "Local",
+    "blockers": [
+      {
+        "kind": "PaperFaithfulness",
+        "object": {
+          "otype": "target",
+          "target": "t"
+        },
+        "fingerprint": "",
+        "deferred": true
+      },
+      {
+        "kind": "NodeCorr",
+        "object": {
+          "otype": "node",
+          "node": "A"
+        },
+        "fingerprint": "corr-a",
+        "deferred": false
+      },
+      {
+        "kind": "NodeCorr",
+        "object": {
+          "otype": "node",
+          "node": "B"
+        },
+        "fingerprint": "corr-b",
+        "deferred": false
+      },
+      {
+        "kind": "NodeCorr",
+        "object": {
+          "otype": "node",
+          "node": "Helper"
+        },
+        "fingerprint": "corr-helper",
+        "deferred": false
+      },
+      {
+        "kind": "Soundness",
+        "object": {
+          "otype": "node",
+          "node": "A"
+        },
+        "fingerprint": "",
+        "deferred": false
+      },
+      {
+        "kind": "Substantiveness",
+        "object": {
+          "otype": "node",
+          "node": "A"
+        },
+        "fingerprint": "",
+        "deferred": false
+      },
+      {
+        "kind": "Substantiveness",
+        "object": {
+          "otype": "node",
+          "node": "B"
+        },
+        "fingerprint": "",
+        "deferred": false
+      },
+      {
+        "kind": "Substantiveness",
+        "object": {
+          "otype": "node",
+          "node": "Helper"
+        },
+        "fingerprint": "",
+        "deferred": false
+      }
+    ],
+    "blocked_targets": [
+      "t"
+    ],
+    "configured_targets": [
+      "t"
+    ],
+    "verify_nodes": [],
+    "verify_targets": [],
+    "verify_lanes": [
+      "v1",
+      "v2"
+    ],
+    "paper_verify_lane_bindings": [
+      {
+        "lane_id": "v1",
+        "provider": "claude",
+        "model": "corr-a",
+        "effort": null,
+        "extra_args": [],
+        "fallback_models": [],
+        "label": "corr-a"
+      },
+      {
+        "lane_id": "v2",
+        "provider": "gemini",
+        "model": "corr-b",
+        "effort": null,
+        "extra_args": [],
+        "fallback_models": [],
+        "label": "corr-b"
+      }
+    ],
+    "corr_verify_lane_bindings": [],
+    "sound_verify_lane_bindings": [],
+    "worker_binding": {
+      "provider": "",
+      "model": null,
+      "effort": null,
+      "extra_args": [],
+      "fallback_models": [],
+      "label": ""
+    },
+    "reviewer_binding": {
+      "provider": "",
+      "model": null,
+      "effort": null,
+      "extra_args": [],
+      "fallback_models": [],
+      "label": ""
+    },
+    "stuck_math_audit_binding": {
+      "provider": "",
+      "model": null,
+      "effort": null,
+      "extra_args": [],
+      "fallback_models": [],
+      "label": ""
+    },
+    "paper_verify_targets": [],
+    "substantiveness_verify_nodes": [
+      "A",
+      "B",
+      "Helper"
+    ],
+    "deviation_verify_id": null,
+    "deviation_verify_path": "",
+    "authorized_deviations": {},
+    "rejected_deviations": {},
+    "current_deviation_files": {},
+    "node_deviation_claims": {},
+    "corr_verify_nodes": [],
+    "corr_verify_targets": [],
+    "sound_verify_nodes": [],
+    "sound_verify_node": null,
+    "runtime_support_required": true,
+    "approved_target_nodes": [],
+    "approved_corr_fingerprints": {},
+    "coarse_dag_nodes": [],
+    "active_coarse_node": null,
+    "kernel_hinted_next_active_coarse_nodes": [],
+    "coarse_repair_mode": false,
+    "cycles_in_coarse_repair_mode": 0,
+    "coarse_anchor_starvation_unlocked": false,
+    "protected_semantic_change_confirmation": null,
+    "protected_reapproval_nodes": [],
+    "allowed_decisions": [],
+    "allowed_next_modes": [],
+    "kernel_hinted_next_active_nodes": [],
+    "proof_active_node_base_legal_candidates": [],
+    "coarse_repair_blocker_carriers": [],
+    "ever_shallow_coarse_closed": [],
+    "ever_shallow_coarse_closed_regressed": [],
+    "pending_global_repair_request": null,
+    "pending_global_repair_grant": null,
+    "latest_global_repair_audit_decline_reason": "",
+    "global_repair_mode_enabled": true,
+    "pending_worker_audit_request": null,
+    "audit_request_admissible": false,
+    "consumed_global_repair_grant": false,
+    "targeted_next_active_nodes": [],
+    "theorem_restructure_next_active_nodes": [],
+    "allow_targeted_without_next_active": false,
+    "allowed_resets": [],
+    "resettable_theorem_stating_nodes": [],
+    "allowed_reset_blockers": [],
+    "sound_repair_ready_nodes": [],
+    "sound_verifier_requestable_nodes": [],
+    "sound_assessment_statuses": {},
+    "sound_reverification_context": null,
+    "cycles_since_clean": 1,
+    "no_sound_progress_window_cycles": 0,
+    "shallow_coarse_closed_count": 0,
+    "cycles_since_shallow_coarse_closed_count_increase": 1,
+    "last_clean_rewind_count": 0,
+    "stuck_math_audit": {
+      "active": false,
+      "trigger": "",
+      "active_since_cycle": 0,
+      "trigger_blockers": [],
+      "last_reviewer_lean_product": null,
+      "need_input_audit": null,
+      "gap_research": null,
+      "gap_plan_critique": null,
+      "revision_planning": null,
+      "initial_planning": null,
+      "assumptions_lane": null
+    },
+    "audit_plan": null,
+    "previous_audit_plan_snapshot": null,
+    "latest_stuck_math_audit_rejection_reason": "",
+    "allowed_difficulty_update_nodes": [],
+    "current_present_nodes": [
+      "A",
+      "B",
+      "Helper"
+    ],
+    "current_proof_nodes": [
+      "A",
+      "B"
+    ],
+    "current_node_kinds": {
+      "A": "Proof",
+      "B": "Proof",
+      "Helper": "Definition"
+    },
+    "placeholder_definition_nodes": [],
+    "current_deps": {
+      "A": [],
+      "B": [
+        "Helper"
+      ]
+    },
+    "current_target_claims": {
+      "A": [
+        "t"
+      ]
+    },
+    "current_paper_approved_fingerprints": {},
+    "reviewer_comments": "",
+    "latest_worker_summary": "",
+    "latest_worker_comments": "",
+    "latest_worker_needs_restructure_suggested_nodes": [],
+    "latest_worker_under_model_disproof": "",
+    "latest_worker_under_model_route_opinion": "",
+    "latest_worker_under_model_reasoning": "",
+    "pending_authoring_candidate": "",
+    "deterministic_worker_rejection_reasons": [],
+    "latest_review_rejection_reasons": [],
+    "review_verifier_evidence": {
+      "paper": {},
+      "deviation": {},
+      "substantiveness": {},
+      "corr": {},
+      "sound": {},
+      "assumptions": []
+    },
+    "previous_paper_lane_findings": {},
+    "previous_substantiveness_lane_findings": {},
+    "previous_corr_lane_findings": {},
+    "previous_sound_lane_findings": {},
+    "retry_outcome_kind": "None",
+    "retry_attempt": 0,
+    "post_advance_routing": false,
+    "corr_blocker_adjudicable": false,
+    "substantiveness_blocker_adjudicable": false,
+    "deviation_blocker_adjudicable": false,
+    "sound_blocker_adjudicable": false,
+    "paper_blocker_adjudicable": false,
+    "fresh_context": true,
+    "prompt_contract_version": 41,
+    "project_invariants": {
+      "filespec_reference": "FILESPEC.md",
+      "node_file_contract": "tablet_node_files_must_follow_filespec",
+      "node_pair_contract": "every_present_node_has_lean_and_nl_statement",
+      "progress_modes": [
+        "close_proof",
+        "paper_faithful_dag_improvement"
+      ],
+      "proof_bearing_contract": "proof_nodes_need_closed_lean_or_rigorous_nl",
+      "role_authority": {
+        "reviewer": "chooses_next_step_and_guidance",
+        "verifier": "checks_invariants_without_choosing_work",
+        "worker": "writes_repository_content_only"
+      }
+    },
+    "paper_contract": {
+      "artifact_contract": {
+        "overall_rule": "approve_iff_pass",
+        "phase_blocks": {
+          "substantiveness": {
+            "comment_required_on_fail": true,
+            "decision_values": [
+              "PASS",
+              "FAIL"
+            ],
+            "verdict_values": [
+              "Pass",
+              "Fail",
+              "NotDoneYet"
+            ]
+          }
+        },
+        "prompt_schema_example": {
+          "comments": "optional short note",
+          "overall": "APPROVE or REJECT",
+          "substantiveness": {
+            "decision": "PASS or FAIL",
+            "verdicts": [
+              {
+                "node": "node_id",
+                "verdict": "Pass"
+              },
+              {
+                "comment": "concrete recommendation: strengthen / merge / remove / etc.",
+                "node": "node_id",
+                "verdict": "Fail"
+              },
+              {
+                "node": "node_id",
+                "verdict": "NotDoneYet"
+              },
+              {
+                "comment": "ran out of time on the case analysis",
+                "node": "node_id",
+                "verdict": "NotDoneYet"
+              }
+            ]
+          },
+          "summary": "brief overall summary"
+        },
+        "result_type": "substantiveness_result_v1"
+      },
+      "artifact_prompt_view": {
+        "acceptance_check_command_template": null,
+        "checker_authority": "exact_command_is_authoritative",
+        "done_marker_contract": "write_done_after_json_check_passes",
+        "escape_json_backslashes": true,
+        "failure_recovery": "json_check_required_acceptance_check_best_effort",
+        "json_check_command_template": [
+          "python3",
+          "{{check_script_path}}",
+          "substantiveness-result",
+          "{{raw_output_path}}"
+        ],
+        "raw_output_format": "json_only",
+        "stdout_policy": "do_not_print_json_to_stdout"
+      },
+      "authorized_deviations": {},
+      "fixed_item_reporting_policy": "summary_only",
+      "issue_reporting_policy": "explicit_per_node_verdicts",
+      "node_deviation_claims": {},
+      "node_paper_basis_inputs": {
+        "A": {
+          "imported_by": [],
+          "lean_path": "Tablet/A.lean",
+          "node_kind": "Proof",
+          "tex_path": "Tablet/A.tex"
+        },
+        "B": {
+          "imported_by": [],
+          "lean_path": "Tablet/B.lean",
+          "node_kind": "Proof",
+          "tex_path": "Tablet/B.tex"
+        },
+        "Helper": {
+          "imported_by": [
+            "B"
+          ],
+          "lean_path": "Tablet/Helper.lean",
+          "node_kind": "Definition",
+          "tex_path": "Tablet/Helper.tex"
+        }
+      },
+      "previous_own_findings": {},
+      "prompt_facing_view": {
+        "artifact_contract": {
+          "overall_rule": "approve_iff_pass",
+          "phase_blocks": {
+            "substantiveness": {
+              "comment_required_on_fail": true,
+              "decision_values": [
+                "PASS",
+                "FAIL"
+              ],
+              "verdict_values": [
+                "Pass",
+                "Fail",
+                "NotDoneYet"
+              ]
+            }
+          },
+          "prompt_schema_example": {
+            "comments": "optional short note",
+            "overall": "APPROVE or REJECT",
+            "substantiveness": {
+              "decision": "PASS or FAIL",
+              "verdicts": [
+                {
+                  "node": "node_id",
+                  "verdict": "Pass"
+                },
+                {
+                  "comment": "concrete recommendation: strengthen / merge / remove / etc.",
+                  "node": "node_id",
+                  "verdict": "Fail"
+                },
+                {
+                  "node": "node_id",
+                  "verdict": "NotDoneYet"
+                },
+                {
+                  "comment": "ran out of time on the case analysis",
+                  "node": "node_id",
+                  "verdict": "NotDoneYet"
+                }
+              ]
+            },
+            "summary": "brief overall summary"
+          },
+          "result_type": "substantiveness_result_v1"
+        },
+        "authorized_deviations": {},
+        "node_deviation_claims": {},
+        "rejected_deviations": {},
+        "rubric": {
+          "missing_node_default": "NotDoneYet",
+          "rubric_reference": "SUBSTANTIVENESS.md",
+          "strengthening_allowed": true,
+          "triage_signal": "verdict: 'NotDoneYet' marks the node as not-yet-evaluated; missing nodes default to NotDoneYet",
+          "verdict": "pass_iff_valid_AND_meaningful_decomposition"
+        }
+      },
+      "prompt_fragments": [
+        "common/TRELLIS_FORMALIZATION_SCHEME_verifier.md",
+        "verifier/common/00_intro.md",
+        "verifier/substantiveness/05_fresh_node_frontier.md",
+        "verifier/substantiveness/15_deviations.md",
+        "shared/10_repository_root.md",
+        "verifier/common/10_lane_id.md",
+        "verifier/common/15_previous_findings.md",
+        "shared/20_read_files.md",
+        "shared/25_filespec.md",
+        "shared/30_project_invariants.md",
+        "verifier/substantiveness/20_node_frontier.md",
+        "verifier/substantiveness/30_contract.md",
+        "verifier/substantiveness/40_rubric.md",
+        "verifier/substantiveness/50_authority.md",
+        "shared/90_artifact_delivery.md",
+        "canonical/SUBSTANTIVENESS.md",
+        "shared/91_structured_request_pointer.md"
+      ],
+      "rejected_deviations": {},
+      "request_summary": {
+        "blocked_targets": [
+          "t"
+        ],
+        "nodes": [
+          "A",
+          "B",
+          "Helper"
+        ],
+        "phase": "ProofFormalization",
+        "scenario": "substantiveness"
+      },
+      "rubric": {
+        "missing_node_default": "NotDoneYet",
+        "rubric_reference": "SUBSTANTIVENESS.md",
+        "strengthening_allowed": true,
+        "triage_signal": "verdict: 'NotDoneYet' marks the node as not-yet-evaluated; missing nodes default to NotDoneYet",
+        "verdict": "pass_iff_valid_AND_meaningful_decomposition"
+      },
+      "target_covering_nodes": {}
+    },
+    "corr_contract": {
+      "artifact_contract": {
+        "overall_rule": "approve_iff_pass",
+        "phase_blocks": {
+          "correspondence": {
+            "comment_required_on_fail": true,
+            "decision_values": [],
+            "verdict_values": []
+          }
+        },
+        "prompt_schema_example": {
+          "comments": "",
+          "correspondence": {
+            "decision": "PASS or FAIL",
+            "verdicts": []
+          },
+          "overall": "APPROVE or REJECT",
+          "summary": ""
+        },
+        "result_type": "correspondence_result_v1"
+      },
+      "artifact_prompt_view": {
+        "acceptance_check_command_template": [],
+        "checker_authority": "exact_command_is_authoritative",
+        "done_marker_contract": "write_done_after_json_check_passes",
+        "escape_json_backslashes": true,
+        "failure_recovery": "json_check_required_acceptance_check_best_effort",
+        "json_check_command_template": [],
+        "raw_output_format": "json_only",
+        "stdout_policy": "do_not_print_json_to_stdout"
+      },
+      "fixed_item_reporting_policy": "none",
+      "issue_reporting_policy": "none",
+      "node_issue_scope": [],
+      "preamble_contract": {
+        "empty_items_vacuously_supported": true,
+        "item_ids": [],
+        "mode": "none"
+      },
+      "previous_own_findings_by_lane": {},
+      "prompt_fragments": [],
+      "request_summary": {
+        "blocked_targets": [],
+        "nodes": [],
+        "phase": ""
+      },
+      "rubric": {
+        "definition_hygiene": [],
+        "duplicate_mathlib_definition_policy": "none",
+        "preamble_item_issue_policy": "none",
+        "project_definition_policy": "none",
+        "statement_alignment_checks": []
+      }
+    },
+    "sound_contract": {
+      "artifact_contract": {
+        "decision_values": [],
+        "overall_rule": "approve_iff_sound",
+        "prompt_schema_example": {
+          "comments": "",
+          "node": "",
+          "overall": "APPROVE or REJECT",
+          "soundness": {
+            "decision": "",
+            "explanation": ""
+          },
+          "summary": ""
+        },
+        "result_type": "soundness_result_v1"
+      },
+      "artifact_prompt_view": {
+        "acceptance_check_command_template": [],
+        "checker_authority": "exact_command_is_authoritative",
+        "done_marker_contract": "write_done_after_json_check_passes",
+        "escape_json_backslashes": true,
+        "failure_recovery": "json_check_required_acceptance_check_best_effort",
+        "json_check_command_template": [],
+        "raw_output_format": "json_only",
+        "stdout_policy": "do_not_print_json_to_stdout"
+      },
+      "detail_floor": "none",
+      "evaluation_basis": "none",
+      "previous_own_findings": {},
+      "prompt_fragments": [],
+      "request_summary": {
+        "active_node": "",
+        "held_target": "",
+        "node": "",
+        "phase": ""
+      },
+      "rubric": {
+        "detail_floor": "none",
+        "lean_code_relevance": "none",
+        "proof_standard": "none",
+        "reject_sketches": false
+      },
+      "target_nodes": []
+    },
+    "worker_contract": {
+      "allowed_outcomes": [],
+      "artifact_prompt_view": {
+        "acceptance_check_command_template": [],
+        "checker_authority": "exact_command_is_authoritative",
+        "done_marker_contract": "write_done_after_json_check_passes",
+        "escape_json_backslashes": true,
+        "failure_recovery": "json_check_required_acceptance_check_best_effort",
+        "json_check_command_template": [],
+        "raw_output_format": "json_only",
+        "stdout_policy": "do_not_print_json_to_stdout"
+      },
+      "kernel_derives_structural_snapshot": true,
+      "prompt_fragments": [],
+      "prompt_schema_example": {
+        "comments": "",
+        "difficulty_updates": {
+          "node_id": ""
+        },
+        "outcome": "",
+        "summary": "",
+        "target_claim_updates": {
+          "node_id": []
+        }
+      },
+      "reported_delta_fields": [],
+      "request_summary": {
+        "active_node": "",
+        "blockers": [],
+        "current_definition_nodes": [],
+        "current_deps_scope_nodes": [],
+        "current_deps_scoped": {},
+        "current_preamble_nodes": [],
+        "current_present_nodes": [],
+        "current_target_claims_nonempty": {},
+        "held_target": "",
+        "mode": "",
+        "phase": "",
+        "worker_context": {
+          "active_difficulty": "hard",
+          "active_easy_attempts": 0,
+          "allow_new_obligations": true,
+          "authorized_nodes": [],
+          "enabled": false,
+          "must_close_active": false,
+          "validation_kind": "none",
+          "worker_profile": "none"
+        }
+      },
+      "result_type": "worker_result_v1",
+      "reviewer_comments": "",
+      "scope_contract": {
+        "allow_new_obligations": true,
+        "authorized_existing_nodes": [],
+        "configured_targets": [],
+        "existing_node_scope_mode": "none",
+        "must_close_active": false,
+        "new_nodes_allowed": false,
+        "pending_targets": [],
+        "pending_targets_meaning": "none"
+      },
+      "stuck_contract": {
+        "allowed": false,
+        "forbid_tablet_changes_when_stuck": false,
+        "meaning": "none"
+      }
+    },
+    "review_contract": {
+      "artifact_contract": {
+        "optional_fields": [],
+        "prompt_schema_example": {
+          "allow_new_obligations": true,
+          "clear_human_input": "",
+          "comments": "",
+          "decision": [],
+          "difficulty_updates": {
+            "node_id": ""
+          },
+          "must_close_active": false,
+          "next_active": "",
+          "next_mode": [],
+          "reason": "",
+          "request_sound_verifier_node_ids": [],
+          "reset": [],
+          "reset_blocker_ids": [],
+          "task_blocker_ids": []
+        },
+        "required_fields": [],
+        "result_type": "review_result_v1"
+      },
+      "artifact_prompt_view": {
+        "acceptance_check_command_template": [],
+        "checker_authority": "exact_command_is_authoritative",
+        "done_marker_contract": "write_done_after_json_check_passes",
+        "escape_json_backslashes": true,
+        "failure_recovery": "json_check_required_acceptance_check_best_effort",
+        "json_check_command_template": [],
+        "raw_output_format": "json_only",
+        "stdout_policy": "do_not_print_json_to_stdout"
+      },
+      "blocker_actions": {
+        "action_fields": [],
+        "allowed_reset_ids": [],
+        "choices": [],
+        "required": false,
+        "reset_semantics": "none",
+        "sound_verifier_requestable_nodes": []
+      },
+      "blocker_partition": {
+        "action_fields": [],
+        "allowed_reset_ids": [],
+        "choices": [],
+        "required": false,
+        "reset_semantics": "none",
+        "sound_verifier_requestable_nodes": []
+      },
+      "clear_human_input_contract": {
+        "allowed_when_outstanding": false,
+        "omit_when_not_allowed": true
+      },
+      "comments_contract": {
+        "empty_string_means_no_comments": true,
+        "field": "comments",
+        "semantics": "non_authoritative_guidance_forwarded_to_future_workers"
+      },
+      "difficulty_update_contract": {
+        "allowed_nodes": []
+      },
+      "need_input_contract": {
+        "allow_new_obligations": true,
+        "blocker_partition_required": false,
+        "meaning": "none",
+        "must_close_active": false,
+        "next_active": "",
+        "next_mode": "",
+        "next_worker_context_mode": "resume",
+        "paper_focus_ranges": [],
+        "reset_blocker_ids": [],
+        "task_blocker_ids": [],
+        "work_style_hint": "none"
+      },
+      "next_active_contract": {
+        "allow_targeted_without_next_active": false,
+        "kernel_hinted_nodes": [],
+        "targeted_allowed_nodes": []
+      },
+      "prompt_fragments": [],
+      "request_summary": {
+        "active_node": "",
+        "blocked_targets": [],
+        "held_target": "",
+        "human_input_outstanding": false,
+        "invalid_attempt": false,
+        "latest_worker_rationale": {
+          "comments": "",
+          "summary": ""
+        },
+        "mode": "",
+        "phase": "",
+        "protected_nodes": []
+      },
+      "verifier_evidence": {
+        "corr": {},
+        "paper": {},
+        "sound": {}
+      }
+    },
+    "audit_contract": {
+      "artifact_contract": {},
+      "prompt_fragments": [],
+      "request_summary": {
+        "audit_burst_index": 0,
+        "audit_round": 0,
+        "max_bursts_per_round": 0,
+        "phase": "",
+        "scenario": "audit_dormant"
+      }
+    },
+    "stuck_math_audit_contract": {
+      "artifact_contract": {},
+      "prompt_fragments": [],
+      "request_summary": {
+        "phase": "",
+        "scenario": "stuck_math_audit_dormant"
+      }
+    },
+    "cleanup_audit_tasks_view": [],
+    "cleanup_audit_scratchpad_view": "",
+    "cleanup_audit_round_view": 0,
+    "cleanup_audit_burst_count_view": 0,
+    "cleanup_protected_statement_node_set_view": [],
+    "latest_audit_rejection_reason_view": "",
+    "cleanup_force_done_view": false,
+    "worker_context": {
+      "enabled": false,
+      "active_difficulty": "Hard",
+      "active_easy_attempts": 0,
+      "worker_profile": "None",
+      "validation_kind": "None",
+      "authorized_nodes": [],
+      "allow_new_obligations": true,
+      "must_close_active": false,
+      "protected_semantic_change_nodes": [],
+      "next_context_mode": "resume",
+      "paper_focus_ranges": [],
+      "work_style_hint": "none",
+      "cleanup_active_task_kind_view": null,
+      "cleanup_active_target_node_view": null,
+      "cleanup_active_rationale_view": ""
+    },
+    "worker_acceptance": {
+      "enabled": false,
+      "validation_kind": "None",
+      "authorized_nodes": [],
+      "protected_semantic_change_nodes": [],
+      "validation_execution_plan": [],
+      "require_explicit_target_claims_for_new_nodes": true,
+      "forbid_tablet_changes_when_stuck": false,
+      "observation_plan": {
+        "capture_before_snapshot": false,
+        "capture_before_tablet_contents": false,
+        "capture_scoped_tablet_baseline_errors": false,
+        "scoped_tablet_baseline_scope": "None",
+        "capture_imports_before": false,
+        "capture_expected_active_hash": false,
+        "capture_baseline_declaration_hashes": false,
+        "capture_baseline_correspondence_hashes": false
+      }
+    },
+    "invalid_attempt": false,
+    "human_input_outstanding": true,
+    "gate_kind": "None",
+    "local_closure_unverified": {}
+  }
+}

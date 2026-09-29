@@ -1,0 +1,40 @@
+{
+  "request": {
+    "action": "validate_correspondence_result",
+    "raw_payload": {
+      "comments": "",
+      "correspondence": {
+        "decision": "PASS",
+        "verdicts": [
+          {
+            "node": "FooLemma",
+            "verdict": "Pass"
+          }
+        ]
+      },
+      "overall": "APPROVE",
+      "summary": "Correspondence holds."
+    }
+  },
+  "response": {
+    "output": {
+      "data": {
+        "comments": "",
+        "correspondence": {
+          "decision": "PASS",
+          "verdicts": [
+            {
+              "node": "FooLemma",
+              "verdict": "Pass"
+            }
+          ]
+        },
+        "overall": "APPROVE",
+        "summary": "Correspondence holds."
+      },
+      "errors": [],
+      "ok": true
+    },
+    "status": "validate_correspondence_result_ok"
+  }
+}

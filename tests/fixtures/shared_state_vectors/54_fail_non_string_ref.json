@@ -1,0 +1,20 @@
+{
+  "name": "54_fail_non_string_ref",
+  "kind": "failure",
+  "description": "A `$r` whose value is not a string is malformed; sequential-index keys are not a permitted alternative encoding.",
+  "document": {
+    "$format": "trellis-shared-state/1",
+    "$strings": {},
+    "$pool": {
+      "0123456789abcdef": {
+        "ok": 1
+      }
+    },
+    "state": {
+      "x": {
+        "$r": 0
+      }
+    }
+  },
+  "error_contains": "must be a string"
+}

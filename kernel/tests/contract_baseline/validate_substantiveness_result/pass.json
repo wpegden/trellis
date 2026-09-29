@@ -1,0 +1,50 @@
+{
+  "request": {
+    "action": "validate_substantiveness_result",
+    "raw_payload": {
+      "comments": "",
+      "overall": "APPROVE",
+      "substantiveness": {
+        "decision": "PASS",
+        "verdicts": [
+          {
+            "node": "FooLemma",
+            "verdict": "Pass"
+          },
+          {
+            "comment": "ok",
+            "node": "BarThm",
+            "verdict": "Pass"
+          }
+        ]
+      },
+      "summary": "two passes"
+    }
+  },
+  "response": {
+    "output": {
+      "data": {
+        "comments": "",
+        "overall": "APPROVE",
+        "substantiveness": {
+          "decision": "PASS",
+          "verdicts": [
+            {
+              "node": "FooLemma",
+              "verdict": "Pass"
+            },
+            {
+              "comment": "ok",
+              "node": "BarThm",
+              "verdict": "Pass"
+            }
+          ]
+        },
+        "summary": "two passes"
+      },
+      "errors": [],
+      "ok": true
+    },
+    "status": "validate_substantiveness_result_ok"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "request": {
+    "action": "worker_blocker_status_block",
+    "request": {
+      "active_node": "ActiveProof",
+      "blockers": [
+        {
+          "fingerprint": "fp-active",
+          "kind": "NodeCorr",
+          "object": {
+            "node": "ActiveProof",
+            "otype": "node"
+          }
+        }
+      ],
+      "current_present_nodes": [
+        "ActiveProof"
+      ],
+      "cycle": 2,
+      "held_target": null,
+      "id": 2,
+      "kind": "worker",
+      "mode": "local",
+      "phase": "proof_formalization"
+    }
+  },
+  "response": {
+    "output": {
+      "md": "1 live blocker(s). Counts by kind: NodeCorr=1. Reviewer comments above describe what to repair; this list shows the live verifier blockers for situational awareness.\n\nIndex | Kind             | Object\n------|------------------|--------------------------------\n    0 | NodeCorr         | node:ActiveProof\n\nActionable subset (1 of 1): active node + direct-dep neighborhood\n\nIndex | Kind             | Object\n------|------------------|--------------------------------\n    0 | NodeCorr         | node:ActiveProof",
+      "sidecar_payload": null
+    },
+    "status": "worker_blocker_status_block_ok"
+  }
+}

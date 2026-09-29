@@ -1,0 +1,82 @@
+{
+  "name": "06_sigil_escape",
+  "kind": "roundtrip",
+  "description": "Payload objects that are themselves shaped like a reference. Any encoded object with exactly one member named $r, $s or $e is wrapped in {\"$e\": ...} so the three sigils stay unambiguous. Escaping nests: an input {\"$e\": X} gains one wrapper per level.",
+  "plain": {
+    "state": {
+      "a": {
+        "$r": "not-a-reference"
+      },
+      "b": {
+        "$s": 17
+      },
+      "c": {
+        "$e": {
+          "$r": "x"
+        }
+      },
+      "d": {
+        "$r": "x",
+        "extra": 1
+      },
+      "e": {
+        "$format": "not the envelope"
+      }
+    }
+  },
+  "encoded": {
+    "$format": "trellis-shared-state/1",
+    "$strings": {},
+    "$pool": {},
+    "state": {
+      "a": {
+        "$e": {
+          "$r": "not-a-reference"
+        }
+      },
+      "b": {
+        "$e": {
+          "$s": 17
+        }
+      },
+      "c": {
+        "$e": {
+          "$e": {
+            "$e": {
+              "$r": "x"
+            }
+          }
+        }
+      },
+      "d": {
+        "$r": "x",
+        "extra": 1
+      },
+      "e": {
+        "$format": "not the envelope"
+      }
+    }
+  },
+  "decoded": {
+    "state": {
+      "a": {
+        "$r": "not-a-reference"
+      },
+      "b": {
+        "$s": 17
+      },
+      "c": {
+        "$e": {
+          "$r": "x"
+        }
+      },
+      "d": {
+        "$r": "x",
+        "extra": 1
+      },
+      "e": {
+        "$format": "not the envelope"
+      }
+    }
+  }
+}

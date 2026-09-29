@@ -1,0 +1,52 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Generated on-demand by scripts/validate_prompt_trims.py
+trellis/runtime/_bridge_prompts_baseline.py
+
+kernel/target/
+target/
+spec/states/
+
+.trellis/
+.trellis-smoke/
+.viewer/
+viewer/node_modules/
+
+*.raw.json
+*.done
+
+# Dev-only scratch, agent state, and working logs — never ship / never commit
+.claude/
+scratch/
+toedit/
+cleanup_agent/
+.baseline_*
+CLAUDES_NOTES*.md
+
+# Emacs artifacts (backups, autosaves, lockfiles)
+*~
+\#*\#
+.\#*
+
+# Session-local cargo target dir (CARGO_TARGET_DIR)
+.petarget/
+
+# Trust-base redesign dossier — a ~526M working directory (design docs,
+# cold-handoff zips, prototypes/, specimens/) that lives BESIDE the repo
+# and is never committed. It was untracked-but-unignored once, which let a
+# build depend on files that were not in the repository: the kernel's
+# schema/fixture includes resolved through `CARGO_MANIFEST_DIR/../` into
+# this directory, so master compiled here and nowhere else.
+#
+# The bytes the build actually pins now live INSIDE the crate at
+# kernel/src/trust_base/schemas/ (that copy is authoritative for the
+# build). Nothing under kernel/ may read from this path again.
+#
+# The design record itself IS tracked (the .md files): the diagnosis,
+# audits, specs and state-of-play are this project's institutional
+# memory and have already been load-bearing in later investigations.
+# Only the bulk is excluded. Nothing tracked here is a build input.
+/trust-base-redesign-dossier/*
+!/trust-base-redesign-dossier/*.md

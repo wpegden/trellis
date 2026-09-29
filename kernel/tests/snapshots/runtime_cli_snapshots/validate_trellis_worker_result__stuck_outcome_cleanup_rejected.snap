@@ -1,0 +1,14 @@
+---
+source: tests/runtime_cli_snapshots.rs
+expression: response
+---
+{
+  "output": {
+    "data": null,
+    "errors": [
+      "outcome must be one of ['valid', 'invalid']"
+    ],
+    "ok": false
+  },
+  "status": "validate_trellis_worker_result_ok"
+}

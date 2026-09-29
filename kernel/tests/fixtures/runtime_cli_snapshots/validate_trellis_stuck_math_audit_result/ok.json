@@ -1,0 +1,16 @@
+{
+  "action": "validate_trellis_stuck_math_audit_result",
+  "raw_payload": {
+    "report": "The active statement appears blocked by a missing hypothesis. The cited probe shows that the inductive step assumes monotonicity, but the underlying inductive predicate was not strengthened to carry it. The next worker should add a strengthened hypothesis or refactor the lemma signature.",
+    "tasks": [
+      {
+        "id": "task-1",
+        "title": "Check obstruction",
+        "body": "Read the cited scratch probe and decide whether the active statement needs a strengthened hypothesis."
+      }
+    ],
+    "probe_paths": [
+      ".trellis/stuck-math-audit/cycle-1-request-2/probe.lean"
+    ]
+  }
+}

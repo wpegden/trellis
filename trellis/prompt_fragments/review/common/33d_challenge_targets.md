@@ -1,0 +1,3 @@
+# Challenge targets
+
+`request_summary.configured_challenge_targets` lists this run's prescribed challenge declarations and `request_summary.challenge_coverage` shows which nodes currently cover each one. Every uncovered target carries a `ChallengeCoverage` blocker that gates `advance_phase` and `done`; the blocker clears when a worker lands a conformant claiming node, so carry that registration in the worker guidance and leave the blocker out of every action list. The covering declaration's text is kernel-enforced byte-for-byte against the prescription (`request_summary.challenge_claim_rules` states the exact rules), and a worker rejection citing the challenge byte-conformance or name-parity rule is repaired by restoring the prescribed text on the named node.

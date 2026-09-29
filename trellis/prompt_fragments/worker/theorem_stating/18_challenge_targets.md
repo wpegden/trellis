@@ -1,0 +1,5 @@
+# Challenge targets
+
+This run also carries **challenge targets**: prescribed Lean declarations listed in `scope_contract.configured_challenge_targets` (id, kind, name, the exact `lean` text, and an informal statement when one exists). Every configured challenge target must eventually be covered by a node that claims it.
+
+To cover a challenge target, create the node named exactly the target's `name`, place the prescribed `lean` text verbatim as the declaration (theorem targets: the statement region between the tablet-node marker and `-- BODY`, with the proof below the marker yours to author; def targets: the entire declaration, with the prescribed value below `-- BODY`), and claim the target in `challenge_claim_updates` (`{"NodeName": ["challenge_target_id"]}`). The kernel byte-compares the slice against the prescription at acceptance, so copy the text exactly as given — imports and `open` lines above the tablet-node marker remain yours to choose. Each node claims at most one challenge target. Designating one node as covering both a challenge target and a paper target is legal.
