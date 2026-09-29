@@ -1,0 +1,78 @@
+{
+  "request": {
+    "action": "normalize_paper",
+    "input": {
+      "cycle": 4,
+      "members": [
+        {
+          "error": "",
+          "lane_id": "v1",
+          "ok": true,
+          "payload": {
+            "comments": "",
+            "deviation_authorization": {
+              "comment": "",
+              "decision": "",
+              "id": ""
+            },
+            "overall": "APPROVE",
+            "paper_faithfulness": {
+              "decision": "PASS",
+              "issues": [],
+              "verdicts": []
+            },
+            "substantiveness": {
+              "decision": "PASS",
+              "verdicts": []
+            },
+            "summary": "Targets are faithful."
+          }
+        }
+      ],
+      "request_id": 60,
+      "verify_deviations": [],
+      "verify_lanes": [
+        "v1"
+      ],
+      "verify_nodes": [],
+      "verify_targets": [
+        "t.main"
+      ]
+    }
+  },
+  "response": {
+    "output": {
+      "response": {
+        "cycle": 4,
+        "deviation_lane_updates": {
+          "v1": {}
+        },
+        "node_lane_updates": {
+          "v1": {}
+        },
+        "node_reviewer_evidence": {},
+        "request_id": 60,
+        "reviewer_evidence": {
+          "v1": {
+            "comments": "",
+            "overall": "APPROVE",
+            "paper_faithfulness": {
+              "decision": "PASS",
+              "issues": []
+            },
+            "summary": "Targets are faithful."
+          }
+        },
+        "status": "Ok",
+        "target_lane_updates": {
+          "v1": {
+            "t.main": {
+              "Set": "Pass"
+            }
+          }
+        }
+      }
+    },
+    "status": "normalize_paper_ok"
+  }
+}

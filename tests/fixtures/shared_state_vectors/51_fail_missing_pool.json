@@ -1,0 +1,11 @@
+{
+  "name": "51_fail_missing_pool",
+  "kind": "failure",
+  "description": "`$pool` is mandatory whenever `$format` is present, even when empty.",
+  "document": {
+    "$format": "trellis-shared-state/1",
+    "$strings": {},
+    "state": {}
+  },
+  "error_contains": "no $pool object"
+}

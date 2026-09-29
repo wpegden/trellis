@@ -1,0 +1,12 @@
+{
+  "name": "50_fail_unknown_format",
+  "kind": "failure",
+  "description": "A `$format` other than the pinned string is a hard error. A decoder must never fall back to treating the document as plain.",
+  "document": {
+    "$format": "trellis-shared-state/2",
+    "$strings": {},
+    "$pool": {},
+    "state": {}
+  },
+  "error_contains": "unsupported supervisor-state format"
+}

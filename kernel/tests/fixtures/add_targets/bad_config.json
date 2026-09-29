@@ -1,0 +1,6 @@
+{
+  "workflow": {
+    "paper_tex_path": "paper/main.tex",
+    "main_result_labels": ["thm:new"]
+  }
+}

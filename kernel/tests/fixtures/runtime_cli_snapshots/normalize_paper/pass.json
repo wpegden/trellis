@@ -1,0 +1,37 @@
+{
+  "action": "normalize_paper",
+  "input": {
+    "request_id": 60,
+    "cycle": 4,
+    "verify_lanes": ["v1"],
+    "verify_targets": ["t.main"],
+    "verify_nodes": [],
+    "verify_deviations": [],
+    "members": [
+      {
+        "lane_id": "v1",
+        "ok": true,
+        "error": "",
+        "payload": {
+          "paper_faithfulness": {
+            "decision": "PASS",
+            "verdicts": [],
+            "issues": []
+          },
+          "substantiveness": {
+            "decision": "PASS",
+            "verdicts": []
+          },
+          "deviation_authorization": {
+            "id": "",
+            "decision": "",
+            "comment": ""
+          },
+          "overall": "APPROVE",
+          "summary": "Targets are faithful.",
+          "comments": ""
+        }
+      }
+    ]
+  }
+}

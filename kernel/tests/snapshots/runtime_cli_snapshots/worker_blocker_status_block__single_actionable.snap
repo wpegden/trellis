@@ -1,0 +1,11 @@
+---
+source: tests/runtime_cli_snapshots.rs
+expression: response
+---
+{
+  "output": {
+    "md": "1 live blocker(s). Counts by kind: NodeCorr=1. Reviewer comments above describe what to repair; this list shows the live verifier blockers for situational awareness.\n\nIndex | Kind             | Object\n------|------------------|--------------------------------\n    0 | NodeCorr         | node:ActiveProof\n\nActionable subset (1 of 1): active node + direct-dep neighborhood\n\nIndex | Kind             | Object\n------|------------------|--------------------------------\n    0 | NodeCorr         | node:ActiveProof",
+    "sidecar_payload": null
+  },
+  "status": "worker_blocker_status_block_ok"
+}

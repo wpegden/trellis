@@ -1,0 +1,33 @@
+{
+  "request": {
+    "action": "validate_soundness_result",
+    "node_name": "MainResult",
+    "raw_payload": {
+      "comments": "Add the base case.",
+      "node": "MainResult",
+      "overall": "REJECT",
+      "soundness": {
+        "decision": "UNSOUND",
+        "explanation": "The induction skips the base case."
+      },
+      "summary": "Missing base case."
+    }
+  },
+  "response": {
+    "output": {
+      "data": {
+        "comments": "Add the base case.",
+        "node": "MainResult",
+        "overall": "REJECT",
+        "soundness": {
+          "decision": "UNSOUND",
+          "explanation": "The induction skips the base case."
+        },
+        "summary": "Missing base case."
+      },
+      "errors": [],
+      "ok": true
+    },
+    "status": "validate_soundness_result_ok"
+  }
+}

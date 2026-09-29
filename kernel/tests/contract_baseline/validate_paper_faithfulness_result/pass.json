@@ -1,0 +1,30 @@
+{
+  "request": {
+    "action": "validate_paper_faithfulness_result",
+    "raw_payload": {
+      "comments": "",
+      "overall": "APPROVE",
+      "paper_faithfulness": {
+        "decision": "PASS",
+        "issues": []
+      },
+      "summary": "Paper matches Lean statements."
+    }
+  },
+  "response": {
+    "output": {
+      "data": {
+        "comments": "",
+        "overall": "APPROVE",
+        "paper_faithfulness": {
+          "decision": "PASS",
+          "issues": []
+        },
+        "summary": "Paper matches Lean statements."
+      },
+      "errors": [],
+      "ok": true
+    },
+    "status": "validate_paper_faithfulness_result_ok"
+  }
+}

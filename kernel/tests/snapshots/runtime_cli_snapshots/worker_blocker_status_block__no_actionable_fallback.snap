@@ -1,0 +1,11 @@
+---
+source: tests/runtime_cli_snapshots.rs
+expression: response
+---
+{
+  "output": {
+    "md": "3 live blocker(s). Counts by kind: Soundness=3. Reviewer comments above describe what to repair; this list shows the live verifier blockers for situational awareness.\n\nIndex | Kind             | Object\n------|------------------|--------------------------------\n    0 | Soundness        | node:FarNode1\n    1 | Soundness        | node:FarNode2\n    2 | Soundness        | node:FarNode3\n\nActionable subset (3 of 3): fallback: no blockers touch active_node/held_target; showing first 3 of 3 by label order\n\nIndex | Kind             | Object\n------|------------------|--------------------------------\n    0 | Soundness        | node:FarNode1\n    1 | Soundness        | node:FarNode2\n    2 | Soundness        | node:FarNode3",
+    "sidecar_payload": null
+  },
+  "status": "worker_blocker_status_block_ok"
+}

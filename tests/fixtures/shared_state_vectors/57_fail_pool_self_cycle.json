@@ -1,0 +1,20 @@
+{
+  "name": "57_fail_pool_self_cycle",
+  "kind": "failure",
+  "description": "A one-node `$r` cycle: a pool entry that references itself.",
+  "document": {
+    "$format": "trellis-shared-state/1",
+    "$strings": {},
+    "$pool": {
+      "aaaaaaaaaaaaaaaa": {
+        "self": {
+          "$r": "aaaaaaaaaaaaaaaa"
+        }
+      }
+    },
+    "state": {
+      "$r": "aaaaaaaaaaaaaaaa"
+    }
+  },
+  "error_contains": "reference cycle"
+}

@@ -1,0 +1,13 @@
+{
+  "action": "worker_blocker_status_block",
+  "request": {
+    "id": 1,
+    "kind": "worker",
+    "cycle": 1,
+    "phase": "proof_formalization",
+    "mode": "local",
+    "active_node": "ActiveProof",
+    "blockers": [],
+    "current_present_nodes": ["ActiveProof"]
+  }
+}

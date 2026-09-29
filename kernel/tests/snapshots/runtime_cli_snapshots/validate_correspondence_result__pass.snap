@@ -1,0 +1,25 @@
+---
+source: tests/runtime_cli_snapshots.rs
+expression: response
+---
+{
+  "output": {
+    "data": {
+      "comments": "",
+      "correspondence": {
+        "decision": "PASS",
+        "verdicts": [
+          {
+            "node": "FooLemma",
+            "verdict": "Pass"
+          }
+        ]
+      },
+      "overall": "APPROVE",
+      "summary": "Correspondence holds."
+    },
+    "errors": [],
+    "ok": true
+  },
+  "status": "validate_correspondence_result_ok"
+}
