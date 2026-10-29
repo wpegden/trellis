@@ -1,0 +1,548 @@
+\documentclass[11pt]{article}
+
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage[margin=1.05in]{geometry}
+\usepackage{microtype}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+
+\hypersetup{pdftitle={Connectivity threshold for G(n,p)},pdfauthor={ChatGPT},pdfsubject={Self-contained proof}}
+
+\setlength{\parskip}{0.35em}
+\setlength{\parindent}{0pt}
+\setlist[enumerate]{itemsep=0.25em,topsep=0.35em,leftmargin=2.2em}
+
+\newcommand{\PP}{\mathbb{P}}
+\newcommand{\EE}{\mathbb{E}}
+\newcommand{\Var}{\operatorname{Var}}
+\newcommand{\one}{\mathbf{1}}
+\newcommand{\bbinom}[2]{\binom{#1}{#2}}
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+
+\theoremstyle{definition}
+\newtheorem{remark}[theorem]{Remark}
+
+\title{Connectivity threshold for \texorpdfstring{$G_{n,p}$}{G(n,p)}\\[0.35em]
+\large A self-contained proof}
+\author{}
+\date{March 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We prove the classical connectivity threshold for the Erd\H{o}s-R\'enyi random graph in the form
+\[
+\PP\bigl(G(n,p_n)\text{ is connected}\bigr)
+\to
+\begin{cases}
+0, & np_n-\log n\to -\infty,\\
+\exp(-e^{-c}), & np_n-\log n\to c\in\mathbb{R},\\
+1, & np_n-\log n\to +\infty.
+\end{cases}
+\]
+The proof is organized into small lemmas.  The two main inputs are: (i) a detailed analysis of isolated vertices using alternating binomial sums, and (ii) a tree-counting argument showing that any other disconnected component is asymptotically negligible.  No branching-process heuristics are used.
+\end{abstract}
+
+\section{Statement of the theorem}
+
+Throughout, $[n] := \{1,2,\dots,n\}$ and all logarithms are natural.  For $p\in[0,1]$, the random graph $G(n,p)$ is the graph on vertex set $[n]$ in which each edge is present independently with probability $p$.  Given a sequence $p_n\in[0,1]$, write
+\[
+\alpha_n := n p_n - \log n.
+\]
+
+\begin{theorem}[Connectivity threshold for $G(n,p)$]\label{thm:conn}
+Let $G_n\sim G(n,p_n)$.  Then:
+\begin{enumerate}
+    \item If $\alpha_n\to -\infty$, then \(\PP(G_n\text{ is connected})\to 0\).
+    \item If $\alpha_n\to c\in\mathbb{R}$, then \(\PP(G_n\text{ is connected})\to e^{-e^{-c}}\).
+    \item If $\alpha_n\to +\infty$, then \(\PP(G_n\text{ is connected})\to 1\).
+\end{enumerate}
+\end{theorem}
+
+The proof breaks into two independent pieces.
+
+\begin{enumerate}
+    \item Analyze the number of isolated vertices.  This already gives the correct limit for the probability of having \emph{no} isolated vertices.
+    \item Show that, in the threshold window and above it, every disconnected graph with no isolated vertices has a component of size between $2$ and $n/2$, and the probability of such a component is $o(1)$.
+\end{enumerate}
+
+
+\section{Isolated vertices}
+
+For each vertex $v\in[n]$, let
+\[
+I_v := \one_{\{v\text{ is isolated}\}},
+\qquad
+X_n := \sum_{v\in[n]} I_v.
+\]
+Thus $X_n$ is the number of isolated vertices of $G_n$.
+
+\begin{lemma}[First two moments of the isolated-vertex count]
+For every $n$ and every $p\in[0,1]$,
+\[
+\EE[X_n] = n(1-p)^{n-1}
+\]
+and
+\[
+\EE[X_n(X_n-1)] = n(n-1)(1-p)^{2n-3}.
+\]
+\end{lemma}
+
+\begin{proof}
+By linearity of expectation,
+\[
+\EE[X_n] = \sum_{v\in[n]} \PP(v\text{ is isolated}).
+\]
+A given vertex is isolated exactly when all $n-1$ incident edges are absent, which occurs with probability $(1-p)^{n-1}$.  This gives the first formula.
+
+For the second formula, expand
+\[
+X_n(X_n-1) = \sum_{u\neq v} I_u I_v.
+\]
+Hence
+\[
+\EE[X_n(X_n-1)] = \sum_{u\neq v} \PP(u\text{ and }v\text{ are both isolated}).
+\]
+If $u\neq v$, then for both vertices to be isolated one must delete the $2n-4$ edges joining $u$ or $v$ to the other $n-2$ vertices, and also the edge $uv$.  In total this is $2n-3$ edges.  Therefore
+\[
+\PP(u\text{ and }v\text{ are both isolated})=(1-p)^{2n-3},
+\]
+which yields the second formula.
+\end{proof}
+
+\begin{proposition}[Subcritical regime: isolated vertices force disconnection]\label{prop:subcritical}
+If $\alpha_n\to -\infty$, then
+\[
+\PP(X_n=0)\to 0.
+\]
+Consequently,
+\[
+\PP(G_n\text{ is connected})\to 0.
+\]
+\end{proposition}
+
+\begin{proof}
+Because $\alpha_n = np_n-\log n\to -\infty$, we have $np_n\le \log n$ for all large $n$, hence $p_n\le \log n/n\to 0$ and
+\[
+n p_n^2 \le \frac{\log^2 n}{n}\to 0.
+\]
+By the Taylor expansion $\log(1-x)=-x+O(x^2)$ for small $x$,
+\[
+(n-1)\log(1-p_n) = -(n-1)p_n + O(n p_n^2) = -n p_n + o(1).
+\]
+Therefore
+\[
+\EE[X_n]
+= n(1-p_n)^{n-1}
+= \exp\bigl(\log n - n p_n + o(1)\bigr)
+= \exp\bigl(-\alpha_n + o(1)\bigr)\to \infty.
+\]
+
+Next, by the previous lemma,
+\[
+\frac{\EE[X_n(X_n-1)]}{\EE[X_n]^2}
+=
+\frac{n(n-1)(1-p_n)^{2n-3}}{n^2(1-p_n)^{2n-2}}
+=
+\frac{n-1}{n}(1-p_n)^{-1}
+\to 1.
+\]
+Thus
+\begin{align*}
+\frac{\Var(X_n)}{\EE[X_n]^2}
+&=
+\frac{\EE[X_n]}{\EE[X_n]^2}
++
+\frac{\EE[X_n(X_n-1)]}{\EE[X_n]^2}
+-1 \\
+&=
+\frac{1}{\EE[X_n]}
++
+\frac{\EE[X_n(X_n-1)]}{\EE[X_n]^2}
+-1
+\to 0.
+\end{align*}
+By Chebyshev's inequality,
+\[
+\PP(X_n=0)
+\le
+\PP\bigl(|X_n-\EE[X_n]|\ge \EE[X_n]\bigr)
+\le
+\frac{\Var(X_n)}{\EE[X_n]^2}
+\to 0.
+\]
+Since every connected graph has no isolated vertex,
+\[
+\PP(G_n\text{ is connected}) \le \PP(X_n=0)\to 0.
+\]
+\end{proof}
+
+The remaining cases require a more precise estimate on the probability of having no isolated vertices.
+
+\begin{lemma}[Alternating binomial identity]
+For integers $y\ge 1$ and $m\ge 0$,
+\[
+\sum_{r=0}^{m} (-1)^r \bbinom{y}{r} = (-1)^m \bbinom{y-1}{m}.
+\]
+In particular,
+\[
+\sum_{r=0}^{2m-1} (-1)^r \bbinom{y}{r} \le 0 \le \sum_{r=0}^{2m} (-1)^r \bbinom{y}{r}.
+\]
+\end{lemma}
+
+\begin{proof}
+Use Pascal's identity $\binom{y}{r}=\binom{y-1}{r}+\binom{y-1}{r-1}$:
+\begin{align*}
+\sum_{r=0}^{m} (-1)^r \bbinom{y}{r}
+&=
+\sum_{r=0}^{m} (-1)^r \bbinom{y-1}{r}
++
+\sum_{r=1}^{m} (-1)^r \bbinom{y-1}{r-1} \\
+&=
+\sum_{r=0}^{m} (-1)^r \bbinom{y-1}{r}
+-
+\sum_{s=0}^{m-1} (-1)^s \bbinom{y-1}{s}
+= (-1)^m \bbinom{y-1}{m}.
+\end{align*}
+The sign statement follows immediately because $\binom{y-1}{m}\ge 0$.
+\end{proof}
+
+\begin{lemma}[Bonferroni bounds for the event $\{Y=0\}$]
+Let $Y$ be a nonnegative integer-valued random variable.  Then for every integer $m\ge 1$,
+\[
+\sum_{r=0}^{2m-1} (-1)^r \EE\!\left[\bbinom{Y}{r}\right]
+\le
+\PP(Y=0)
+\le
+\sum_{r=0}^{2m} (-1)^r \EE\!\left[\bbinom{Y}{r}\right].
+\]
+Here we use the convention $\binom{Y}{r}=0$ when $r>Y$.
+\end{lemma}
+
+\begin{proof}
+Fix an outcome $\omega$ and write $y=Y(\omega)$.  If $y=0$, then $\binom{y}{0}=1$ and $\binom{y}{r}=0$ for $r\ge 1$, so both partial sums are exactly $1=\one_{\{y=0\}}$.
+
+If $y\ge 1$, the previous lemma gives
+\[
+\sum_{r=0}^{2m-1} (-1)^r \bbinom{y}{r} \le 0 \le \sum_{r=0}^{2m} (-1)^r \bbinom{y}{r}.
+\]
+Since now $\one_{\{y=0\}}=0$, we have the pointwise bounds
+\[
+\sum_{r=0}^{2m-1} (-1)^r \bbinom{Y(\omega)}{r}
+\le
+\one_{\{Y(\omega)=0\}}
+\le
+\sum_{r=0}^{2m} (-1)^r \bbinom{Y(\omega)}{r}.
+\]
+Taking expectations proves the claim.
+\end{proof}
+
+\begin{proposition}[Critical window: the probability of having no isolated vertices]\label{prop:noiso}
+Assume $\alpha_n\to c\in\mathbb{R}$.  Then
+\[
+\PP(X_n=0)\to e^{-e^{-c}}.
+\]
+\end{proposition}
+
+\begin{proof}
+For a fixed integer $r\ge 0$, let
+\[
+b_{n,r} := \EE\!\left[\bbinom{X_n}{r}\right].
+\]
+We first compute $b_{n,r}$ exactly.  The random variable $\binom{X_n}{r}$ counts $r$-element subsets of $[n]$ all of whose vertices are isolated.  Therefore, by symmetry,
+\[
+b_{n,r} = \bbinom{n}{r}\,\PP(\text{a fixed }r\text{-set consists entirely of isolated vertices}).
+\]
+If $R\subseteq[n]$ has size $r$, then every vertex of $R$ is isolated exactly when all edges with at least one endpoint in $R$ are absent.  The number of such edges is
+\[
+r(n-r)+\bbinom{r}{2} = rn - \frac{r(r+1)}{2}.
+\]
+Hence
+\begin{equation}\label{eq:br-exact}
+ b_{n,r} = \bbinom{n}{r}(1-p_n)^{r(n-r)+\binom{r}{2}}.
+\end{equation}
+
+Now fix $r$.  Since $\alpha_n\to c$, we have $p_n=(\log n + c + o(1))/n\to 0$ and
+\[
+n p_n^2 = p_n(np_n) = O\!\left(\frac{\log n}{n}\right)\to 0.
+\]
+Again using $\log(1-x)=-x+O(x^2)$,
+\begin{align*}
+\bigl(r(n-r)+\tbinom{r}{2}\bigr)\log(1-p_n)
+&= -\bigl(rn+O(1)\bigr)p_n + O(n p_n^2) \\
+&= -r n p_n + o(1)
+= -r\log n - rc + o(1).
+\end{align*}
+Therefore
+\[
+(1-p_n)^{r(n-r)+\binom{r}{2}}
+= n^{-r} e^{-rc + o(1)}.
+\]
+Also $\binom{n}{r}=n^r/r!+o(n^r)$.  Inserting this into \eqref{eq:br-exact} yields
+\begin{equation}\label{eq:br-limit}
+ b_{n,r} \to \frac{e^{-rc}}{r!}.
+\end{equation}
+
+Let $\lambda := e^{-c}$.  By the previous lemma, for every fixed $m\ge 1$,
+\[
+\sum_{r=0}^{2m-1} (-1)^r b_{n,r}
+\le
+\PP(X_n=0)
+\le
+\sum_{r=0}^{2m} (-1)^r b_{n,r}.
+\]
+Taking $n\to\infty$ and using \eqref{eq:br-limit} term by term,
+\[
+\sum_{r=0}^{2m-1} \frac{(-\lambda)^r}{r!}
+\le
+\liminf_{n\to\infty} \PP(X_n=0)
+\le
+\limsup_{n\to\infty} \PP(X_n=0)
+\le
+\sum_{r=0}^{2m} \frac{(-\lambda)^r}{r!}.
+\]
+Finally, send $m\to\infty$.  The even and odd partial sums of the exponential series converge to the same limit $e^{-\lambda}$.  Since $\lambda=e^{-c}$, we obtain
+\[
+\PP(X_n=0)\to e^{-\lambda}=e^{-e^{-c}}.
+\]
+\end{proof}
+
+\begin{remark}
+A standard refinement of the same computation shows that $X_n$ converges in distribution to a Poisson random variable of mean $e^{-c}$.  For the connectivity threshold, however, only the probability of the event $\{X_n=0\}$ is needed.
+\end{remark}
+
+\section{Nontrivial components are negligible}
+
+Let $\mathcal{E}_n$ be the event that $G_n$ has a connected component of size between $2$ and $n/2$.
+
+The next lemma gives a completely elementary upper bound for the probability that a prescribed vertex set forms a connected component.
+
+\begin{lemma}[Probability that a fixed set is a connected component]
+Let $S\subseteq[n]$ with $|S|=k\ge 2$.  Then
+\[
+\PP(S\text{ is a connected component of }G(n,p))
+\le
+k^{k-1} p^{k-1}(1-p)^{k(n-k)}.
+\]
+\end{lemma}
+
+\begin{proof}
+If $S$ spans a connected subgraph, then that subgraph contains a spanning tree on $S$.  Root such a tree at the smallest vertex of $S$.  Once the root is fixed, a rooted spanning tree is determined by the parent of each of the other $k-1$ vertices.  There are at most $k^{k-1}$ choices for these parents, so there are at most $k^{k-1}$ rooted spanning trees on $S$.
+
+For any prescribed spanning tree on $S$, the probability that all its $k-1$ edges are present is $p^{k-1}$.  Independently, in order for $S$ to be a component, all $k(n-k)$ edges between $S$ and $[n]\setminus S$ must be absent, which has probability $(1-p)^{k(n-k)}$.  By the union bound over all rooted spanning trees,
+\[
+\PP(S\text{ is a connected component})
+\le k^{k-1} p^{k-1}(1-p)^{k(n-k)}.
+\]
+\end{proof}
+
+\begin{proposition}[No components of size $2$ through $n/2$ near the threshold]\label{prop:nosmall}
+Assume that $\alpha_n\to c\in\mathbb{R}\cup\{+\infty\}$ and that
+\[
+p_n \le \frac{2\log n}{n}
+\]
+for all large $n$.  Then
+\[
+\PP(\mathcal{E}_n)\to 0.
+\]
+\end{proposition}
+
+\begin{proof}
+Write $p=p_n$ and $\alpha=np-\log n$.  Since $\alpha_n\to c\in\mathbb{R}\cup\{+\infty\}$, we have $np=\log n+O(1)$ or larger; in particular $np\to\infty$.
+
+For each $k$, let $A_{n,k}$ be the event that $G_n$ has a component of size exactly $k$.  By the union bound over $k$-subsets and the previous lemma,
+\begin{equation}\label{eq:ank-raw}
+\PP(A_{n,k})
+\le
+\bbinom{n}{k} k^{k-1} p^{k-1}(1-p)^{k(n-k)}.
+\end{equation}
+Using $\binom{n}{k}\le (en/k)^k$ and $(1-p)^m\le e^{-pm}$,
+\begin{equation}\label{eq:ank-bound}
+\PP(A_{n,k})
+\le
+\frac{k}{p}\bigl(e n p \, e^{-p(n-k)}\bigr)^k.
+\end{equation}
+We now sum this bound over $2\le k\le n/2$.
+
+\smallskip
+\textbf{Step 1: small components.}
+Let
+\[
+K_n := \left\lfloor \frac{n}{\log^2 n}\right\rfloor.
+\]
+Suppose $2\le k\le K_n$.  Since $p\le 2\log n/n$,
+\[
+pk \le \frac{2\log n}{n}\cdot \frac{n}{\log^2 n} = \frac{2}{\log n},
+\]
+so $e^{pk}\le 2$ for all large $n$.  Therefore
+\[
+e^{-p(n-k)} = e^{-pn}e^{pk} \le 2e^{-pn}
+\]
+and \eqref{eq:ank-bound} gives
+\[
+\PP(A_{n,k}) \le \frac{k}{p} \rho_n^k,
+\qquad
+\rho_n := 2e n p e^{-pn} = 2e (np)e^{-np}.
+\]
+Because $np\to\infty$, we have $\rho_n\to 0$.  Hence, for large $n$, $\rho_n\le 1/2$, and then
+\begin{align*}
+\sum_{k=2}^{K_n} \PP(A_{n,k})
+&\le \frac{K_n}{p}\sum_{k=2}^{\infty} \rho_n^k
+\le \frac{2K_n\rho_n^2}{p} \\
+&= 8e^2 K_n n^2 p e^{-2np}
+= 8e^2 K_n p e^{-2\alpha}.
+\end{align*}
+Since $K_n p\le 2/\log n$ and $e^{-2\alpha}$ is bounded if $\alpha_n\to c\in\mathbb{R}$ and tends to $0$ if $\alpha_n\to +\infty$, the right-hand side tends to $0$.
+
+\smallskip
+\textbf{Step 2: larger components.}
+Now suppose $K_n\le k\le n/2$.  Then $n-k\ge n/2$, so \eqref{eq:ank-bound} implies
+\[
+\PP(A_{n,k})
+\le
+\frac{k}{p} q_n^k,
+\qquad
+q_n := e n p e^{-pn/2} = e(np)e^{-np/2}.
+\]
+Again $np\to\infty$, so $q_n\to 0$.  Also $k\le 2^k$ for all $k\ge 1$, hence
+\[
+\PP(A_{n,k}) \le \frac{(2q_n)^k}{p}.
+\]
+For all large $n$, we have $2q_n\le 1/2$, and therefore
+\[
+\sum_{k=K_n}^{\lfloor n/2\rfloor} \PP(A_{n,k})
+\le
+\frac{1}{p}\sum_{k=K_n}^{\infty} (2q_n)^k
+\le
+\frac{2^{1-K_n}}{p}.
+\]
+Because $\alpha_n$ is bounded below eventually, we have $np = \log n + \alpha_n \ge \tfrac12\log n$ for all large $n$, so $1/p = O(n/\log n)$.  Since $K_n\to\infty$, the bound $2^{1-K_n}/p$ tends to $0$.
+
+Combining the two ranges and summing over $k$ proves
+\[
+\PP(\mathcal{E}_n)
+\le
+\sum_{k=2}^{\lfloor n/2\rfloor} \PP(A_{n,k})
+\to 0.
+\]
+\end{proof}
+
+\section{Monotonicity in \texorpdfstring{$p$}{p}}
+
+\begin{lemma}[Connectivity is increasing in the edge parameter]\label{lem:monotone}
+If $0\le p\le q\le 1$, then
+\[
+\PP\bigl(G(n,p)\text{ is connected}\bigr)
+\le
+\PP\bigl(G(n,q)\text{ is connected}\bigr).
+\]
+\end{lemma}
+
+\begin{proof}
+Assign to each potential edge $e$ an independent random variable $U_e\sim \mathrm{Unif}[0,1]$.  Construct two random graphs on the same probability space by declaring
+\[
+e\in G(n,p) \iff U_e\le p,
+\qquad
+e\in G(n,q) \iff U_e\le q.
+\]
+Because $p\le q$, every edge present in $G(n,p)$ is also present in $G(n,q)$.  Thus, under this coupling,
+\[
+G(n,p)\subseteq G(n,q)
+\]
+as spanning subgraphs on the same vertex set.  Connectivity is an increasing graph property, so
+\[
+\{G(n,p)\text{ is connected}\}
+\subseteq
+\{G(n,q)\text{ is connected}\}.
+\]
+Taking probabilities gives the claim.
+\end{proof}
+
+\section{Proof of the main theorem}
+
+\begin{proof}[Proof of Theorem~\ref{thm:conn}]
+We treat the three cases separately.
+
+\smallskip
+\textbf{Case 1: $\alpha_n\to -\infty$.}
+By Proposition~\ref{prop:subcritical}, the probability that there are no isolated vertices tends to $0$.  Hence the graph is connected with probability tending to $0$.
+
+\smallskip
+\textbf{Case 2: $\alpha_n\to c\in\mathbb{R}$.}
+Since $np_n=\log n + O(1)$, we have $p_n\le 2\log n/n$ for all large $n$.  Proposition~\ref{prop:nosmall} gives
+\[
+\PP(\mathcal{E}_n)\to 0.
+\]
+A disconnected graph either has an isolated vertex or has a component of size between $2$ and $n/2$.  Therefore
+\[
+0
+\le
+\PP(X_n=0) - \PP(G_n\text{ is connected})
+\le
+\PP(\mathcal{E}_n).
+\]
+By Proposition~\ref{prop:noiso},
+\[
+\PP(X_n=0)\to e^{-e^{-c}},
+\]
+so the squeeze theorem gives
+\[
+\PP(G_n\text{ is connected})\to e^{-e^{-c}}.
+\]
+
+\smallskip
+\textbf{Case 3: $\alpha_n\to +\infty$.}
+Define
+\[
+q_n := \min\!\left\{p_n,\frac{2\log n}{n}\right\}
+\]
+and let $H_n\sim G(n,q_n)$.  Then $q_n\le 2\log n/n$ for all $n$, and
+\[
+nq_n - \log n \to +\infty.
+\]
+Indeed, if $q_n=p_n$ then this is exactly the hypothesis; otherwise $q_n=2\log n/n$ and $nq_n-\log n = \log n\to\infty$.
+
+By the union bound,
+\[
+\PP(H_n\text{ has an isolated vertex})
+\le
+n(1-q_n)^{n-1}
+\le
+\exp\bigl(\log n - q_n(n-1)\bigr)
+\to 0,
+\]
+because $nq_n-\log n\to\infty$.
+
+Also Proposition~\ref{prop:nosmall} applies to $H_n$, so
+\[
+\PP(H_n\text{ has a component of size between }2\text{ and }n/2)\to 0.
+\]
+Hence
+\[
+\PP(H_n\text{ is disconnected})\to 0,
+\]
+that is,
+\[
+\PP(H_n\text{ is connected})\to 1.
+\]
+Finally, by Lemma~\ref{lem:monotone},
+\[
+\PP(G_n\text{ is connected})
+\ge
+\PP(H_n\text{ is connected})
+\to 1.
+\]
+This proves the supercritical case.
+\end{proof}
+
+\end{document}

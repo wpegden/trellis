@@ -1,0 +1,8 @@
+{
+  "action": "validate_trellis_stuck_math_audit_result",
+  "raw_payload": {
+    "assumptions_lane_verdict": "reject",
+    "assumptions_lane_reason": "The proposed assumption lacks a paper citation tying it to the stated Rust invariant.",
+    "assumptions_lane_hunt_result": "The adversarial search found a counterexample under the current candidate invariant."
+  }
+}

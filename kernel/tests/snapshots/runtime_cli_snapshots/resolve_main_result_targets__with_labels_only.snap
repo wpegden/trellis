@@ -1,0 +1,23 @@
+---
+source: tests/runtime_cli_snapshots.rs
+expression: response
+---
+{
+  "output": {
+    "available_labels": [],
+    "preview": [],
+    "targets": [
+      {
+        "end_line": 0,
+        "start_line": 0,
+        "tex_label": "thm:a"
+      },
+      {
+        "end_line": 0,
+        "start_line": 0,
+        "tex_label": "thm:b"
+      }
+    ]
+  },
+  "status": "resolve_main_result_targets_ok"
+}

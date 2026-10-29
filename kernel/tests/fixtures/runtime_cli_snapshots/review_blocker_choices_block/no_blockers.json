@@ -1,0 +1,13 @@
+{
+  "action": "review_blocker_choices_block",
+  "request": {
+    "id": 1,
+    "kind": "review",
+    "cycle": 1,
+    "phase": "proof_formalization",
+    "mode": "local",
+    "active_node": "ActiveProof",
+    "blockers": [],
+    "current_present_nodes": ["ActiveProof"]
+  }
+}

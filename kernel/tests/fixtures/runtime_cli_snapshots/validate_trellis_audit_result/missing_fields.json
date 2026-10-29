@@ -1,0 +1,6 @@
+{
+  "action": "validate_trellis_audit_result",
+  "raw_payload": {
+    "outcome": "bogus_outcome"
+  }
+}

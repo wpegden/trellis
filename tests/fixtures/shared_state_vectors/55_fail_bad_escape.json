@@ -1,0 +1,19 @@
+{
+  "name": "55_fail_bad_escape",
+  "kind": "failure",
+  "description": "`$e` must hold an object; it is the literal-object escape, not a general wrapper.",
+  "document": {
+    "$format": "trellis-shared-state/1",
+    "$strings": {},
+    "$pool": {},
+    "state": {
+      "x": {
+        "$e": [
+          1,
+          2
+        ]
+      }
+    }
+  },
+  "error_contains": "must hold an object"
+}

@@ -1,0 +1,37 @@
+---
+source: tests/runtime_cli_snapshots.rs
+assertion_line: 207
+expression: response
+---
+{
+  "output": {
+    "assumptions_lane_hunt_result": "",
+    "assumptions_lane_probe_result": "",
+    "assumptions_lane_reason": "",
+    "assumptions_lane_verdict": "",
+    "cone_clean_node": null,
+    "confirm_need_input": false,
+    "cycle": 13,
+    "gap_decision": "",
+    "gap_feedback": "",
+    "global_repair_approve": false,
+    "global_repair_approved_extension_node_ids": [],
+    "global_repair_auditor_reason": "",
+    "kind": "stuck_math_audit",
+    "probe_paths": [],
+    "report": "",
+    "request_id": 17,
+    "revision_actions": {
+      "nodes": [],
+      "targets": []
+    },
+    "route_needs_human": false,
+    "route_tex": "",
+    "set_live_polarity": "",
+    "status": "Malformed",
+    "tasks": [],
+    "under_model_candidate_invariant": "",
+    "under_model_ruling": ""
+  },
+  "status": "build_malformed_response_ok"
+}

@@ -1,0 +1,11 @@
+---
+source: tests/runtime_cli_snapshots.rs
+expression: response
+---
+{
+  "output": {
+    "md": "4 live blocker(s). Counts by kind: NodeCorr=1, PaperFaithfulness=1, Soundness=1, Substantiveness=1. Reviewer comments above describe what to repair; this list shows the live verifier blockers for situational awareness.\n\nIndex | Kind             | Object\n------|------------------|--------------------------------\n    0 | PaperFaithfulness | target:Target1\n    1 | NodeCorr         | node:ActiveProof\n    2 | Soundness        | node:OtherNode\n    3 | Substantiveness  | node:DepNode\n\nActionable subset (3 of 4): active node + direct-dep neighborhood\n\nIndex | Kind             | Object\n------|------------------|--------------------------------\n    0 | PaperFaithfulness | target:Target1\n    1 | NodeCorr         | node:ActiveProof\n    3 | Substantiveness  | node:DepNode",
+    "sidecar_payload": null
+  },
+  "status": "worker_blocker_status_block_ok"
+}

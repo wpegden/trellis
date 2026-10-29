@@ -1,0 +1,24 @@
+{
+  "request": {
+    "action": "validate_trellis_audit_result",
+    "raw_payload": {
+      "new_tasks": [],
+      "outcome": "audit_done",
+      "scratchpad_replace": "Audit pass complete. No follow-up tasks required.",
+      "task_modifications": []
+    }
+  },
+  "response": {
+    "output": {
+      "data": {
+        "new_tasks": [],
+        "outcome": "audit_done",
+        "scratchpad_replace": "Audit pass complete. No follow-up tasks required.",
+        "task_modifications": []
+      },
+      "errors": [],
+      "ok": true
+    },
+    "status": "validate_trellis_audit_result_ok"
+  }
+}

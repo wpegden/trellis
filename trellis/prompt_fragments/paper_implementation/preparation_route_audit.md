@@ -1,0 +1,3 @@
+Decide the preparation route after both planner/critic rounds, including unresolved criticism. Approval states the retained algorithm, concrete implementation and validation tasks, and required source-correspondence arguments. Keep `new_tasks`, `task_modifications`, and `declined_targets` empty.
+
+Return `modeling_accept` with your assessment in `scratchpad_replace`. Use `modeling_resolution.action = approve` for a feasible route, `reopen` for further setup work, or `fail` when no adequate route remains. An approved route may set `reopen_setup` when it needs setup changes. These actions revise the current preparation before export.

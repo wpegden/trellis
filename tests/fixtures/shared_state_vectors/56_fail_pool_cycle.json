@@ -1,0 +1,25 @@
+{
+  "name": "56_fail_pool_cycle",
+  "kind": "failure",
+  "description": "A two-node `$r` cycle. The encoder can never produce one (a value's key is derived from its descendants, so no value can contain itself), but a corrupt or hostile file can, and a decoder must reject it rather than recurse forever.",
+  "document": {
+    "$format": "trellis-shared-state/1",
+    "$strings": {},
+    "$pool": {
+      "aaaaaaaaaaaaaaaa": {
+        "next": {
+          "$r": "bbbbbbbbbbbbbbbb"
+        }
+      },
+      "bbbbbbbbbbbbbbbb": {
+        "back": {
+          "$r": "aaaaaaaaaaaaaaaa"
+        }
+      }
+    },
+    "state": {
+      "$r": "aaaaaaaaaaaaaaaa"
+    }
+  },
+  "error_contains": "reference cycle"
+}

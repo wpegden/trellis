@@ -1,0 +1,32 @@
+{
+  "request": {
+    "action": "validate_deviation_authorization_result",
+    "raw_payload": {
+      "comments": "",
+      "deviation_authorization": {
+        "comment": "",
+        "decision": "PASS",
+        "id": "dev-001"
+      },
+      "overall": "APPROVE",
+      "summary": "Authorized."
+    }
+  },
+  "response": {
+    "output": {
+      "data": {
+        "comments": "",
+        "deviation_authorization": {
+          "comment": "",
+          "decision": "PASS",
+          "id": "dev-001"
+        },
+        "overall": "APPROVE",
+        "summary": "Authorized."
+      },
+      "errors": [],
+      "ok": true
+    },
+    "status": "validate_deviation_authorization_result_ok"
+  }
+}

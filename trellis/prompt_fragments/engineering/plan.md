@@ -1,0 +1,1 @@
+Write plan.json describing the implementation and tests. Account for every applicable paper detail, resolve interpretations and propose any departures with their practical rationale. Added complexity should offer a plausible benefit to users. Return a JSON object containing only summary, a string describing the plan and its rationale.

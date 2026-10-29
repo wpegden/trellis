@@ -1,0 +1,20 @@
+{
+  "name": "52_fail_dangling_pool_ref",
+  "kind": "failure",
+  "description": "A `$r` naming a key absent from `$pool` must raise, never yield {} or a default.",
+  "document": {
+    "$format": "trellis-shared-state/1",
+    "$strings": {},
+    "$pool": {
+      "0123456789abcdef": {
+        "ok": 1
+      }
+    },
+    "state": {
+      "x": {
+        "$r": "fedcba9876543210"
+      }
+    }
+  },
+  "error_contains": "absent from $pool"
+}

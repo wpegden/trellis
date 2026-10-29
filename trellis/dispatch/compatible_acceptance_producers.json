@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "identities": [
+    "trellis-worker-acceptance-v2:sha256:604f9c1ade349a11d5cf9b37d98192d5cf50dd0b00ebe1579808fbf5ee5af121",
+    "trellis-worker-acceptance-v2:sha256:018ff429de9b6e8a2ef4f73a855dbe175bacc2e80335b0dae4ca43f252058611",
+    "trellis-worker-acceptance-v2:sha256:ef982f2a68367da2f20d55b779f1184b0c7b7de2031870d0685cc3ec19e71f9c"
+  ],
+  "modeling_identities": [
+    "trellis-worker-acceptance-v2:sha256:c1f83ea36e761ae6ad4c9139bced3bd75f63a63011b55b9010fc2a7e3be897a7",
+    "trellis-worker-acceptance-v2:sha256:7630a6daf8a877dfc229aeb6eaa249d5f25eec747882c8bf770e34c1ed28aa61",
+    "trellis-worker-acceptance-v2:sha256:8871145c937e3236d72ba2d7f584f94b1ee24de2de3e15262a528a76d03f3cea",
+    "trellis-worker-acceptance-v2:sha256:291530f8c6543a4e802827ea255c9f28eb5af838279171b776a9c00db3d6cf54",
+    "trellis-worker-acceptance-v2:sha256:26e693f1f84da59c734600545b3c53e10e0e1267d42a594426d41237035b3e8c"
+  ],
+  "theorem_stating_identities": [
+    "trellis-worker-acceptance-v2:sha256:3c7491d4d80477ea42008e3574f4ff1b2b91bf480e08e536ec1c0c3fd47591da"
+  ]
+}
