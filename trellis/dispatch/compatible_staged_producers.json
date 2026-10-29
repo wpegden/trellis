@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "positive_math_owned": [
+    "trellis-worker-acceptance-v2:sha256:62a0e7fa5977c48a8b8622cef1d7327787c00482c10852a4e4836a7414806378",
+    "trellis-worker-acceptance-v2:sha256:24d6e74d6ed66d1a3bf3dc47b51855f0400b74ef1844faaeeb4aff859a2af5c7",
+    "trellis-worker-acceptance-v2:sha256:066b4474fab8ae8b3f2adafe7aa295ca070d5f747eebf6206b88411cb5148a0a",
+    "trellis-worker-acceptance-v2:sha256:37fa50a178c6eec123e7c6512a01f2d778b68bb4eb314c922199dad0bc544a34",
+    "trellis-worker-acceptance-v2:sha256:c1f83ea36e761ae6ad4c9139bced3bd75f63a63011b55b9010fc2a7e3be897a7",
+    "trellis-worker-acceptance-v2:sha256:1ea01e4bce747b832506ee602800cced4476e8ab202377f87b1306028c86689f",
+    "trellis-worker-acceptance-v2:sha256:bb19564229a19e67703e65ebdcd7347713313ca3596b96f94812ad07a3c4f46f",
+    "trellis-worker-acceptance-v2:sha256:06705d6e854df0a232b06e1db67964ee0a53d8090055355a212fd5271e70b545",
+    "trellis-worker-acceptance-v2:sha256:e78ec00fb70a08187a87a5add8e6fde11de95a2b77d243ffbfef2cb3022edd23",
+    "trellis-worker-acceptance-v2:sha256:54243c574f71292e039ff77578c9ddb96ed42fd74962be0725d57a0c1592fc13",
+    "trellis-worker-acceptance-v2:sha256:1640f7b0624cea593a4359c5a7dc4991666658c820e33b383ce08193c1862bc6",
+    "trellis-worker-acceptance-v2:sha256:10fdb08c1a22b654ffadd1059ddeb2d7413e76088f40d986c3dba6f4fdf5f03f",
+    "trellis-worker-acceptance-v2:sha256:8871145c937e3236d72ba2d7f584f94b1ee24de2de3e15262a528a76d03f3cea",
+    "trellis-worker-acceptance-v2:sha256:291530f8c6543a4e802827ea255c9f28eb5af838279171b776a9c00db3d6cf54",
+    "trellis-worker-acceptance-v2:sha256:26e693f1f84da59c734600545b3c53e10e0e1267d42a594426d41237035b3e8c"
+  ],
+  "positive_math_finalizers": [
+    "trellis-worker-acceptance-v2:sha256:8871145c937e3236d72ba2d7f584f94b1ee24de2de3e15262a528a76d03f3cea",
+    "trellis-worker-acceptance-v2:sha256:26e693f1f84da59c734600545b3c53e10e0e1267d42a594426d41237035b3e8c"
+  ]
+}

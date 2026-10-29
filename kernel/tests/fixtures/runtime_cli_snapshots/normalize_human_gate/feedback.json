@@ -1,0 +1,6 @@
+{
+  "action": "normalize_human_gate",
+  "request_id": 22,
+  "cycle": 15,
+  "raw_payload_text": "{\"choice\":\"feedback\",\"comment\":\"Please proceed with care.\"}"
+}

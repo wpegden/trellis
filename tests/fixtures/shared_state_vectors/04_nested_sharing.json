@@ -1,0 +1,188 @@
+{
+  "name": "04_nested_sharing",
+  "kind": "roundtrip",
+  "description": "A pooled node whose body contains a reference to another pooled node. `semantics` is shared between the records and an independent `scratch_semantics` member, so both levels are pooled and the outer pool entry stores `{\"$r\": ...}` for the inner one.",
+  "plain": {
+    "state": {
+      "local_closure_records": {
+        "Alpha": {
+          "deps": [
+            "Alpha",
+            "Beta"
+          ],
+          "semantics": {
+            "kernel_semantic_hashes": {
+              "Alpha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "Beta": "b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1"
+            }
+          },
+          "status": "Closed"
+        },
+        "Beta": {
+          "deps": [
+            "Alpha",
+            "Beta"
+          ],
+          "semantics": {
+            "kernel_semantic_hashes": {
+              "Alpha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "Beta": "b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1"
+            }
+          },
+          "status": "Closed"
+        }
+      },
+      "committed_local_closure_records": {
+        "Alpha": {
+          "deps": [
+            "Alpha",
+            "Beta"
+          ],
+          "semantics": {
+            "kernel_semantic_hashes": {
+              "Alpha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "Beta": "b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1"
+            }
+          },
+          "status": "Closed"
+        },
+        "Beta": {
+          "deps": [
+            "Alpha",
+            "Beta"
+          ],
+          "semantics": {
+            "kernel_semantic_hashes": {
+              "Alpha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "Beta": "b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1"
+            }
+          },
+          "status": "Closed"
+        }
+      },
+      "scratch_semantics": {
+        "kernel_semantic_hashes": {
+          "Alpha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "Beta": "b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1"
+        }
+      }
+    }
+  },
+  "encoded": {
+    "$format": "trellis-shared-state/1",
+    "$strings": {
+      "5a48ddc10faa588c": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "7c2850823064c1dd": "b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1"
+    },
+    "$pool": {
+      "20fdeca853e85c4e": {
+        "deps": [
+          "Alpha",
+          "Beta"
+        ],
+        "semantics": {
+          "$r": "f2bb0a731fd1dbc0"
+        },
+        "status": "Closed"
+      },
+      "8e659599257b0410": {
+        "Alpha": {
+          "$r": "20fdeca853e85c4e"
+        },
+        "Beta": {
+          "$r": "20fdeca853e85c4e"
+        }
+      },
+      "9f99c5bd58d34abb": {
+        "Alpha": {
+          "$s": "5a48ddc10faa588c"
+        },
+        "Beta": {
+          "$s": "7c2850823064c1dd"
+        }
+      },
+      "f2bb0a731fd1dbc0": {
+        "kernel_semantic_hashes": {
+          "$r": "9f99c5bd58d34abb"
+        }
+      }
+    },
+    "state": {
+      "committed_local_closure_records": {
+        "$r": "8e659599257b0410"
+      },
+      "local_closure_records": {
+        "$r": "8e659599257b0410"
+      },
+      "scratch_semantics": {
+        "$r": "f2bb0a731fd1dbc0"
+      }
+    }
+  },
+  "decoded": {
+    "state": {
+      "committed_local_closure_records": {
+        "Alpha": {
+          "deps": [
+            "Alpha",
+            "Beta"
+          ],
+          "semantics": {
+            "kernel_semantic_hashes": {
+              "Alpha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "Beta": "b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1"
+            }
+          },
+          "status": "Closed"
+        },
+        "Beta": {
+          "deps": [
+            "Alpha",
+            "Beta"
+          ],
+          "semantics": {
+            "kernel_semantic_hashes": {
+              "Alpha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "Beta": "b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1"
+            }
+          },
+          "status": "Closed"
+        }
+      },
+      "local_closure_records": {
+        "Alpha": {
+          "deps": [
+            "Alpha",
+            "Beta"
+          ],
+          "semantics": {
+            "kernel_semantic_hashes": {
+              "Alpha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "Beta": "b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1"
+            }
+          },
+          "status": "Closed"
+        },
+        "Beta": {
+          "deps": [
+            "Alpha",
+            "Beta"
+          ],
+          "semantics": {
+            "kernel_semantic_hashes": {
+              "Alpha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "Beta": "b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1"
+            }
+          },
+          "status": "Closed"
+        }
+      },
+      "scratch_semantics": {
+        "kernel_semantic_hashes": {
+          "Alpha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "Beta": "b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1"
+        }
+      }
+    }
+  }
+}

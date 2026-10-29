@@ -1,0 +1,6 @@
+{
+  "action": "build_malformed_response",
+  "kind": "audit",
+  "request_id": 16,
+  "cycle": 12
+}

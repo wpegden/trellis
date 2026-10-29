@@ -1,0 +1,48 @@
+# .coveragerc — Python coverage.py configuration.
+#
+# Driven by `scripts/coverage_python.sh`. Scoped to the trellis Python
+# package itself; intentionally ignores worktree mirror, viewer assets,
+# scratch directories, and the `*.staging` dirs (those are live worker
+# scratch, not code under test).
+[run]
+source = trellis
+branch = true
+# Skip subprocess coverage by default — tests that spawn the runtime
+# CLI subprocess re-attach their own coverage already; double-counting
+# inflates the numbers. Tests that legitimately need subprocess
+# coverage opt in via the COVERAGE_PROCESS_START env var.
+parallel = false
+omit =
+    trellis/another_burst/**
+    trellis/another_burst_staging/**
+    trellis/prompt_fragments_staging/**
+    trellis/*_staging/**
+    trellis/agent_wrapper/**
+    trellis/agents/**
+    trellis/checker/**
+    trellis/synthetic/__pycache__/**
+    trellis/prompt_browser.py
+    **/__pycache__/**
+    **/.pytest_cache/**
+
+[report]
+# Show missing lines in the terminal table.
+show_missing = false
+skip_covered = false
+# Sort by `Cover %` ascending so the lowest-coverage modules surface
+# first — that's where the refactor risk lives.
+sort = Cover
+precision = 1
+exclude_also =
+    if __name__ == .__main__.:
+    raise NotImplementedError
+    pragma: no cover
+    @overload
+    @abc\.abstractmethod
+    if TYPE_CHECKING:
+
+[html]
+directory = .coverage_html
+
+[xml]
+output = .coverage.xml

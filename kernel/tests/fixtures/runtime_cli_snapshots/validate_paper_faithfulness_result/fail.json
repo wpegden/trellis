@@ -1,0 +1,14 @@
+{
+  "action": "validate_paper_faithfulness_result",
+  "raw_payload": {
+    "paper_faithfulness": {
+      "decision": "FAIL",
+      "issues": [
+        {"node": "main_result", "description": "Still mismatched."}
+      ]
+    },
+    "overall": "REJECT",
+    "summary": "Paper mismatch remains",
+    "comments": "Need a better excerpt."
+  }
+}

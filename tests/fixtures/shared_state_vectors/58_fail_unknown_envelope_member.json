@@ -1,0 +1,15 @@
+{
+  "name": "58_fail_unknown_envelope_member",
+  "kind": "failure",
+  "description": "A `$`-prefixed top-level member the version does not define. Version 1 knows exactly $format, $strings and $pool; an extension must bump `$format` rather than smuggle a member past an older reader.",
+  "document": {
+    "$format": "trellis-shared-state/1",
+    "$strings": {},
+    "$pool": {},
+    "$sidecar": {
+      "unexpected": true
+    },
+    "state": {}
+  },
+  "error_contains": "unrecognised envelope member"
+}

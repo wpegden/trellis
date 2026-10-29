@@ -1,0 +1,1 @@
+During initial Modeling activation, complete support until the whole tablet elaborates. Authored definitions and Preamble need preservation arguments and applications to affected paper targets. Follow `source_modeling_classification` and the approved task scope.

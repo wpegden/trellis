@@ -1,0 +1,40 @@
+{
+  "action": "worker_blocker_status_block",
+  "request": {
+    "id": 3,
+    "kind": "worker",
+    "cycle": 3,
+    "phase": "proof_formalization",
+    "mode": "local",
+    "active_node": "ActiveProof",
+    "held_target": "Target1",
+    "blockers": [
+      {
+        "kind": "NodeCorr",
+        "object": {"otype": "node", "node": "ActiveProof"},
+        "fingerprint": "fp-corr"
+      },
+      {
+        "kind": "Soundness",
+        "object": {"otype": "node", "node": "OtherNode"},
+        "fingerprint": "fp-sound"
+      },
+      {
+        "kind": "PaperFaithfulness",
+        "object": {"otype": "target", "target": "Target1"},
+        "fingerprint": "fp-paper"
+      },
+      {
+        "kind": "Substantiveness",
+        "object": {"otype": "node", "node": "DepNode"},
+        "fingerprint": "fp-subst"
+      }
+    ],
+    "current_present_nodes": ["ActiveProof", "OtherNode", "DepNode"],
+    "current_deps": {
+      "ActiveProof": ["DepNode"],
+      "DepNode": [],
+      "OtherNode": []
+    }
+  }
+}

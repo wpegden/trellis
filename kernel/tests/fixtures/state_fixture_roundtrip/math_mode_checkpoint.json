@@ -1,0 +1,41 @@
+{
+  "cycle": 4,
+  "phase": "ProofFormalization",
+  "gate_kind": "None",
+  "active_node": "A",
+  "committed": {
+    "present_nodes": [
+      "A",
+      "B",
+      "Helper"
+    ],
+    "open_nodes": [
+      "A"
+    ],
+    "coverage": {
+      "t": [
+        "A"
+      ]
+    },
+    "target_fingerprints": {},
+    "corr_current_fingerprints": {
+      "A": "corr-a",
+      "B": "corr-b",
+      "Helper": "corr-helper"
+    },
+    "paper_current_fingerprints": {
+      "t": ""
+    },
+    "sound_current_fingerprints": {},
+    "deviation_current_fingerprints": {},
+    "sound_current_fingerprint_parts": {},
+    "sketch_proof_nodes": [],
+    "placeholder_definition_nodes": [],
+    "substantiveness_current_fingerprints": {
+      "A": "",
+      "B": "",
+      "Helper": ""
+    },
+    "protected_closure_nodes_per_target": {}
+  }
+}

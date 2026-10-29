@@ -1,0 +1,1 @@
+Carry unresolved candidates in `scratchpad_replace`. Return `need_to_continue` while investigating within the burst budget, or `audit_done` when finished. Use `task_modifications` to dismiss existing Pending tasks. Address any recorded rejection before resubmitting.

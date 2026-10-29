@@ -1,0 +1,9 @@
+{
+  "schema": "trellis-worker-acceptance-v2",
+  "trees": ["kernel/src", "trellis", "scripts"],
+  "extensions": ["rs", "py", "lean", "thy", "ML", "md", "json", "sh", "toml"],
+  "files": ["acceptance-sources.json", "kernel/Cargo.toml", "kernel/Cargo.lock", "kernel/build.rs", "FILESPEC.md", "FILESPEC_isabelle.md"],
+  "exclude_directories": ["__pycache__", "target", ".git", ".pytest_cache"],
+  "exclude_prefixes": [".tmp", ".#", "#"],
+  "exclude_suffixes": ["~", ".swp", ".swo", ".swx"]
+}
