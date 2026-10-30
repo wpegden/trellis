@@ -1,0 +1,35 @@
+---
+source: tests/runtime_cli_snapshots.rs
+assertion_line: 310
+expression: response
+---
+{
+  "output": {
+    "data": {
+      "assumptions_lane_hunt_result": "The adversarial search found a counterexample under the current candidate invariant.",
+      "assumptions_lane_probe_result": "",
+      "assumptions_lane_reason": "The proposed assumption lacks a paper citation tying it to the stated Rust invariant.",
+      "assumptions_lane_verdict": "reject",
+      "cone_clean_node": "",
+      "confirm_need_input": false,
+      "gap_decision": "",
+      "gap_feedback": "",
+      "global_repair_approve": false,
+      "global_repair_approved_extension_node_ids": [],
+      "global_repair_auditor_reason": "",
+      "probe_paths": [],
+      "report": "",
+      "revision_actions": {
+        "nodes": [],
+        "targets": []
+      },
+      "route_needs_human": false,
+      "route_tex": "",
+      "set_live_polarity": "",
+      "tasks": []
+    },
+    "errors": [],
+    "ok": true
+  },
+  "status": "validate_trellis_stuck_math_audit_result_ok"
+}

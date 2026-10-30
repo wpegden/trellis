@@ -1,0 +1,16 @@
+\documentclass{article}
+\begin{document}
+
+\begin{theorem}\label{thm:before}
+Seen before the malformed marker.
+\end{theorem}
+
+\begin{oops
+
+\begin{theorem}\label{thm:swallowed}
+Skipped: the malformed marker above ate everything up to the next brace.
+\end{theorem}
+
+\begin{alsobroken and from here on there is no closing brace at all
+
+\end{document}

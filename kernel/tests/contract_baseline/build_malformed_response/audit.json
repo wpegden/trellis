@@ -1,0 +1,21 @@
+{
+  "request": {
+    "action": "build_malformed_response",
+    "cycle": 12,
+    "kind": "audit",
+    "request_id": 16
+  },
+  "response": {
+    "output": {
+      "cycle": 12,
+      "kind": "audit",
+      "new_tasks": [],
+      "outcome": "AuditDone",
+      "request_id": 16,
+      "scratchpad_replace": "",
+      "status": "Malformed",
+      "task_modifications": []
+    },
+    "status": "build_malformed_response_ok"
+  }
+}

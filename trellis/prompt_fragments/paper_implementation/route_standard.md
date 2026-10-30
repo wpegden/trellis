@@ -1,0 +1,1 @@
+Assess whether each proposed model supports convincing conclusions about the implementation. Compare the necessary authored semantics and preservation arguments with feasible source-compatible alternatives. Retain the selected claims; requirements outside the frozen subject need fresh preparation.

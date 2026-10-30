@@ -1,0 +1,1 @@
+Independently assess the proposed route and its strongest practical alternative against the original paper and source. Check algorithm fidelity, coverage of the selected hypotheses and conclusions, required modeling and preservation arguments, and feasibility. Give concrete criticism for rejection; your verdict informs the final route audit.

@@ -1,0 +1,1 @@
+The review artifact includes a `comments` field. Use it for concise non-authoritative guidance. Those comments may be forwarded to later worker prompts, but they do not override the kernel-authored request, contract, or checker.

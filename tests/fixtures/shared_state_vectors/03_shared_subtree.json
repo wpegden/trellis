@@ -1,0 +1,163 @@
+{
+  "name": "03_shared_subtree",
+  "kind": "roundtrip",
+  "description": "The same subtree occurs under `checkpoint.committed` and `state.committed`. The pool spans both encoded roots, so it is stored once and referenced twice. This is the duplicate the format exists to collapse.",
+  "plain": {
+    "event_count": 12,
+    "checkpoint": {
+      "cycle": 4,
+      "committed": {
+        "present_nodes": [
+          "Alpha",
+          "Beta",
+          "Gamma"
+        ],
+        "open_nodes": [
+          "Gamma"
+        ],
+        "target_fingerprints": {
+          "Alpha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "Beta": "b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1",
+          "Gamma": "9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f"
+        }
+      }
+    },
+    "state": {
+      "cycle": 4,
+      "committed": {
+        "present_nodes": [
+          "Alpha",
+          "Beta",
+          "Gamma"
+        ],
+        "open_nodes": [
+          "Gamma"
+        ],
+        "target_fingerprints": {
+          "Alpha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "Beta": "b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1",
+          "Gamma": "9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f"
+        }
+      },
+      "live": {
+        "present_nodes": [
+          "Alpha",
+          "Beta",
+          "Gamma"
+        ],
+        "open_nodes": [
+          "Gamma"
+        ],
+        "target_fingerprints": {
+          "Alpha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "Beta": "b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1",
+          "Gamma": "9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f"
+        }
+      }
+    }
+  },
+  "encoded": {
+    "$format": "trellis-shared-state/1",
+    "event_count": 12,
+    "$strings": {
+      "1290fc7bd2e22a58": "9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f",
+      "5a48ddc10faa588c": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "7c2850823064c1dd": "b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1"
+    },
+    "$pool": {
+      "52c50dc80b4d0208": {
+        "Alpha": {
+          "$s": "5a48ddc10faa588c"
+        },
+        "Beta": {
+          "$s": "7c2850823064c1dd"
+        },
+        "Gamma": {
+          "$s": "1290fc7bd2e22a58"
+        }
+      },
+      "6a659d83e54a7efe": {
+        "open_nodes": [
+          "Gamma"
+        ],
+        "present_nodes": [
+          "Alpha",
+          "Beta",
+          "Gamma"
+        ],
+        "target_fingerprints": {
+          "$r": "52c50dc80b4d0208"
+        }
+      }
+    },
+    "checkpoint": {
+      "committed": {
+        "$r": "6a659d83e54a7efe"
+      },
+      "cycle": 4
+    },
+    "state": {
+      "committed": {
+        "$r": "6a659d83e54a7efe"
+      },
+      "cycle": 4,
+      "live": {
+        "$r": "6a659d83e54a7efe"
+      }
+    }
+  },
+  "decoded": {
+    "event_count": 12,
+    "checkpoint": {
+      "committed": {
+        "open_nodes": [
+          "Gamma"
+        ],
+        "present_nodes": [
+          "Alpha",
+          "Beta",
+          "Gamma"
+        ],
+        "target_fingerprints": {
+          "Alpha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "Beta": "b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1",
+          "Gamma": "9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f"
+        }
+      },
+      "cycle": 4
+    },
+    "state": {
+      "committed": {
+        "open_nodes": [
+          "Gamma"
+        ],
+        "present_nodes": [
+          "Alpha",
+          "Beta",
+          "Gamma"
+        ],
+        "target_fingerprints": {
+          "Alpha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "Beta": "b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1",
+          "Gamma": "9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f"
+        }
+      },
+      "cycle": 4,
+      "live": {
+        "open_nodes": [
+          "Gamma"
+        ],
+        "present_nodes": [
+          "Alpha",
+          "Beta",
+          "Gamma"
+        ],
+        "target_fingerprints": {
+          "Alpha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "Beta": "b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1b3c1",
+          "Gamma": "9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f9f"
+        }
+      }
+    }
+  }
+}

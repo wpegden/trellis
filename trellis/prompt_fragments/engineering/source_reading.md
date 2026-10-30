@@ -1,0 +1,1 @@
+Independently read the paper and contract. Record the algorithm's requirements, interpretation questions, unspecified choices and proposed departures in reading.json. Return a JSON object containing only summary, a string describing your findings.

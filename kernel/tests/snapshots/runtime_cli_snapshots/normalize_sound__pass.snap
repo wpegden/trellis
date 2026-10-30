@@ -1,0 +1,33 @@
+---
+source: tests/runtime_cli_snapshots.rs
+expression: response
+---
+{
+  "output": {
+    "response": {
+      "cycle": 4,
+      "lane_updates": {
+        "v1": {
+          "MainResult": {
+            "Set": "Pass"
+          }
+        }
+      },
+      "request_id": 70,
+      "reviewer_evidence": {
+        "v1": {
+          "comments": "",
+          "node": "MainResult",
+          "overall": "APPROVE",
+          "soundness": {
+            "decision": "SOUND",
+            "explanation": "The prose proof has no gaps; induction is correct."
+          },
+          "summary": "Sound."
+        }
+      },
+      "status": "Ok"
+    }
+  },
+  "status": "normalize_sound_ok"
+}

@@ -1,0 +1,37 @@
+{
+  "action": "review_blocker_choices_block",
+  "request": {
+    "id": 5,
+    "kind": "review",
+    "cycle": 5,
+    "phase": "proof_formalization",
+    "mode": "local",
+    "active_node": "ActiveProof",
+    "held_target": null,
+    "blockers": [
+      {"kind": "Soundness", "object": {"otype": "node", "node": "ActiveProof"}, "fingerprint": "fp-a"},
+      {"kind": "Soundness", "object": {"otype": "node", "node": "Node1"}, "fingerprint": "fp-1"},
+      {"kind": "Soundness", "object": {"otype": "node", "node": "Node2"}, "fingerprint": "fp-2"},
+      {"kind": "Soundness", "object": {"otype": "node", "node": "Node3"}, "fingerprint": "fp-3"},
+      {"kind": "Soundness", "object": {"otype": "node", "node": "Node4"}, "fingerprint": "fp-4"},
+      {"kind": "Soundness", "object": {"otype": "node", "node": "Node5"}, "fingerprint": "fp-5"},
+      {"kind": "Soundness", "object": {"otype": "node", "node": "Node6"}, "fingerprint": "fp-6"},
+      {"kind": "Soundness", "object": {"otype": "node", "node": "Node7"}, "fingerprint": "fp-7"},
+      {"kind": "Soundness", "object": {"otype": "node", "node": "Node8"}, "fingerprint": "fp-8"},
+      {"kind": "Soundness", "object": {"otype": "node", "node": "Node9"}, "fingerprint": "fp-9"}
+    ],
+    "current_present_nodes": ["ActiveProof", "Node1", "Node2", "Node3", "Node4", "Node5", "Node6", "Node7", "Node8", "Node9"],
+    "current_deps": {
+      "ActiveProof": ["Node1"],
+      "Node1": [],
+      "Node2": [],
+      "Node3": [],
+      "Node4": [],
+      "Node5": [],
+      "Node6": [],
+      "Node7": [],
+      "Node8": [],
+      "Node9": []
+    }
+  }
+}

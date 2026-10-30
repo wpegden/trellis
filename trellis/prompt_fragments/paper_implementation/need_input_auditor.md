@@ -1,0 +1,1 @@
+Assess the reviewer's diagnosis against the paper, implementation and current Tablet. Set `confirm_need_input` when a fundamental obstruction remains. Otherwise identify the affected nodes and concrete recovery tasks. Confirmation leads to autonomous route planning; an unresolved obstruction ends the generation.

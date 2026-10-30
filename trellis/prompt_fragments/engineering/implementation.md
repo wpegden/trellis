@@ -1,0 +1,1 @@
+Implement the approved plan in source/ with a Cargo.lock and regression tests. Keep plan.json unchanged. Return a JSON object containing only summary, a string describing your changes, test results and departures from the approved design.

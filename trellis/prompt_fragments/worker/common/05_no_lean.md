@@ -1,0 +1,1 @@
+This task cannot compile. You may read Lean files, but edit only the assigned TeX files. Run the JSON check and submit your result; the host performs authoritative acceptance. If the task requires compilation or edits to other files, report that requirement to the reviewer.

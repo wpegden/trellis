@@ -1,0 +1,32 @@
+{
+  "request": {
+    "action": "validate_deviation_authorization_result",
+    "raw_payload": {
+      "comments": "Tighten scope.",
+      "deviation_authorization": {
+        "comment": "Deviation goes beyond what the paper authorizes.",
+        "decision": "FAIL",
+        "id": "dev-002"
+      },
+      "overall": "REJECT",
+      "summary": "Rejected."
+    }
+  },
+  "response": {
+    "output": {
+      "data": {
+        "comments": "Tighten scope.",
+        "deviation_authorization": {
+          "comment": "Deviation goes beyond what the paper authorizes.",
+          "decision": "FAIL",
+          "id": "dev-002"
+        },
+        "overall": "REJECT",
+        "summary": "Rejected."
+      },
+      "errors": [],
+      "ok": true
+    },
+    "status": "validate_deviation_authorization_result_ok"
+  }
+}

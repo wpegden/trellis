@@ -1,0 +1,14 @@
+---
+source: tests/runtime_cli_snapshots.rs
+expression: response
+---
+{
+  "output": {
+    "data": null,
+    "errors": [
+      "report must include a concrete signal: probe_paths, a fenced code block, or a '## Claim being audited' heading"
+    ],
+    "ok": false
+  },
+  "status": "validate_trellis_stuck_math_audit_result_ok"
+}

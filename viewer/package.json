@@ -1,0 +1,17 @@
+{
+  "name": "viewer",
+  "version": "0.3.4",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test_dag_closure.js && node test_live_chat_index.js && node test_remote_resume.js && node test_lean_parallelism.js && node test_halt_state.js && node test_attention_state.js && node test_update_check.js && node test_usage_rollup.js && node test_parallel_quota.js && node test_tablet_blob.js && node test_shared_state.js && node test_control_auth.js && node test_host_guard.js && node test_protocol_hints.js && node test_landing_index.js && node test_chat_calls.js && node test_session_views.js && node test_session_sockets.js && node test_create_job.js && node test_wizard_not_found.js && node test_substantiveness_progress.js && node test_progress_loading.js && node test_preparation_view.js && node test_preparation_status.js && node test_parallel_dispatch.js && node test_parallel_pipeline.js && node test_parallel_limits.js && node test_pause_sweep.js && node test_projects_async.js && node test_protocol_projection.js"
+  },
+  "keywords": [],
+  "author": "Wesley Pegden",
+  "license": "PolyForm-Noncommercial-1.0.0",
+  "private": true,
+  "dependencies": {
+    "compression": "^1.8.1",
+    "express": "^5.2.1"
+  }
+}

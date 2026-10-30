@@ -1,0 +1,252 @@
+{
+  "request": {
+    "action": "worker_blocker_status_block",
+    "request": {
+      "active_node": "ActiveProof",
+      "blockers": [
+        {
+          "fingerprint": "fp-a",
+          "kind": "Soundness",
+          "object": {
+            "node": "ActiveProof",
+            "otype": "node"
+          }
+        },
+        {
+          "fingerprint": "fp-1",
+          "kind": "Soundness",
+          "object": {
+            "node": "Node1",
+            "otype": "node"
+          }
+        },
+        {
+          "fingerprint": "fp-2",
+          "kind": "Soundness",
+          "object": {
+            "node": "Node2",
+            "otype": "node"
+          }
+        },
+        {
+          "fingerprint": "fp-3",
+          "kind": "Soundness",
+          "object": {
+            "node": "Node3",
+            "otype": "node"
+          }
+        },
+        {
+          "fingerprint": "fp-4",
+          "kind": "Soundness",
+          "object": {
+            "node": "Node4",
+            "otype": "node"
+          }
+        },
+        {
+          "fingerprint": "fp-5",
+          "kind": "Soundness",
+          "object": {
+            "node": "Node5",
+            "otype": "node"
+          }
+        },
+        {
+          "fingerprint": "fp-6",
+          "kind": "Soundness",
+          "object": {
+            "node": "Node6",
+            "otype": "node"
+          }
+        },
+        {
+          "fingerprint": "fp-7",
+          "kind": "Soundness",
+          "object": {
+            "node": "Node7",
+            "otype": "node"
+          }
+        },
+        {
+          "fingerprint": "fp-8",
+          "kind": "Soundness",
+          "object": {
+            "node": "Node8",
+            "otype": "node"
+          }
+        },
+        {
+          "fingerprint": "fp-9",
+          "kind": "Soundness",
+          "object": {
+            "node": "Node9",
+            "otype": "node"
+          }
+        }
+      ],
+      "current_deps": {
+        "ActiveProof": [
+          "Node1"
+        ],
+        "Node1": [],
+        "Node2": [],
+        "Node3": [],
+        "Node4": [],
+        "Node5": [],
+        "Node6": [],
+        "Node7": [],
+        "Node8": [],
+        "Node9": []
+      },
+      "current_present_nodes": [
+        "ActiveProof",
+        "Node1",
+        "Node2",
+        "Node3",
+        "Node4",
+        "Node5",
+        "Node6",
+        "Node7",
+        "Node8",
+        "Node9"
+      ],
+      "cycle": 5,
+      "held_target": null,
+      "id": 5,
+      "kind": "worker",
+      "mode": "local",
+      "phase": "proof_formalization"
+    }
+  },
+  "response": {
+    "output": {
+      "md": "10 live blocker(s). Counts by kind: Soundness=10. Reviewer comments above describe what to repair; this list shows the live verifier blockers for situational awareness.\n\nLive blocker count (10) exceeds the inline limit (8); full structured blocker list is on disk so the actionable subset stays visible inline.\n\nActionable subset (2 of 10): active node + direct-dep neighborhood\n\nIndex | Kind             | Object\n------|------------------|--------------------------------\n    0 | Soundness        | node:ActiveProof\n    1 | Soundness        | node:Node1\n\nFull blocker list sidecar: `{sidecar_path}`\n\nSidecar shape: `{\"blocker_choices\": [{\"id\": ..., \"blocker\": ...}, ...]}`. Workers do not echo blocker `id`s back; this file exists so you can inspect any blocker beyond the inline actionable subset if the reviewer's comments reference it.",
+      "sidecar_payload": {
+        "blocker_choices": [
+          {
+            "blocker": {
+              "deferred": false,
+              "fingerprint": "fp-a",
+              "kind": "Soundness",
+              "object": {
+                "node": "ActiveProof",
+                "otype": "node"
+              }
+            },
+            "id": "(worker view: id only emitted in review contract)"
+          },
+          {
+            "blocker": {
+              "deferred": false,
+              "fingerprint": "fp-1",
+              "kind": "Soundness",
+              "object": {
+                "node": "Node1",
+                "otype": "node"
+              }
+            },
+            "id": "(worker view: id only emitted in review contract)"
+          },
+          {
+            "blocker": {
+              "deferred": false,
+              "fingerprint": "fp-2",
+              "kind": "Soundness",
+              "object": {
+                "node": "Node2",
+                "otype": "node"
+              }
+            },
+            "id": "(worker view: id only emitted in review contract)"
+          },
+          {
+            "blocker": {
+              "deferred": false,
+              "fingerprint": "fp-3",
+              "kind": "Soundness",
+              "object": {
+                "node": "Node3",
+                "otype": "node"
+              }
+            },
+            "id": "(worker view: id only emitted in review contract)"
+          },
+          {
+            "blocker": {
+              "deferred": false,
+              "fingerprint": "fp-4",
+              "kind": "Soundness",
+              "object": {
+                "node": "Node4",
+                "otype": "node"
+              }
+            },
+            "id": "(worker view: id only emitted in review contract)"
+          },
+          {
+            "blocker": {
+              "deferred": false,
+              "fingerprint": "fp-5",
+              "kind": "Soundness",
+              "object": {
+                "node": "Node5",
+                "otype": "node"
+              }
+            },
+            "id": "(worker view: id only emitted in review contract)"
+          },
+          {
+            "blocker": {
+              "deferred": false,
+              "fingerprint": "fp-6",
+              "kind": "Soundness",
+              "object": {
+                "node": "Node6",
+                "otype": "node"
+              }
+            },
+            "id": "(worker view: id only emitted in review contract)"
+          },
+          {
+            "blocker": {
+              "deferred": false,
+              "fingerprint": "fp-7",
+              "kind": "Soundness",
+              "object": {
+                "node": "Node7",
+                "otype": "node"
+              }
+            },
+            "id": "(worker view: id only emitted in review contract)"
+          },
+          {
+            "blocker": {
+              "deferred": false,
+              "fingerprint": "fp-8",
+              "kind": "Soundness",
+              "object": {
+                "node": "Node8",
+                "otype": "node"
+              }
+            },
+            "id": "(worker view: id only emitted in review contract)"
+          },
+          {
+            "blocker": {
+              "deferred": false,
+              "fingerprint": "fp-9",
+              "kind": "Soundness",
+              "object": {
+                "node": "Node9",
+                "otype": "node"
+              }
+            },
+            "id": "(worker view: id only emitted in review contract)"
+          }
+        ]
+      }
+    },
+    "status": "worker_blocker_status_block_ok"
+  }
+}
