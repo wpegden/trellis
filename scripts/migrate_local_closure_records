@@ -1,0 +1,163 @@
+#!/usr/bin/env python3
+"""Plan or transactionally repair closure identity on a stopped runtime."""
+from __future__ import annotations
+
+import argparse
+import fcntl
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+# Resolve this installation, never a saved shell/PYTHONPATH from the run.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+
+def invoke(cli: Path, request: dict, env: dict) -> dict:
+    result = subprocess.run([str(cli)], input=json.dumps(request), text=True,
+                            stdout=subprocess.PIPE, env=env, check=False)
+    try:
+        value = json.loads(result.stdout)
+    except ValueError as error:
+        raise RuntimeError(f"runtime CLI returned invalid JSON (exit {result.returncode})") from error
+    if result.returncode:
+        raise RuntimeError(json.dumps(value))
+    return value
+
+
+def repair_environment(root: Path, mode: str = "identity-only") -> dict:
+    env = dict(os.environ)
+    launch = root / "launch_env.json"
+    if launch.is_file():
+        recorded = json.loads(launch.read_text()).get("env", {})
+        # Load data, never source saved shell text or revive old tokens/binaries.
+        allowed = {"ELAN_HOME", "ELAN_TOOLCHAIN", "TRELLIS_LEAN_PARALLELISM",
+                   "TRELLIS_LOCAL_CLOSURE_AXCHECK_ENABLED", "TRELLIS_ISABELLE_BIN",
+                   "ISABELLE_HOME", "TRELLIS_CHECKER_SOCKET"}
+        for key in allowed:
+            if isinstance(recorded.get(key), str) and key not in env:
+                env[key] = recorded[key]
+    env["TRELLIS_RUNTIME_CLI"] = ""  # populated with the explicit pinned CLI below
+    env["TRELLIS_KERNEL_CACHE_ROOT"] = str(root)
+    if mode == "identity-only":
+        env["TRELLIS_CLOSURE_IDENTITY_ONLY"] = "1"
+    else:
+        env.pop("TRELLIS_CLOSURE_IDENTITY_ONLY", None)
+    env.setdefault("TRELLIS_CHECKER_SOCKET", str(root / "sockets/checker.sock"))
+    return env
+
+
+def apply_registered(root: Path, cli: Path, env: dict, parallelism: int | None) -> dict:
+    from trellis.runtime.bridge import (_mint_burst_token, _register_burst_token,
+        _burst_tokens_path, _load_burst_tokens_file, _atomic_write_burst_tokens)
+    token = _mint_burst_token()
+    _register_burst_token(root, token=token, burst_id="closure-identity-repair",
+                          kind="closure_identity_repair", request_id=0, cycle=0)
+    try:
+        env = {**env, "TRELLIS_CHECKER_TOKEN": token}
+        return invoke(cli, {"action": "migrate_local_closure_records", "root": str(root),
+                            "mode": "identity-only", "confirm_runtime_stopped": True,
+                            "parallelism": parallelism}, env)
+    finally:
+        path = _burst_tokens_path(root)
+        current = _load_burst_tokens_file(path)
+        current["tokens"] = [t for t in current.get("tokens", []) if t != token]
+        current["entries"] = [e for e in current.get("entries", []) if e.get("token") != token]
+        _atomic_write_burst_tokens(path, current)
+
+
+def apply_trusted_registered(root: Path, cli: Path, env: dict, parallelism: int | None, readiness: bool = False) -> dict:
+    from contextlib import ExitStack
+    from trellis.runtime.bridge import (_mint_burst_token, _register_burst_token,
+        _burst_tokens_path, _load_burst_tokens_file, _atomic_write_burst_tokens)
+    request = {"action": "migrate_local_closure_records", "root": str(root),
+               "mode": "trusted-artifact-rebind", "confirm_runtime_stopped": True,
+               "parallelism": parallelism}
+    if readiness:
+        request = {"action": "check_trusted_artifact_rebind", "root": str(root)}
+    with (root / "closure-identity-token.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        # Recover or recognize a completed publication before accessing views
+        # which a successful job may already have shut down.
+        publication = root / "trusted-artifact-rebind-publication"
+        if not readiness and ((publication / "complete.json").exists() or (publication / "commit.json").exists()):
+            return invoke(cli, request, env)
+        views = json.loads((root / "trusted-rebind-views.json").read_text())["views"]
+        env = dict(env)
+        def unregister(runtime, token):
+            path = _burst_tokens_path(runtime)
+            current = _load_burst_tokens_file(path)
+            current["tokens"] = [t for t in current.get("tokens", []) if t != token]
+            current["entries"] = [e for e in current.get("entries", []) if e.get("token") != token]
+            _atomic_write_burst_tokens(path, current)
+        with ExitStack() as cleanup:
+            for tier, view in views.items():
+                if tier not in {"live", "committed", "last_clean"}:
+                    raise ValueError(f"unsupported rebind tier {tier}")
+                runtime = Path(view["runtime_root"])
+                token = _mint_burst_token()
+                _register_burst_token(runtime, token=token, burst_id="trusted-artifact-rebind",
+                                      kind="trusted_artifact_rebind", request_id=0, cycle=0)
+                cleanup.callback(unregister, runtime, token)
+                env[f"TRELLIS_REBIND_TOKEN_{tier.upper()}"] = token
+            return invoke(cli, request, env)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__, epilog="--apply requires the supervisor and all source/state writers to be stopped.")
+    parser.add_argument("root", type=Path)
+    parser.add_argument("--runtime-cli", required=True, type=Path)
+    parser.add_argument("--mode", choices=["identity-only", "trusted-artifact-rebind"], default="identity-only")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--plan", action="store_true", help="read-only diagnosis (default)")
+    group.add_argument("--readiness", action="store_true", help="validate all rebuilt source/artifact tiers before launch")
+    group.add_argument("--apply", action="store_true", help="confirm writers are stopped and repair the printed plan")
+    parser.add_argument("--state-file", type=Path, help="immutable incident JSON for read-only audit")
+    parser.add_argument("--identity-manifest", type=Path, help="captured identity for read-only audit; never authorizes repair")
+    parser.add_argument("--repo", type=Path, help="explicit repository view for diagnosis")
+    parser.add_argument("--parallelism", type=int)
+    args = parser.parse_args(argv)
+    if not args.runtime_cli.is_absolute() or not os.access(args.runtime_cli, os.X_OK):
+        parser.error("--runtime-cli must be an absolute path to an executable pinned binary")
+    if args.apply and (args.state_file or args.identity_manifest or args.repo):
+        parser.error("audit input overrides cannot be used with --apply")
+    root = args.root.resolve()
+    cli = args.runtime_cli.resolve()
+    env = repair_environment(root, args.mode)
+    env["TRELLIS_RUNTIME_CLI"] = str(cli)
+    if args.mode == "trusted-artifact-rebind":
+        if args.state_file or args.identity_manifest or args.repo:
+            parser.error("trusted rebuild does not accept audit overrides")
+        if not args.apply and not args.readiness:
+            print(json.dumps(invoke(cli, {"action": "plan_trusted_artifact_rebind", "root": str(root)}, env), indent=2))
+            return 0
+        print(json.dumps(apply_trusted_registered(root, cli, env, args.parallelism, args.readiness), indent=2))
+        return 0
+    state_file = args.state_file or root / "protocol_state.json"
+    identity = json.loads(args.identity_manifest.read_text()) if args.identity_manifest else None
+    repo = args.repo
+    if repo is None and identity is None:
+        repo = Path(json.loads((root / "runtime_metadata.json").read_text())["repo_path"])
+    request = {"action": "plan_closure_identity", "state_path": str(state_file),
+               "repo_path": str(repo) if repo else None, "identity": identity}
+    plan = invoke(cli, request, env)
+    print(json.dumps(plan, indent=2), flush=True)
+    if not args.apply:
+        return 0
+    # Planning above is genuinely read-only: no lock, token, runtime load,
+    # checker request or state migration. Only explicit apply takes ownership.
+    with (root / "closure-identity-token.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        # The Rust transaction recomputes the plan and verifies the generation.
+        result = apply_registered(root, cli, env, args.parallelism)
+        print(json.dumps(result, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except (OSError, ValueError, RuntimeError) as error:
+        print(f"closure identity repair: {error}", file=sys.stderr)
+        sys.exit(1)

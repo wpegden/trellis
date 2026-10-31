@@ -1,0 +1,1 @@
+Judge the composed raw-to-adapted behavior, packaging faithfulness, and continuity from GOAL targets and upstream items to extracted adapted items. Return the whole-tree judgment and entry coverage through the kernel-authored audit contract.

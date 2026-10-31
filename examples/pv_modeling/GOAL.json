@@ -1,0 +1,12 @@
+{
+  "goals": [
+    {
+      "id": "reading",
+      "text": "The low byte of a word represents a signed counter reading in the integer interval [-128,127], using two's-complement encoding. On every input word, tick returns the word whose reading is the input reading plus one, wrapping 127 to -128. The input and output high bytes are equal."
+    },
+    {
+      "id": "strict_increase",
+      "text": "Under that same signed interpretation, the output reading of tick is strictly greater than the input reading for every input word."
+    }
+  ]
+}

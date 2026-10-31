@@ -1,0 +1,1 @@
+Independently assess the proposed route and its strongest practical alternative against the source and GOALs. Challenge both avoidable coverage loss and authoring whose source correspondence would leave the formal conclusions unconvincing. Check domains, observations, preservation reasoning, and feasibility; identify concrete repairs. Your verdict informs the final audit.

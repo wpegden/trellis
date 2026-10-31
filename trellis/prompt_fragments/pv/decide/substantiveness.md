@@ -1,0 +1,1 @@
+A goal node is substantive when it faithfully expresses the supplied goal or its selected exact negation. Either direction may be pursued. Supporting nodes must contribute useful mathematical content to that task, with justified hypotheses and conclusions suitable for their use. Empty wrapping and unnecessary nodes fail this criterion.

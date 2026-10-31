@@ -1,0 +1,5 @@
+{
+  "action": "add_paper_targets",
+  "root": "/nonexistent/trellis-add-targets/root",
+  "config_path": "/nonexistent/trellis-add-targets/trellis.config.json"
+}

@@ -1,0 +1,1 @@
+Judge every adaptation entry for necessity, minimality, behavior preservation, diagnostic citation, target scope, and seam classification. Return the verdicts and actionable findings through the kernel-authored audit contract.

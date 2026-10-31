@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "trellis://schemas/approval-and-package/v1",
+  "title": "Human approval record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "authored_semantic_root",
+    "approved_evidence_tool_input_root",
+    "gate_presentation_sha256"
+  ],
+  "properties": {
+    "schema": { "const": "trellis-human-approval/v1" },
+    "authored_semantic_root": { "$ref": "#/$defs/hash" },
+    "approved_evidence_tool_input_root": { "$ref": "#/$defs/hash" },
+    "gate_presentation_sha256": { "$ref": "#/$defs/hash" }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "id": { "type": "string", "minLength": 1, "maxLength": 256 }
+  }
+}

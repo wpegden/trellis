@@ -1,0 +1,1 @@
+Use `coarse_restructure` when the repair requires changing the signature of a coarse-DAG node, or when the protected package boundary otherwise needs to move: several coarse-DAG nodes need coordinated edits, or a covering node's correspondence must be reopened.

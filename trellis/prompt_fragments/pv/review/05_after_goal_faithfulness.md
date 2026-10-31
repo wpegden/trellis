@@ -1,0 +1,1 @@
+This review has an unresolved goal-faithfulness blocker. Inspect the recorded verdicts and evidence for the covering statements. Assign repairs for identified defects; use the ordinary blocker actions for re-verification.

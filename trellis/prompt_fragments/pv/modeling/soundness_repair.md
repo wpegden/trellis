@@ -1,0 +1,1 @@
+Repair the assigned NL argument from its stated hypotheses and cited support. Model-preservation claims, proofs, and GOAL applications require soundness review even when the Lean definitions are complete. A Lean proof can discharge an ordinary theorem's NL proof obligation.

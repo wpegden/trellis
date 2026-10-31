@@ -1,0 +1,133 @@
+{
+  "_comment": "Native program-verification launcher defaults. Preparation and in-run roles are independently configurable.",
+  "repo_path": "REPLACE_ME/path/to/formalization/repo",
+  "goal_file": "GOAL.md",
+  "state_dir": ".trellis",
+  "policy_path": "trellis.policy.json",
+  "phase0": {
+    "allow_same_model_lanes": true
+  },
+  "pv_tablet": {
+    "revision": { "enabled": true }
+  },
+  "worker": {
+    "provider": "codex",
+    "model": "gpt-6.1-sol",
+    "effort": "xhigh",
+    "label": "codex-xhigh"
+  },
+  "easy_worker": {
+    "provider": "codex",
+    "model": "gpt-6.1-sol",
+    "effort": "xhigh",
+    "label": "codex-xhigh"
+  },
+  "hard_worker": {
+    "provider": "codex",
+    "model": "gpt-6.1-sol",
+    "effort": "xhigh",
+    "label": "codex-xhigh"
+  },
+  "reviewer": {
+    "provider": "codex",
+    "model": "gpt-6.1-sol",
+    "effort": "xhigh",
+    "label": "codex-xhigh"
+  },
+  "stuck_math_audit": {
+    "provider": "codex",
+    "model": "gpt-6.1-sol",
+    "effort": "xhigh",
+    "label": "codex-xhigh"
+  },
+  "verification": {
+    "correspondence_agents": [
+      {
+        "provider": "codex",
+        "model": "gpt-6.1-sol",
+        "effort": "xhigh",
+        "label": "codex-xhigh"
+      }
+    ],
+    "soundness_agents": [
+      {
+        "provider": "codex",
+        "model": "gpt-6.1-sol",
+        "effort": "xhigh",
+        "label": "codex-xhigh"
+      }
+    ],
+    "substantiveness_agents": [
+      {
+        "provider": "codex",
+        "model": "gpt-6.1-sol",
+        "effort": "xhigh",
+        "label": "codex-xhigh"
+      }
+    ]
+  },
+  "tmux": {
+    "session_name": "trellis",
+    "dashboard_window_name": "dashboard",
+    "kill_windows_after_capture": true
+  },
+  "sandbox": {
+    "enabled": true,
+    "backend": "bwrap"
+  },
+  "loogle": {
+    "enabled": false
+  },
+  "workflow": {
+    "start_phase": "theorem_stating",
+    "approved_axioms_path": "APPROVED_AXIOMS.json",
+    "allowed_import_prefixes": [
+      "Mathlib"
+    ],
+    "forbidden_keyword_allowlist": [],
+    "human_input_path": "HUMAN_INPUT.md",
+    "input_request_path": "INPUT_REQUEST.md",
+    "phase_overrides": {}
+  },
+  "chat": {
+    "root_dir": ".trellis/chats",
+    "repo_name": "trellis",
+    "project_name": "Trellis Program Verification",
+    "public_base_url": ""
+  },
+  "history": {
+    "shared_state": true
+  },
+  "git": {
+    "remote_url": null,
+    "remote_name": "origin",
+    "branch": "master",
+    "author_name": ".trellis",
+    "author_email": "trellis@localhost"
+  },
+  "max_cycles": 0,
+  "sleep_seconds": 1.0,
+  "startup_timeout_seconds": 120.0,
+  "burst_timeout_seconds": 14400.0,
+  "preparation": {
+    "worker": {
+      "provider": "codex",
+      "model": "gpt-6.1-sol",
+      "effort": "xhigh",
+      "label": "preparation-worker"
+    },
+    "reviewer": {
+      "provider": "codex",
+      "model": "gpt-6.1-sol",
+      "effort": "xhigh",
+      "label": "preparation-reviewer"
+    },
+    "audit": {
+      "provider": "codex",
+      "model": "gpt-6.1-sol",
+      "effort": "xhigh",
+      "label": "preparation-audit"
+    }
+  },
+  "system_feedback_halt": true
+}

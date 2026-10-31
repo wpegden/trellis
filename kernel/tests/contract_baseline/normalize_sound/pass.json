@@ -1,0 +1,61 @@
+{
+  "request": {
+    "action": "normalize_sound",
+    "input": {
+      "cycle": 4,
+      "members": [
+        {
+          "error": "",
+          "lane_id": "v1",
+          "ok": true,
+          "payload": {
+            "comments": "",
+            "node": "MainResult",
+            "overall": "APPROVE",
+            "soundness": {
+              "decision": "SOUND",
+              "explanation": "The prose proof has no gaps; induction is correct."
+            },
+            "summary": "Sound."
+          }
+        }
+      ],
+      "request_id": 70,
+      "verify_lanes": [
+        "v1"
+      ],
+      "verify_nodes": [
+        "MainResult"
+      ]
+    }
+  },
+  "response": {
+    "output": {
+      "response": {
+        "cycle": 4,
+        "lane_updates": {
+          "v1": {
+            "MainResult": {
+              "Set": "Pass"
+            }
+          }
+        },
+        "request_id": 70,
+        "reviewer_evidence": {
+          "v1": {
+            "comments": "",
+            "node": "MainResult",
+            "overall": "APPROVE",
+            "soundness": {
+              "decision": "SOUND",
+              "explanation": "The prose proof has no gaps; induction is correct."
+            },
+            "summary": "Sound."
+          }
+        },
+        "status": "Ok"
+      }
+    },
+    "status": "normalize_sound_ok"
+  }
+}

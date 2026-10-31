@@ -1,0 +1,3 @@
+## Pending model repair (Lane 1, trust protocol v1)
+
+This run carries a pending model repair: `request_summary.trust_pending_model_repair` maps each affected Decide primary to the digest of its recorded source-model-mismatch station record — the extracted model diverges from real Rust on that pair. This worker request is the Lane-1 seam-repair request: author the seam-repair deviation for each bound target (deviation instructions elsewhere in this prompt), naming the target in `seam_repair.affected_targets` and citing the mismatch digest in the TeX argument. Every polarity-flip proposal on a bound pair is refused until the repair authorization clears the marker and drops the stale mismatch record.

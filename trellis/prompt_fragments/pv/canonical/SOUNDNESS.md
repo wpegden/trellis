@@ -1,0 +1,7 @@
+# Soundness
+
+A node *N* is **sound** iff the natural-language proof in *N*'s `.tex` rigorously establishes *N*'s `.tex` statement by a detailed, line-by-line checkable proof from explicitly cited support nodes. Soundness requires proofs that are clear and highly detailed, matching and using hypotheses exactly as stated, and thus providing a strong roadmap for formalization in Lean. The detail floor is what a Lean formalizer needs: every monadic/arith/cast/shift/bound step the eventual Lean proof must discharge (`step`, a no-fail side goal, a cast in-bounds obligation, a shift bridge, a problem-specific bound) is justified in the NL proof, citing the model `def` semantics and the `GOAL.md` bounds explicitly.
+
+Every cross-node natural-language proof dependency must be cited with `\noderef{NodeName}` in the proof block. The cited node's statement is the dependency being used; the cited node's proof is not part of the dependency. Do not rely on an unstated or implicit support node, or hypotheses/parameters that belong only to the proof of a dependency rather than its statement. A proof that appeals to another theorem-like node's hypotheses by citation fails soundness (see FILESPEC). Background items in `Preamble.tex` are shared context rather than cross-node dependencies; a proof uses them without a `\noderef{Preamble}` citation.
+
+A proof whose first nonblank line is exactly `SKETCH:` is marked incomplete by the kernel until the marker is removed.

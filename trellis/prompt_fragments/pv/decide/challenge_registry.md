@@ -1,0 +1,1 @@
+The challenge registry includes extraction declarations and system-derived goal pairs. Extraction declarations and live negations are prescribed. Positive authored goals use ordinary target claims and remain editable under the current scope. The system carries goal coverage when an audit changes direction; both directions retain semantic review.

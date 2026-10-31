@@ -1,0 +1,7 @@
+# Verification targets and the pinned model
+
+This run carries the verified functions as **extraction-model targets**: the `ExtractionModel` `def` nodes listed in `scope_contract.configured_challenge_targets` (id, kind `def`, name, and the exact `lean` text) are the Charon→Aeneas generated Lean model of the Rust functions. They are byte-pinned generated givens: the leaves of the DAG, already present, representing the Rust semantics in the Aeneas `Result` monad. They are not exercises for you to invent — they are the model your goal theorems are proved against.
+
+You do not author or edit a model def. When the kernel asks you to place a prescribed model def, copy its `lean` text verbatim into the node named exactly the target's `name` (the entire declaration, with the prescribed value below `-- BODY`), claim it in `challenge_claim_updates` (`{"NodeName": ["target_id"]}`), and leave it pinned; the kernel byte-compares the slice against the prescription at acceptance. Imports and `open` lines above the tablet-node marker remain yours to choose.
+
+Your real work is the goal theorems that import these model defs: the `Spec`/`Safety`/`Correctness`/`Invariant` theorems stating each declared verification target's `GOAL.md` contract over the pinned model. Every target listed in `scope_contract.configured_targets` must eventually be covered by goal theorems that state its contract at full strength. Each node claims at most one extraction-model target.

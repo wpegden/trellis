@@ -1,0 +1,1 @@
+Judge the node's Lean meaning against its paired NL statement, following the definitions needed to understand both. Check domains, quantifiers, conditions, results, and failure behavior. A definition's preservation sections contain separate source-facing claims; soundness judges their proofs, and goal-faithfulness judges their adequacy for the supplied GOALs.

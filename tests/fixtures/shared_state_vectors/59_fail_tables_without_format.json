@@ -1,0 +1,19 @@
+{
+  "name": "59_fail_tables_without_format",
+  "kind": "failure",
+  "description": "Tables present without `$format`. Structural detection keys on `$format` alone, so this document would otherwise be misread as plain and hand back raw {\"$r\": ...} references to its caller.",
+  "document": {
+    "$strings": {},
+    "$pool": {
+      "0123456789abcdef": {
+        "a": 1
+      }
+    },
+    "state": {
+      "x": {
+        "$r": "0123456789abcdef"
+      }
+    }
+  },
+  "error_contains": "no $format member"
+}

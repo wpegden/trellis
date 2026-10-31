@@ -1,0 +1,16 @@
+{
+  "action": "validate_trellis_reviewer_result",
+  "raw_payload": {
+    "allow_new_obligations": false,
+    "clear_human_input": false,
+    "decision": "NEED_INPUT",
+    "difficulty_updates": {},
+    "must_close_active": false,
+    "next_active": "main_node",
+    "next_mode": "GLOBAL",
+    "reason": "Reviewer wants operator guidance on this step.",
+    "reset": "NONE",
+    "reset_blocker_ids": [],
+    "task_blocker_ids": []
+  }
+}

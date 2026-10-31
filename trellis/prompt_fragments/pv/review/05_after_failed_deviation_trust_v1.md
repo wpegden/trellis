@@ -1,0 +1,1 @@
+The seam-repair verifier rejected an authorization request. Route work toward revising the repair — the TeX file and its `seam_repair` declaration, so the verifier re-runs on the new fingerprint — removing the claim from the affected nodes, or retiring the deviation entirely via `deviation_deletions` if it is no longer needed.

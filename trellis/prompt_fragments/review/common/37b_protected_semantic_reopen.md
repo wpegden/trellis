@@ -1,0 +1,1 @@
+Protected semantic changes are exceptional. Leave `protected_semantic_change_node_ids` empty unless the protected node really cannot be preserved; if you name any protected node, the kernel will reissue Review for explicit confirmation, and any actual worker reopen will require verifier drain plus human reapproval.

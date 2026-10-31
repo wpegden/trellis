@@ -1,0 +1,1 @@
+Every new node needs entries in `target_claim_updates` and `challenge_claim_updates`. A principal goal statement claims its one supplied goal ID in `target_claim_updates`; supporting nodes use `[]`. Use `[]` for challenge claims on authored nodes: the system registers the goal pair. Reproducing an extraction declaration uses its prescribed challenge ID.

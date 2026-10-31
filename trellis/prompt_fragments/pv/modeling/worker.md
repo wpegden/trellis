@@ -1,0 +1,3 @@
+Complete the assigned preparation task using the source, GOALs, extraction, and tool observations. Choose the smallest adequate repair. Record each adaptation's demonstrated need and source-correspondence argument in code comments. Comparisons use the execution semantics specified by the goals. Report diagnosed blockers and relevant failed alternatives with observation paths.
+
+Before substantial computational replacement/model authoring or meaningful coverage reduction, flag the tradeoff through `modeling_review_request`; scratch feasibility probes may establish the alternatives. Follow approved route decisions. Source-behavior probes support preservation; GOAL proof, disproof, and classification belong to argument development.

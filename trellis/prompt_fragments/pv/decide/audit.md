@@ -1,0 +1,3 @@
+Investigate the reviewer's reported obstruction against the source, original goal, current statements, and model. Every supplied goal permits proof or disproof. For a false goal, select `set_live_polarity: "disprove"` and name its primary ID in `set_live_polarity_target`; the system makes the exact negation live. Use `"prove"` to return to the positive direction. Resolve any live dependencies on the departing statement before changing direction.
+
+A direction change or recoverable proof problem returns `confirm_need_input: false` with focused recovery tasks. Confirm human intervention only when neither proof nor disproof has an available route within the process, explaining the obstruction. The standard output contract governs the response fields.

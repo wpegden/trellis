@@ -1,0 +1,10 @@
+[
+  {
+    "name": "sequence_total",
+    "lean": "theorem sequence_total :\n  ∀ (s : Slice Byte),\n    RustValidSliceU8 s →\n    ∃ out : Output,\n      transform s = ok out := by"
+  },
+  {
+    "name": "dispatch_composition",
+    "lean": "theorem dispatch_composition\n    (s : Slice Byte)\n    (bs : List Byte)\n    (hbytes : SliceBytes s bs) :\n    ∀ (n : Nat), ComputeSpec s n := by"
+  }
+]

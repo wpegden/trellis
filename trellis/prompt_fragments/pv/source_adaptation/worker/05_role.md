@@ -1,0 +1,1 @@
+Drive the uploaded source to a clean extraction. Each revision carries as many ledger entries as the diagnostics justify; related changes belong in one entry. Preserve upstream behavior and GOAL continuity, then submit the ledger through the kernel-authored response contract.

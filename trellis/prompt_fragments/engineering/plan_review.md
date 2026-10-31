@@ -1,0 +1,1 @@
+Assess plan.json against the paper, contract and the independent reading.json. Check coverage, correctness, performance consequences and each proposed departure. Acceptance approves the listed departures for implementation. Return {"decision":"accept|revise|review","reason":"assessment and required changes"}.

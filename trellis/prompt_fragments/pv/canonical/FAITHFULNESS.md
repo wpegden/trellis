@@ -1,0 +1,1 @@
+For program verification, the reference is each supplied `GOAL.md` obligation about the source program. Check its function subject, input domain, observations, and completion conditions over the extracted model. Cover safety and correctness wherever the GOAL requires them. Correspondence checks Lean against the paired NL statements.

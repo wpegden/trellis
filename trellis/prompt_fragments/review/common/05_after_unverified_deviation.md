@@ -1,0 +1,3 @@
+This review carries an active deviation blocker that has not yet been verified: the deviation file was not dispatched to the deviation verifier this cycle, so there is no authorization verdict on record. There is no rejection to act on.
+
+There is no failure to repair. Omit this blocker — do not name it in any action list; omitted blockers stay live and this one resolves once the deviation file is dispatched and the verifier runs. Do not reset it (`reset_blocker_ids` discards a current Fail to Unknown; this blocker is already Unknown). Task a worker only with independent, concrete evidence (cited in your comments) that the deviation file itself is wrong on its merits — not merely that it is unverified.

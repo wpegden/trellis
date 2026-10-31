@@ -1,0 +1,1 @@
+Review the completed tablet for useful proof cleanup. Propose substitutions, warning fixes, dead-code removal or proof extraction within the contract's permitted scope. Trace proposed replacements and rate each task's confidence. The reviewer dispatches accepted tasks to workers.

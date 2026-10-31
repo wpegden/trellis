@@ -1,0 +1,1 @@
+Reading and plan records contain exactly requirements, interpretations, unspecified and departures lists. Each entry has source, description and consequences fields. Cite paper locations and assess correctness and performance implications.

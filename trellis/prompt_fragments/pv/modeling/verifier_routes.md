@@ -1,0 +1,1 @@
+The contract's `modeling_route_decisions` records approved scope, implementation tasks, and preservation obligations. Use the approved scope and assess the implemented claims and arguments against your lane's rubric. Full decisions and deliberations are in the structured request's `modeling_route_decisions`; preparation decisions are in `modeling-input/manifest.json`.

@@ -1,0 +1,15 @@
+{
+  "action": "validate_trellis_stuck_math_audit_result",
+  "raw_payload": {
+    "report": "## Claim being audited\nThe pinned goal `Correct` is false against the byte-pinned model: the offending input class is length-boundary slices, and the failure branch is the wrapping Usize→Isize cast. No live node imports or hypothesizes the primary, which is closed and holds no seat, so the flip must bind by name.",
+    "tasks": [
+      {
+        "id": "task-1",
+        "title": "Prove the refutation",
+        "body": "Prove Correct__Refutation via the length-boundary witness once the flip lands."
+      }
+    ],
+    "set_live_polarity": "disprove",
+    "set_live_polarity_target": "goal:correct"
+  }
+}

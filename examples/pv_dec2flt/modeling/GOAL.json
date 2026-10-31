@@ -1,0 +1,133 @@
+{
+  "context": "# Decimal-to-binary64 parsing\n\n## Scope and vocabulary\n\nThe subject is the `f64` specialization of Rust's decimal parser and its\nhelper functions, including executions with integer overflow checks enabled.\nPublic results are the returned floats and errors.\n\nA numeric literal has an optional leading sign, an ASCII decimal significand\nwith at least one digit and at most one decimal point, and an optional `e` or\n`E` exponent with an optional sign and at least one ASCII digit. Special\nliterals are `inf`, `infinity`, and `nan`, matched ASCII case-insensitively,\nwith an optional leading sign. The whole input must match; whitespace and\nother extra characters are invalid. An unsigned literal omits the leading\nsign, while its exponent may still have a sign.\n\nThe exact value of a numeric literal is its ordinary mathematical decimal\nvalue. Rounding means IEEE 754 binary64 round-to-nearest, ties-to-even,\nincluding subnormal results, signed zero, and overflow to infinity.\n\nFor auxiliary claims, the **accumulated-exponent value** retains every\nsignificand digit but interprets the explicit exponent using the source's\nbounded exponent-accumulation rule. This is an implementation-level diagnostic\nvalue, distinct from the exact value required by the public contract.",
+  "goals": [
+    {
+      "id": "parser_totality",
+      "text": "`dec2flt`\n\n**Totality.** For every Rust string, the function terminates normally with a\nresult or parsing error, without panicking."
+    },
+    {
+      "id": "parser_numeric_acceptance",
+      "text": "`dec2flt`\n\n**Numeric acceptance.** Every numeric literal returns `Ok`."
+    },
+    {
+      "id": "parser_invalid_rejection",
+      "text": "`dec2flt`\n\n**Invalid rejection.** Every string outside the numeric and special literal\ngrammar returns `Err`."
+    },
+    {
+      "id": "parser_nan_acceptance",
+      "text": "`dec2flt`\n\n**NaN acceptance.** Every NaN literal returns `Ok` of a float satisfying\n`is_nan()`."
+    },
+    {
+      "id": "parser_infinity",
+      "text": "`dec2flt`\n\n**Infinity.** Every infinity literal returns `Ok` of the infinity with its\nlexical sign."
+    },
+    {
+      "id": "parser_non_nan_results",
+      "text": "`dec2flt`\n\n**No spurious NaNs.** Every successful result for an input other than a NaN\nliteral is not NaN."
+    },
+    {
+      "id": "parser_numeric_sign",
+      "text": "`dec2flt`\n\n**Numeric sign.** Every successful numeric result has the literal's lexical\nsign, including results that underflow to zero or overflow to infinity."
+    },
+    {
+      "id": "parser_signed_zero",
+      "text": "`dec2flt`\n\n**Signed zero.** On acceptance, a numeric literal denoting zero returns\nzero with its lexical sign."
+    },
+    {
+      "id": "parser_exact_rounding",
+      "text": "`dec2flt`\n\n**Exact rounding.** On acceptance of any numeric literal, the returned float\nis its exact value rounded to binary64."
+    },
+    {
+      "id": "parser_selected_exponent",
+      "text": "`dec2flt`\n\n**Selected exponent range.** On a successful numeric parse, each raw pair\nselected by the dispatcher for final float assembly has a biased exponent\nin `0..=2047`."
+    },
+    {
+      "id": "parser_selected_magnitude_sign",
+      "text": "`dec2flt`\n\n**Selected magnitude sign.** On a successful numeric parse, the assembled\nword of each raw pair selected for final float assembly has a clear sign bit."
+    },
+    {
+      "id": "dispatch_abstract_composition",
+      "text": "`dec2flt`\n\n**Abstract composition.** The lexical and conversion component contracts admit\nimplementations. For any components satisfying those contracts, the\ndispatcher's normal results satisfy the classification, rounding, and sign\nrequirements. This includes the native shortcut, integer tier, many-digit\ndecision, fallback, sign handling, and final assembly."
+    },
+    {
+      "id": "dispatch_component_compliance",
+      "text": "`dec2flt`\n\n**Component compliance.** The actual source components satisfy the contracts\nused in abstract composition, including preservation of the input's rounding\ntarget. The dispatcher establishes the helper preconditions at their call\nsites."
+    },
+    {
+      "id": "parser_accumulated_rounding",
+      "text": "`dec2flt`\n\n**Accumulated-value diagnostic.** Every accepted numeric literal is rounded\nto its accumulated-exponent value."
+    },
+    {
+      "id": "parser_equal_target_rounding",
+      "text": "`dec2flt`\n\n**Equal-target bridge.** On acceptance of a numeric literal whose exact\nand accumulated-exponent values have the same rounding target, the result\nhas that target and the literal's lexical sign."
+    },
+    {
+      "id": "number_helper_acceptance",
+      "text": "`parse_number`\n\n**Numeric acceptance.** Every nonempty byte slice forming an unsigned numeric\nliteral returns `Some`."
+    },
+    {
+      "id": "number_helper_rejection",
+      "text": "`parse_number`\n\n**Invalid rejection.** Every nonempty byte slice that is not an unsigned\nnumeric literal returns `None`."
+    },
+    {
+      "id": "number_helper_record_bounds",
+      "text": "`parse_number`\n\n**Record bounds.** For every nonempty byte slice, any returned record has\n`negative = false` and `mantissa < 10^19`."
+    },
+    {
+      "id": "number_helper_accumulated_value",
+      "text": "`parse_number`\n\n**Accumulated-value diagnostic.** For every unsigned numeric literal, a\nreturned record with `many_digits = false` represents its accumulated-exponent\nvalue exactly as `mantissa * 10^exponent`. With `many_digits = true`, that value\nlies in the half-open interval from `mantissa * 10^exponent` to\n`(mantissa + 1) * 10^exponent`."
+    },
+    {
+      "id": "special_helper_infinity",
+      "text": "`parse_inf_nan`\n\n**Infinity.** For every byte slice and either value of the separate sign\nargument, an unsigned infinity keyword returns `Some` infinity with that sign."
+    },
+    {
+      "id": "special_helper_nan",
+      "text": "`parse_inf_nan`\n\n**NaN.** For every byte slice and either value of the separate sign argument,\nan unsigned NaN keyword returns `Some` of a NaN."
+    },
+    {
+      "id": "special_helper_rejection",
+      "text": "`parse_inf_nan`\n\n**Rejection.** For every byte slice and either value of the separate sign\nargument, an input other than an unsigned `inf`, `infinity`, or `nan` keyword\nreturns `None`."
+    },
+    {
+      "id": "native_correct_or_defer",
+      "text": "`try_fast_path`\n\n**Native correctness or defer.** For every `Decimal` record, on normal return,\nthe result is either `None` or `Some` of the binary64 rounding of the exact\n`mantissa * 10^exponent`, with the record's sign. A `Some` result also implies\n`many_digits = false`. The contract applies to both the ordinary native path\nand the disguised path that transfers powers of ten into the mantissa."
+    },
+    {
+      "id": "integer_correct_or_defer",
+      "text": "`compute_float`\n\n**Correctness or defer.** For all `i64` exponents `q` and all `u64` mantissas\n`w`, a normal result is either a pair with negative biased exponent (deferral)\nor a pair whose assembled word is the nonnegative binary64 rounding of the\nexact value `w * 10^q`."
+    },
+    {
+      "id": "slow_accumulated_rounding",
+      "text": "`parse_long_mantissa`\n\n**Full-significand diagnostic.** For every unsigned numeric literal, a normal\nresult is a pair whose assembled word is the nonnegative binary64 rounding\nof its accumulated-exponent value, retaining the full significand's\ncontribution to rounding."
+    },
+    {
+      "id": "assembly_correspondence",
+      "text": "`biased_fp_to_float`\n\n**Assembly correspondence.** For every `BiasedFp`, the function returns\nnormally with float bits equal to the bitwise OR of its mantissa and its\nbiased exponent cast to `u64` using Rust semantics and shifted left by 52.\nThe word interpretation used in the other obligations agrees with this\noperation for all field values, without a well-formedness precondition."
+    },
+    {
+      "id": "classification_totality",
+      "text": "Mathematical specification\n\n**Classification totality.** Every finite byte string is classified as\nnumeric, special, or invalid."
+    },
+    {
+      "id": "classification_determinism",
+      "text": "Mathematical specification\n\n**Classification determinism.** Every finite byte string has at most one\nclassification, and the parsed content of each numeric literal is unique."
+    },
+    {
+      "id": "classification_significand_digit",
+      "text": "Mathematical specification\n\n**Significand digit.** Every numeric literal contains a significand digit."
+    },
+    {
+      "id": "rounding_totality",
+      "text": "Mathematical specification\n\n**Rounding totality.** Every nonnegative real has a binary64 magnitude\nrounding target, finite or infinite."
+    },
+    {
+      "id": "rounding_determinism",
+      "text": "Mathematical specification\n\n**Rounding determinism.** For every nonnegative real, the binary64 magnitude\nrounding target is unique."
+    },
+    {
+      "id": "exponent_value_agreement",
+      "text": "Mathematical specification\n\n**Exponent agreement.** For every numeric literal whose accumulated explicit\nexponent equals its mathematical explicit exponent, exact and\naccumulated-exponent rounding agree."
+    }
+  ]
+}

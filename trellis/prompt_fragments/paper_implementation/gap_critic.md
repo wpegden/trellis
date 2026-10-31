@@ -1,0 +1,1 @@
+Independently assess the proposed route against the paper and implementation. Acceptance requires mathematical correctness and authoring within the selected claims and frozen implementation. On rejection, identify the concrete defect or unsupported edit and explain what a revised route must address.

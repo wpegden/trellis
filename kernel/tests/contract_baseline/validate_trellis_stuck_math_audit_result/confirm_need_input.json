@@ -1,0 +1,21 @@
+{
+  "request": {
+    "action": "validate_trellis_stuck_math_audit_result",
+    "raw_payload": {
+      "confirm_need_input": true,
+      "probe_paths": [],
+      "report": "After examining the probe, the auditor confirms that operator input is needed: the lemma cannot be closed without a new hypothesis, and the appropriate hypothesis is mathematically subtle enough that the worker should not invent one without guidance. Forwarding to NeedInput.",
+      "tasks": []
+    }
+  },
+  "response": {
+    "output": {
+      "data": null,
+      "errors": [
+        "report must include a concrete signal: probe_paths, a fenced code block, or a '## Claim being audited' heading"
+      ],
+      "ok": false
+    },
+    "status": "validate_trellis_stuck_math_audit_result_ok"
+  }
+}

@@ -1,0 +1,3 @@
+The files under `target/dec2flt/` are a verbatim snapshot of `library/core/src/num/dec2flt/` from the Rust repository at commit `0ed41eb4142dda2df61eb1145a312c1a9d62eb56` (2026-09-04 10:56:43 +0000). The file `supporting/traits.rs` is the verbatim sibling `library/core/src/num/traits.rs` from that same commit.
+
+The two directories demonstrate the upload partitions: `target/dec2flt/` is the required target source, and `supporting/traits.rs` satisfies the target's imported `Float` and `FloatExt` names. No manifest, wrapper module, compatibility edit, or proposed GOAL is included; Phase 0 must derive any required packaging or language-boundary adaptation during the run.

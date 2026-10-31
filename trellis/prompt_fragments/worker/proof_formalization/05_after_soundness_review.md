@@ -1,0 +1,5 @@
+This formalization task includes the task of addressing NL soundness of nodes, see SOUNDNESS.md.
+
+Note that regardless of verifier/reviewer guidance, the soundness requirement for this node would be immediately waived by the kernel if you give a valid sorry-free closing of the lean proof instead. Thus, when tasked with repairing soundness *always* ask whether you can just lean-close at least one of the soundness blockers instead, that is the best kind of progress, even if it is harder. Also note that changes to the TeX *statement* (rather than proof) will reopen correspondence on this node, as well as soundness of nodes that depend on it, etc, so make changes to the statement when appropriate, but not gratuitously.
+
+Use `SKETCH:` as the first non-blank line of a proof when the current request and `FILESPEC.md` permit that marker for the node; it indicates a proof you as the worker know to be incomplete or not yet rigorous. Only remove it when you think the proof is completely repaired and ready for verification.

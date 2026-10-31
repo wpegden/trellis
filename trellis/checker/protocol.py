@@ -1,0 +1,416 @@
+"""Wire protocol for the unified checker server.
+
+Line-delimited JSON over ``SOCK_STREAM``. Each request is one JSON object
+terminated by ``\\n``; each response likewise. Request always carries
+``op`` (string) and ``request_id`` (int, client-chosen, echoed). Per the
+threat model (mitigation 2), ``repo_path`` is **not** part of the request
+schema — the server derives it from the socket's filesystem location.
+
+This module also owns the single source of truth for the node-name regex
+that gates every path-construction site in the dispatcher (Tablet/{X}.lean
+filename, ``import Tablet.{X}`` source line, ``Tablet.{X}`` build target).
+The regex matches the convention documented in ``FILESPEC.md`` for
+ordinary node files: identifier-shaped, must start with a letter.
+"""
+
+from __future__ import annotations
+
+import json
+import math
+import re
+from dataclasses import dataclass, field
+from typing import Any, Mapping, Optional, Sequence
+
+
+# Single source of truth — anchored, must start with a letter, ASCII identifier
+# characters only. See FILESPEC.md "Tablet/<Node>.lean" naming convention.
+NODE_NAME_REGEX_STR = r"[A-Za-z][A-Za-z0-9_]*"
+NODE_NAME_REGEX = re.compile(rf"\A{NODE_NAME_REGEX_STR}\Z")
+NODE_NAME_MAX_LEN = 128
+MAX_NODES_PER_REQUEST = 1024
+TIMEOUT_SECS_MIN = 1.0
+TIMEOUT_SECS_DEFAULT = 3600.0
+
+# Wire-level caps; server enforces these too (defence in depth).
+MAX_LINE_BYTES = 64 * 1024  # 64 KiB
+MAX_MESSAGE_BYTES = 256 * 1024 * 1024  # 256 MiB — sized for full-tablet lean_semantic_payloads responses (~4.2 KB/node now the payload is a closure-constant list, so a 1,000-node tablet answers in ~4.3 MB, under 2% of the cap)
+
+KNOWN_OPS = (
+    "ping",
+    "release_workspace",
+    "host_response_enrichment",
+    "install_publication_artifacts",
+    "seed_acceptance_replay",
+    "capture_replay_environment",
+    "verify_node",
+    "lean_compile_node",
+    "materialize_oleans",
+    "lean_semantic_payloads",
+    "print_axioms",
+    "local_closure_axioms",
+    "local_closure_axioms_batch",
+    "lean_statement_transform",
+    "lean_build_tablet",
+    "prepare_compiled_support",
+    "native_library_resolution",
+    # Isabelle/HOL checker ops (B2a). Hosted on the SAME dispatcher; the
+    # repo-from-socket + repo_path-forbidden trust invariants apply
+    # byte-identically. The Lean ops above are untouched. The Isabelle TCP
+    # server + password are held internally by the dispatcher and never
+    # appear on this wire.
+    "isabelle_check_node",
+    "isabelle_thm_oracles",
+    "isabelle_thm_deps",
+    "isabelle_build_session",
+    "isabelle_sync_session",
+    # Phase 3 worker inner-loop ADVISORY: warm-elaborate ONLY the in-flight node
+    # against the warm accepted prefix (the Isabelle analogue of the Lean warm
+    # `lean --server` advisory) — NO cert, NO cold cross-check. Green is
+    # necessary-not-sufficient; the deterministic `isabelle_thm_deps` gate is the
+    # only sign-off. Node-keyed like the other node ops. Inert (returns
+    # `advisory_unavailable`) unless the warm flag is ON.
+    "isabelle_warm_advisory",
+)
+
+# The Isabelle ops that, like their Lean analogues, are keyed on a single
+# node theory. ``isabelle_build_session`` / ``isabelle_sync_session`` are
+# workspace-scoped (no node argument). ``isabelle_warm_advisory`` is the
+# worker inner-loop advisory (node-keyed, but NOT part of the deterministic
+# sign-off — see ``KNOWN_OPS``).
+ISABELLE_NODE_OPS = frozenset(
+    {"isabelle_check_node", "isabelle_thm_oracles", "isabelle_thm_deps"}
+)
+ISABELLE_ADVISORY_OPS = frozenset({"isabelle_warm_advisory"})
+ISABELLE_WORKSPACE_OPS = frozenset(
+    {"isabelle_build_session", "isabelle_sync_session"}
+)
+
+
+class ProtocolError(Exception):
+    """Raised by validate_request for any malformed envelope.
+
+    Carries an ``rpc_error`` kind so the dispatcher can echo it back in a
+    structured envelope without leaking internal details. The kinds are a
+    closed set: ``malformed_request``, ``unknown_op``.
+    """
+
+    def __init__(self, kind: str, message: str) -> None:
+        super().__init__(message)
+        self.kind = kind
+        self.message = message
+
+
+@dataclass
+class CheckerRequest:
+    """Validated request envelope. ``repo_path`` is intentionally absent —
+    the server resolves the supervisor repo from the socket's parent
+    runtime root."""
+
+    op: str
+    request_id: int
+    node_name: Optional[str] = None
+    nodes: Sequence[str] = field(default_factory=tuple)
+    timeout_secs: float = TIMEOUT_SECS_DEFAULT
+    raw: Mapping[str, Any] = field(default_factory=dict)
+
+
+def _coerce_timeout(value: Any) -> float:
+    if value is None:
+        return TIMEOUT_SECS_DEFAULT
+    try:
+        coerced = float(value)
+    except (TypeError, ValueError):
+        raise ProtocolError(
+            "malformed_request", f"timeout_secs is not a number: {value!r}"
+        )
+    if not math.isfinite(coerced):
+        raise ProtocolError(
+            "malformed_request", f"timeout_secs must be finite, got {value!r}"
+        )
+    if coerced < TIMEOUT_SECS_MIN:
+        return TIMEOUT_SECS_MIN
+    return coerced
+
+
+def _validate_node_name(value: Any, *, field_name: str = "node_name") -> str:
+    if not isinstance(value, str):
+        raise ProtocolError(
+            "malformed_request", f"{field_name} must be a string, got {type(value).__name__}"
+        )
+    if len(value) == 0:
+        raise ProtocolError("malformed_request", f"{field_name} is empty")
+    if len(value) > NODE_NAME_MAX_LEN:
+        raise ProtocolError(
+            "malformed_request",
+            f"{field_name} exceeds {NODE_NAME_MAX_LEN} chars (got {len(value)})",
+        )
+    if NODE_NAME_REGEX.fullmatch(value) is None:
+        raise ProtocolError(
+            "malformed_request",
+            f"{field_name} does not match {NODE_NAME_REGEX_STR}: {value!r}",
+        )
+    return value
+
+
+def validate_principal_name(value: Any) -> str:
+    """Validate an exact unquoted Lean name before embedding it in a probe."""
+    if not isinstance(value, str) or not value or len(value) > 1024:
+        raise ProtocolError('malformed_request', 'principal_name must be an exact unquoted Lean name')
+    for part in value.split('.'):
+        if (not part or not (part[0].isalpha() or part[0] == '_')
+                or any(not (ch.isalnum() or ch in "_'!?′") for ch in part)):
+            raise ProtocolError('malformed_request', 'principal_name must be an exact unquoted Lean name')
+    return value
+
+
+def _validate_nodes(value: Any, *, field_name: str = "nodes") -> tuple[str, ...]:
+    if not isinstance(value, (list, tuple)):
+        raise ProtocolError(
+            "malformed_request", f"{field_name} must be a list, got {type(value).__name__}"
+        )
+    if len(value) > MAX_NODES_PER_REQUEST:
+        raise ProtocolError(
+            "malformed_request",
+            f"{field_name} list of {len(value)} exceeds cap {MAX_NODES_PER_REQUEST}",
+        )
+    out: list[str] = []
+    for idx, raw in enumerate(value):
+        out.append(_validate_node_name(raw, field_name=f"{field_name}[{idx}]"))
+    return tuple(out)
+
+
+def parse_line(line: bytes) -> Mapping[str, Any]:
+    """Decode one newline-terminated wire frame into a Mapping.
+
+    Trailing newline is stripped; lines without one are also accepted
+    (the framing layer in the server handles ``EOF`` separately).
+    Raises ``ProtocolError(kind="malformed_request")`` on any decode
+    failure, including non-UTF8 bytes and non-object JSON.
+    """
+    if len(line) > MAX_LINE_BYTES:
+        raise ProtocolError(
+            "malformed_request",
+            f"request line exceeds {MAX_LINE_BYTES} bytes (got {len(line)})",
+        )
+    if line.endswith(b"\n"):
+        line = line[:-1]
+    try:
+        text = line.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ProtocolError(
+            "malformed_request", f"request is not valid UTF-8: {exc}"
+        )
+    try:
+        decoded = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ProtocolError(
+            "malformed_request", f"request is not valid JSON: {exc.msg}"
+        )
+    if not isinstance(decoded, dict):
+        raise ProtocolError(
+            "malformed_request",
+            f"request must be a JSON object, got {type(decoded).__name__}",
+        )
+    return decoded
+
+
+def validate_request(payload: Mapping[str, Any]) -> CheckerRequest:
+    """Validate one decoded request envelope.
+
+    On success returns a ``CheckerRequest`` with all string/path fields
+    sanitised. Raises ``ProtocolError`` otherwise.
+    """
+    op_raw = payload.get("op")
+    if not isinstance(op_raw, str):
+        raise ProtocolError(
+            "malformed_request", f"op must be a string, got {type(op_raw).__name__}"
+        )
+    op = op_raw.strip()
+    if not op:
+        raise ProtocolError("malformed_request", "op is empty")
+    if op not in KNOWN_OPS:
+        raise ProtocolError("unknown_op", f"unknown op {op!r}")
+
+    rid_raw = payload.get("request_id")
+    if isinstance(rid_raw, bool) or not isinstance(rid_raw, int):
+        raise ProtocolError(
+            "malformed_request",
+            f"request_id must be a non-bool integer, got {type(rid_raw).__name__}",
+        )
+    if rid_raw < 0:
+        raise ProtocolError("malformed_request", f"request_id must be >= 0, got {rid_raw}")
+
+    timeout = _coerce_timeout(payload.get("timeout_secs"))
+
+    node_name: Optional[str] = None
+    nodes: tuple[str, ...] = ()
+    if (
+        op in {"verify_node", "lean_compile_node", "print_axioms", "local_closure_axioms"}
+        or op in ISABELLE_NODE_OPS
+        or op in ISABELLE_ADVISORY_OPS
+    ):
+        if "node_name" not in payload:
+            raise ProtocolError("malformed_request", f"op {op} requires node_name")
+        node_name = _validate_node_name(payload["node_name"])
+        if op == 'print_axioms':
+            validate_principal_name(payload.get('principal_name', node_name))
+    elif op == 'capture_replay_environment':
+        nodes = _validate_nodes(payload.get('node_names'), field_name='node_names')
+        extra = payload.keys() - {'op', 'request_id', 'timeout_secs', 'auth_token', 'node_names', 'materialized_only'}
+        if extra:
+            raise ProtocolError('malformed_request', f'unexpected capture fields: {sorted(extra)}')
+        if 'materialized_only' in payload and not isinstance(payload['materialized_only'], bool):
+            raise ProtocolError('malformed_request', 'materialized_only must be a boolean')
+    elif op == 'local_closure_axioms_batch':
+        nodes = _validate_nodes(payload.get('nodes'))
+        if not nodes or len(set(nodes)) != len(nodes) or len(nodes) > 128:
+            raise ProtocolError('malformed_request', 'closure batch requires 1..128 distinct nodes')
+        owners = set(_validate_nodes(payload.get('premise_owners', []), field_name='premise_owners'))
+        modules = set(_validate_nodes(payload.get('module_owners', []), field_name='module_owners'))
+        principals = payload.get('principal_names', {})
+        if (not modules <= set(nodes) or not modules <= owners | {'Preamble'}
+                or not isinstance(principals, dict) or set(principals) != set(nodes) - modules):
+            raise ProtocolError('malformed_request', 'closure batch requires exact principal or module-owner registration')
+        for principal in principals.values():
+            validate_principal_name(principal)
+        if 'no_axcheck' in payload and not isinstance(payload['no_axcheck'], bool):
+            raise ProtocolError('malformed_request', 'no_axcheck must be a boolean')
+        extra = payload.keys() - {'op','request_id','auth_token','timeout_secs','nodes',
+                                 'principal_names','module_owners','premise_owners','no_axcheck'}
+        if extra:
+            raise ProtocolError('malformed_request', f'unexpected closure batch fields: {sorted(extra)}')
+    elif op in {"materialize_oleans", "lean_semantic_payloads"}:
+        if "nodes" not in payload:
+            raise ProtocolError("malformed_request", f"op {op} requires nodes")
+        nodes = _validate_nodes(payload["nodes"])
+        if op == "lean_semantic_payloads" and "principal_names" in payload:
+            principals = payload["principal_names"]
+            if not isinstance(principals, dict):
+                raise ProtocolError(
+                    "malformed_request", "principal_names must be an object"
+                )
+            for raw_node, raw_principal in principals.items():
+                node = _validate_node_name(raw_node)
+                if node not in nodes:
+                    raise ProtocolError(
+                        "malformed_request",
+                        f"principal_names contains unrequested node {node!r}",
+                    )
+                if not isinstance(raw_principal, str):
+                    raise ProtocolError(
+                        "malformed_request",
+                        f"principal_names[{node!r}] must be a string",
+                    )
+                principal = raw_principal.strip()
+                if (
+                    not principal
+                    or len(principal) > 1024
+                    or any(ch.isspace() or ord(ch) < 32 for ch in principal)
+                ):
+                    raise ProtocolError(
+                        "malformed_request",
+                        f"principal_names[{node!r}] is not a valid exact Lean name",
+                    )
+    elif (
+        op in {"lean_build_tablet", "prepare_compiled_support", "native_library_resolution", "ping"}
+        or op in ISABELLE_WORKSPACE_OPS
+    ):
+        # No node arguments — these are workspace-scoped or pure control ops.
+        pass
+
+    # repo_path explicitly disallowed (mitigation 2: derive server-side).
+    if "repo_path" in payload:
+        raise ProtocolError(
+            "malformed_request",
+            "repo_path is not accepted; server derives it from socket location",
+        )
+
+    if op in {"native_library_resolution", "release_workspace", "install_publication_artifacts", "seed_acceptance_replay"}:
+        extra = payload.keys() - {"op", "request_id", "timeout_secs", "auth_token"}
+        if extra:
+            raise ProtocolError("malformed_request", f"unexpected resource-check fields: {sorted(extra)}")
+
+    if op == "lean_statement_transform":
+        inp = payload.get("input")
+        if not isinstance(inp, dict) or set(inp) - {"name", "statement", "context", "condition", "arguments", "fingerprint_node"}:
+            raise ProtocolError("malformed_request", "invalid statement-transform input fields")
+        if any(not isinstance(inp.get(k), str) for k in ("name", "statement", "context")):
+            raise ProtocolError("malformed_request", "statement transform requires name, statement and context strings")
+        if "fingerprint_node" in inp:
+            _validate_nodes([inp["fingerprint_node"]], field_name="fingerprint_node")
+            if "condition" in inp or "arguments" in inp:
+                raise ProtocolError("malformed_request", "signature fingerprint cannot derive conditional obligations")
+        if "condition" in inp and not isinstance(inp["condition"], str):
+            raise ProtocolError("malformed_request", "condition must be a Lean term string")
+        if "arguments" in inp and ("condition" not in inp or not isinstance(inp["arguments"], list)
+                or any(not isinstance(v, str) for v in inp["arguments"])):
+            raise ProtocolError("malformed_request", "arguments require a condition and a list of Lean terms")
+
+    raw = dict(payload)
+    if op == "local_closure_axioms":
+        raw["premise_owners"] = sorted(set(
+            _validate_nodes(payload.get("premise_owners", []), field_name="premise_owners")
+        ))
+
+    return CheckerRequest(
+        op=op,
+        request_id=rid_raw,
+        node_name=node_name,
+        nodes=nodes,
+        timeout_secs=timeout,
+        raw=raw,
+    )
+
+
+def encode_response(payload: Mapping[str, Any]) -> bytes:
+    """Encode a response into one newline-terminated UTF-8 wire frame.
+
+    Raises ``ValueError`` if the encoded payload exceeds
+    ``MAX_MESSAGE_BYTES`` so server-side oversized responses fail loudly
+    rather than truncate silently.
+    """
+    text = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
+    encoded = text.encode("utf-8") + b"\n"
+    if len(encoded) > MAX_MESSAGE_BYTES:
+        raise ValueError(
+            f"response payload exceeds {MAX_MESSAGE_BYTES} bytes (got {len(encoded)})"
+        )
+    return encoded
+
+
+def rpc_error_envelope(
+    request_id: int, kind: str, message: str
+) -> dict[str, Any]:
+    """Build the standard error envelope for protocol-level failures.
+
+    Lake/lean errors are surfaced inside ``returncode``/``stderr`` of the
+    op-specific success envelope; this is reserved for the protocol layer
+    (malformed JSON, unknown op, sync failures, internal exceptions, etc.)
+    so callers can distinguish a transport failure from a tool failure.
+    """
+    return {
+        "request_id": request_id,
+        "rpc_error": {"kind": kind, "message": message},
+    }
+
+
+__all__ = [
+    "NODE_NAME_REGEX",
+    "NODE_NAME_REGEX_STR",
+    "NODE_NAME_MAX_LEN",
+    "MAX_NODES_PER_REQUEST",
+    "TIMEOUT_SECS_MIN",
+    "TIMEOUT_SECS_DEFAULT",
+    "MAX_LINE_BYTES",
+    "MAX_MESSAGE_BYTES",
+    "KNOWN_OPS",
+    "ISABELLE_NODE_OPS",
+    "ISABELLE_ADVISORY_OPS",
+    "ISABELLE_WORKSPACE_OPS",
+    "ProtocolError",
+    "CheckerRequest",
+    "parse_line",
+    "validate_request",
+    "encode_response",
+    "rpc_error_envelope",
+]
